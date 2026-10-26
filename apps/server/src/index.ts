@@ -10,3 +10,10 @@ export {
   type SendOptions,
 } from "./jobs.ts";
 export * from "./health/index.ts";
+export {
+  createEventsApiModule,
+  deploymentRow,
+  eventsApiModule,
+  provenanceOf,
+  type EventsApiOptions,
+} from "./api/events.ts";

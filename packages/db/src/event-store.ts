@@ -22,13 +22,13 @@ import type pg from "pg";
 /** Anything that can run a query: a pool or a checked-out client. */
 export type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
-const EVENT_COLUMNS = `
+export const EVENT_COLUMNS = `
   e.id, e.tenant_id, e.seq, e.schema_version, e.source, e.source_event_id, e.connection_id,
   e.action, e.actor, e.target, e.trigger, e.outcome, e.occurred_at, e.observed_at,
   e.recorded_at, e.observation, e.correlation, e.data, e.raw_payload_id,
   e.raw_payload_sha256, e.prev_hash, e.hash`;
 
-interface EventRow {
+export interface EventRow {
   id: string;
   tenant_id: string;
   seq: string;
@@ -53,7 +53,7 @@ interface EventRow {
   hash: string;
 }
 
-function rowToEvent(r: EventRow): CanonicalEvent {
+export function rowToEvent(r: EventRow): CanonicalEvent {
   return {
     schemaVersion: r.schema_version as CanonicalEvent["schemaVersion"],
     id: r.id,

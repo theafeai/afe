@@ -335,7 +335,9 @@ one consistent snapshot.
 Limits: the chain proves the log was not changed relative to a trusted head.
 Someone with full database control could rewrite the whole chain
 consistently; anchoring heads outside the database (exports, signed
-checkpoints) closes that gap and is planned with AFE-14.
+checkpoints) closes that gap: every export carries the chain head, which
+`GET /api/audit/verify?anchorSeq=…&anchorHash=…` checks against the live
+chain (see [export-verification.md](export-verification.md)).
 
 ## Storage
 
@@ -355,5 +357,5 @@ Migration `0002_events.sql`:
   the previous event.
 
 Read APIs in `@afe/db`: `getEvent`, `findEventBySourceId`, `listEvents`
-(tenant, `occurredAt` range, keyset cursor in `seq` order). The full query API
-is AFE-14.
+(tenant, `occurredAt` range, keyset cursor in `seq` order). The filtered query
+API and verifiable export (AFE-14) are in `event-query.ts`; see [api.md](api.md).

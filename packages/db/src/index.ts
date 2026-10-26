@@ -74,3 +74,17 @@ export {
   type HealthOutboxEntry,
   type ObservationGapRecord,
 } from "./connection-health.ts";
+export {
+  eventFilterSql,
+  getChainHead,
+  getEventBySeq,
+  getRawPayload,
+  InvalidCursorError,
+  openEventExport,
+  queryEvents,
+  type EventExportSnapshot,
+  type EventOrder,
+  type QueryEventsOptions,
+  type QueryEventsPage,
+  type StoredRawPayload,
+} from "./event-query.ts";
