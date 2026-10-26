@@ -183,3 +183,29 @@ export interface GitHubManifestConversion {
   html_url: string;
   owner: GitHubAccount | null;
 }
+
+/**
+ * One environment review of a run: REST
+ * `GET /repos/{o}/{r}/actions/runs/{id}/approvals`. It has no timestamp and no
+ * run attempt (see docs/connectors/github.md "Reconciliation").
+ */
+export interface GitHubRunApproval {
+  state: "approved" | "rejected" | string;
+  comment?: string | null;
+  user: GitHubUser | null;
+  environments: { id?: number; name: string }[];
+}
+
+/**
+ * An event of the repository events API (`GET /repos/{o}/{r}/events`):
+ * https://docs.github.com/en/rest/activity/events. Only `PushEvent` and
+ * `PullRequestEvent` are used.
+ */
+export interface GitHubRepoEvent {
+  id: string;
+  type: string;
+  actor?: (GitHubUser & { display_login?: string }) | null;
+  repo?: { id: number; name: string; url?: string };
+  payload?: Record<string, unknown>;
+  created_at?: string;
+}
