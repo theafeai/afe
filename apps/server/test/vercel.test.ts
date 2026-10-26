@@ -121,6 +121,9 @@ describe("vercel connector module", () => {
     return rows[0]!.id;
   }
 
+  /** Webhook jobs only (selecting projects also queues a vercel.poll job, AFE-12). */
+  const webhookJobs = () => jobs.sent.filter((j) => j.name === "vercel.webhook");
+
   function webhook(body: object, secret?: string) {
     return api.signedWebhook({ createdAt: NOW, ...body }, secret);
   }
@@ -264,7 +267,9 @@ describe("vercel connector module", () => {
       const res = await app.inject({ method: "POST", url: "/webhooks/vercel", ...hook });
       expect(res.statusCode).toBe(200);
     }
-    expect(jobs.sent.map((j) => (j.data as { projectId: string }).projectId)).toEqual(["prj_web"]);
+    expect(webhookJobs().map((j) => (j.data as { projectId: string }).projectId)).toEqual([
+      "prj_web",
+    ]);
     await jobs.drain();
 
     const all = await app.inject({
@@ -328,7 +333,7 @@ describe("vercel connector module", () => {
     expect((await getCredentialMetadata(pool, "default", creds.access_token!))!.revokedAt).not.toBe(
       null,
     );
-    expect(jobs.sent).toHaveLength(0);
+    expect(webhookJobs()).toHaveLength(0);
   });
 
   it("ignores lifecycle events for another installation", async () => {
@@ -368,7 +373,7 @@ describe("vercel connector module", () => {
     expect(
       (await app.inject({ method: "POST", url: "/webhooks/vercel", ...stale })).statusCode,
     ).toBe(401);
-    expect(jobs.sent).toHaveLength(0);
+    expect(webhookJobs()).toHaveLength(0);
 
     const good = webhook(body);
     const first = await app.inject({ method: "POST", url: "/webhooks/vercel", ...good });
@@ -376,8 +381,8 @@ describe("vercel connector module", () => {
     expect(first.json().status).toBe("accepted");
     expect(replay.statusCode).toBe(200);
     expect(replay.json().status).toBe("duplicate");
-    expect(jobs.sent).toHaveLength(1);
-    expect(jobs.sent[0]).toMatchObject({
+    expect(webhookJobs()).toHaveLength(1);
+    expect(webhookJobs()[0]).toMatchObject({
       name: "vercel.webhook",
       data: { tenantId: "default", connectionId: id, deliveryId: "evt_1" },
     });
@@ -411,7 +416,7 @@ describe("vercel connector module", () => {
     const ok = webhook(body, whsec);
     const res = await app.inject({ method: "POST", url: `/webhooks/vercel/${TEAM.id}`, ...ok });
     expect(res.json().status).toBe("accepted");
-    expect(jobs.sent).toHaveLength(1);
+    expect(webhookJobs()).toHaveLength(1);
     expect(logs.join("")).not.toContain("SECRET");
   });
 

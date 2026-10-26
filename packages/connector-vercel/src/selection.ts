@@ -97,6 +97,47 @@ export class ScopedVercelReader {
     return out;
   }
 
+  /** The selection this reader enforces. */
+  get projectSelection(): ProjectSelection {
+    return this.selection;
+  }
+
+  /** One selected project, including `targets` and `lastAliasRequest`. */
+  async getProject(projectId: string): Promise<VercelProject> {
+    if (!isProjectSelected(this.selection, projectId)) throw new ProjectNotSelectedError(projectId);
+    return this.client.getProject(projectId, this.teamId);
+  }
+
+  /**
+   * One page of deployments, newest first. `projectId` null lists the whole
+   * team and is only allowed when observing all projects. Items of unselected
+   * projects are dropped.
+   */
+  async listDeploymentsPage(
+    projectId: string | null,
+    range: { since?: number; until?: number },
+  ): Promise<{ deployments: VercelDeploymentListItem[]; next: number | null }> {
+    if (projectId === null) {
+      if (this.selection.mode !== "all") throw new ProjectNotSelectedError("*");
+    } else if (!isProjectSelected(this.selection, projectId)) {
+      throw new ProjectNotSelectedError(projectId);
+    }
+    const page = await this.client.listDeploymentsPage({
+      teamId: this.teamId,
+      ...(projectId ? { projectId } : {}),
+      ...range,
+    });
+    return {
+      next: page.next,
+      deployments: page.deployments.filter((d) =>
+        d.projectId === undefined
+          ? projectId !== null
+          : isProjectSelected(this.selection, d.projectId) &&
+            (projectId === null || d.projectId === projectId),
+      ),
+    };
+  }
+
   /**
    * One deployment. The caller must say which project it expects (from a
    * webhook or a list item), so an unselected project's deployment is never
