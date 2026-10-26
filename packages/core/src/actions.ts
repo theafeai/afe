@@ -80,6 +80,12 @@ export const ACTIONS = {
   CONNECTION_ALERT_OPENED: "connection.alert.opened",
   /** A connection alert was resolved (the connection recovered). */
   CONNECTION_ALERT_RESOLVED: "connection.alert.resolved",
+  /** Access was revoked at the source (e.g. GitHub App uninstalled). */
+  CONNECTION_REVOKED: "connection.revoked",
+  /** Access was suspended at the source (e.g. GitHub App installation suspended). */
+  CONNECTION_SUSPENDED: "connection.suspended",
+  /** A suspended connection was resumed at the source. */
+  CONNECTION_RESUMED: "connection.resumed",
 } as const;
 
 export type KnownAction = (typeof ACTIONS)[keyof typeof ACTIONS];

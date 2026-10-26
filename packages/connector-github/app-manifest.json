@@ -1,0 +1,23 @@
+{
+  "name": "Afe",
+  "url": "https://afe.example.com",
+  "description": "Afe records who deployed what, where and when. Read-only access to Actions and Deployments.",
+  "hook_attributes": { "url": "https://afe.example.com/webhooks/github", "active": true },
+  "redirect_url": "https://afe.example.com/api/connections/github/manifest/callback",
+  "setup_url": "https://afe.example.com/api/connections/github/setup",
+  "setup_on_update": true,
+  "public": false,
+  "default_permissions": {
+    "actions": "read",
+    "deployments": "read",
+    "environments": "read",
+    "metadata": "read"
+  },
+  "default_events": [
+    "deployment",
+    "deployment_review",
+    "deployment_status",
+    "workflow_job",
+    "workflow_run"
+  ]
+}

@@ -136,6 +136,8 @@ here. Never rename or remove one: stored events keep their names.
 | `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                         |
 | `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                   |
 | `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).      |
+| `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                    |
+| `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).            |
 
 The validator accepts any action that matches the pattern, so connectors can
 ship a new action before the shared list is updated; `isKnownAction()` tells

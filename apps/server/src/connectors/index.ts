@@ -1,6 +1,7 @@
 import type { ConnectorModule } from "../context.ts";
 import { healthModule } from "../health/index.ts";
 import { argocdModule } from "./argocd.ts";
+import { githubModule } from "./github.ts";
 import { vercelModule } from "./vercel.ts";
 
 /**
@@ -8,6 +9,7 @@ import { vercelModule } from "./vercel.ts";
  * (connection health, query API) adds its module here.
  */
 export const defaultModules: ConnectorModule[] = [
+  githubModule,
   argocdModule,
   vercelModule,
   // Connection health (AFE-13): collects every module's `health` hooks.
