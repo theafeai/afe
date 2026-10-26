@@ -1,0 +1,149 @@
+{
+  "event": "pull_request",
+  "payload": {
+    "action": "closed",
+    "number": 77,
+    "pull_request": {
+      "url": "https://api.github.com/repos/acme/api/pulls/77",
+      "id": 66000077,
+      "node_id": "PR_77",
+      "html_url": "https://github.com/acme/api/pull/77",
+      "number": 77,
+      "state": "closed",
+      "locked": false,
+      "title": "Add login endpoint",
+      "user": {
+        "login": "bob",
+        "id": 502,
+        "node_id": "U_502",
+        "avatar_url": "https://avatars.githubusercontent.com/u/502?v=4",
+        "url": "https://api.github.com/users/bob",
+        "html_url": "https://github.com/bob",
+        "type": "User",
+        "site_admin": false
+      },
+      "body": "Implements login.\n\nNeeds acme/lib@0123456789abcdef0123456789abcdef01234567 deployed first.\nContact bob@example.com",
+      "created_at": "2026-10-25T15:00:00Z",
+      "updated_at": "2026-10-26T09:45:00Z",
+      "closed_at": "2026-10-26T09:45:00Z",
+      "merged_at": "2026-10-26T09:45:00Z",
+      "merge_commit_sha": "e1e2e3e4e5e6e7e8e9e0e1e2e3e4e5e6e7e8e9e0",
+      "draft": false,
+      "head": {
+        "label": "acme:feature/login",
+        "ref": "feature/login",
+        "sha": "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00",
+        "user": {
+          "login": "acme",
+          "id": 9001,
+          "node_id": "U_9001",
+          "avatar_url": "https://avatars.githubusercontent.com/u/9001?v=4",
+          "url": "https://api.github.com/users/acme",
+          "html_url": "https://github.com/acme",
+          "type": "Organization",
+          "site_admin": false
+        },
+        "repo": {
+          "id": 11,
+          "name": "api",
+          "full_name": "acme/api",
+          "url": "https://api.github.com/repos/acme/api",
+          "html_url": "https://github.com/acme/api",
+          "private": true,
+          "owner": {
+            "login": "acme",
+            "id": 9001
+          }
+        }
+      },
+      "base": {
+        "label": "acme:main",
+        "ref": "main",
+        "sha": "8f3c2a1b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+        "user": {
+          "login": "acme",
+          "id": 9001,
+          "node_id": "U_9001",
+          "avatar_url": "https://avatars.githubusercontent.com/u/9001?v=4",
+          "url": "https://api.github.com/users/acme",
+          "html_url": "https://github.com/acme",
+          "type": "Organization",
+          "site_admin": false
+        },
+        "repo": {
+          "id": 11,
+          "name": "api",
+          "full_name": "acme/api",
+          "url": "https://api.github.com/repos/acme/api",
+          "html_url": "https://github.com/acme/api",
+          "private": true,
+          "owner": {
+            "login": "acme",
+            "id": 9001
+          }
+        }
+      },
+      "merged": true,
+      "mergeable": null,
+      "merged_by": {
+        "login": "carol",
+        "id": 503,
+        "node_id": "U_503",
+        "avatar_url": "https://avatars.githubusercontent.com/u/503?v=4",
+        "url": "https://api.github.com/users/carol",
+        "html_url": "https://github.com/carol",
+        "type": "User",
+        "site_admin": false
+      },
+      "commits": 3,
+      "additions": 120,
+      "deletions": 4,
+      "changed_files": 5
+    },
+    "sender": {
+      "login": "carol",
+      "id": 503,
+      "node_id": "U_503",
+      "avatar_url": "https://avatars.githubusercontent.com/u/503?v=4",
+      "url": "https://api.github.com/users/carol",
+      "html_url": "https://github.com/carol",
+      "type": "User",
+      "site_admin": false
+    },
+    "repository": {
+      "id": 11,
+      "node_id": "R_11",
+      "name": "api",
+      "full_name": "acme/api",
+      "private": true,
+      "owner": {
+        "login": "acme",
+        "id": 9001,
+        "node_id": "U_9001",
+        "avatar_url": "https://avatars.githubusercontent.com/u/9001?v=4",
+        "url": "https://api.github.com/users/acme",
+        "html_url": "https://github.com/acme",
+        "type": "Organization",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/acme/api",
+      "url": "https://api.github.com/repos/acme/api",
+      "default_branch": "main",
+      "visibility": "private",
+      "created_at": "2024-01-10T09:00:00Z",
+      "updated_at": "2026-10-20T09:00:00Z",
+      "pushed_at": "2026-10-26T09:59:00Z"
+    },
+    "organization": {
+      "login": "acme",
+      "id": 9001,
+      "node_id": "O_9001",
+      "url": "https://api.github.com/orgs/acme",
+      "description": null
+    },
+    "installation": {
+      "id": 4242,
+      "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNDI0Mg=="
+    }
+  }
+}

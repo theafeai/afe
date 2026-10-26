@@ -118,6 +118,7 @@ here. Never rename or remove one: stored events keep their names.
 | `deployment.review_approved`                           | github         | Required reviewer approved a deployment to a protected environment.                |
 | `deployment.review_rejected`                           | github         | Required reviewer rejected it.                                                     |
 | `deployment.protection_rule_requested`                 | github         | A custom deployment protection rule was asked to decide.                           |
+| `deployment.review_requested`                          | github         | A deployment to a protected environment is waiting for a required reviewer.        |
 | `workflow_run.requested`                               | github         | Workflow run queued.                                                               |
 | `workflow_run.in_progress`                             | github         | Workflow run started.                                                              |
 | `workflow_run.completed`                               | github         | Workflow run finished; conclusion in `outcome`.                                    |
@@ -125,6 +126,9 @@ here. Never rename or remove one: stored events keep their names.
 | `ref.pushed`                                           | github         | Commits pushed to an existing branch or tag.                                       |
 | `ref.created` / `ref.deleted`                          | github         | Branch or tag created / deleted.                                                   |
 | `pull_request.merged`                                  | github         | Pull request merged.                                                               |
+| `pull_request.opened` / `.reopened` / `.closed`        | github         | Pull request opened, reopened, or closed without merging.                          |
+| `pull_request.synchronized`                            | github         | New commits pushed to a pull request's head branch.                                |
+| `repository_dispatch.received`                         | github         | A `repository_dispatch` was sent to a repository (API only).                       |
 | `release.published`                                    | github         | Release published.                                                                 |
 | `argocd.sync.started`                                  | argocd         | Sync operation started (`operationState.phase` Running).                           |
 | `argocd.sync.succeeded`                                | argocd         | Sync operation finished with phase Succeeded.                                      |
@@ -286,6 +290,10 @@ state transition of one source object. Keys below are written as
 | vercel | deployment transition               | `deployment`, `<dpl_ id>`, `created\|succeeded\|failed\|cancelled\|promoted`                                             |
 | afe    | observation gap                     | `observation_gap`, `<gapId>`, `opened\|closed`                                                                           |
 | afe    | connection alert                    | `connection_alert`, `<alertId>`, `opened\|resolved`                                                                      |
+
+GitHub keys are built by `packages/connector-github/src/event-ids.ts` and listed,
+with AFE-7's refinements (run attempt in review keys, `repository_dispatch`), in
+[docs/connectors/github.md](connectors/github.md#idempotency-keys-shared-with-afe-8).
 
 Rules: never use webhook delivery ids, poll timestamps or Afe-generated ids;
 use the source's immutable numeric/opaque id rather than names (names can be

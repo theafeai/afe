@@ -2,11 +2,10 @@
  * GitHub connector wiring (AFE-6): GitHub App webhooks, the install and
  * App Manifest flows, connection lifecycle and health probes.
  *
- * Pure logic (JWT, tokens, REST client, permission checks, manifest, state)
- * lives in `@afe/connector-github`. Mapping repository events (workflow runs,
- * deployments...) into canonical events is AFE-7: this module only verifies,
- * de-duplicates and enqueues them as `github.webhook` jobs; see
- * `GitHubModuleOptions.processWebhook`.
+ * Pure logic (JWT, tokens, REST client, permission checks, manifest, state,
+ * event mapping) lives in `@afe/connector-github`. The webhook route
+ * verifies, de-duplicates and enqueues repository events as `github.webhook`
+ * jobs; `processGitHubWebhook` (AFE-7) maps and ingests them.
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -14,6 +13,7 @@ import type pg from "pg";
 import {
   ACTIONS,
   DEFAULT_TENANT_ID,
+  EventValidationError,
   sourceEventId,
   type CanonicalEventInputLike,
   type Connection,
@@ -30,6 +30,7 @@ import {
   GITHUB_WEBHOOK_JOB,
   GitHubApiError,
   GitHubAppClient,
+  GitHubPayloadError,
   GitHubHttp,
   GitHubNetworkError,
   GitHubRateLimitError,
@@ -42,11 +43,14 @@ import {
   describePermissionProblems,
   installUrl,
   installationIdOf,
+  isRepositorySelected,
   loadGitHubAppConfigFromEnv,
+  mapWebhookDelivery,
   manifestRegistrationUrl,
   newNonce,
   readDeliveryHeaders,
   readOnlyTokenPermissions,
+  repositoryIdOf,
   signState,
   toJson,
   verifyState,
@@ -62,6 +66,7 @@ import {
 } from "@afe/connector-github";
 import {
   findConnectionByExternalId,
+  getConnection,
   getCredential,
   recordDelivery,
   resolveConnectionBySourceIdentity,
@@ -105,14 +110,15 @@ export interface GitHubModuleOptions {
   /** Key material for signing redirect state (AFE_GITHUB_STATE_SECRET). */
   stateSecret?: string;
   /**
-   * Processes one `github.webhook` job (repository events). AFE-7 supplies
-   * this; until then the job is an explicit no-op.
+   * Processes one `github.webhook` job (repository events). Default:
+   * `processGitHubWebhook` (map and ingest, AFE-7). Override in tests.
    */
-  processWebhook?: (job: GitHubWebhookJob, runtime: GitHubRuntime) => Promise<void>;
+  processWebhook?: (job: GitHubWebhookJob, runtime: GitHubRuntime) => Promise<unknown>;
   clock?: () => number;
 }
 
-const WEBHOOK_BODY_LIMIT = 5 * 1024 * 1024;
+/** GitHub caps webhook payloads at 25 MB. */
+const WEBHOOK_BODY_LIMIT = 25 * 1024 * 1024;
 const FLOW_COOKIE = "afe_github_flow";
 const DB_APP_TTL_MS = 60_000;
 const LIFECYCLE = new Set(["installation", "installation_repositories"]);
@@ -997,6 +1003,102 @@ async function handleManifestCallback(rt: GitHubRuntime, req: FastifyRequest, re
 }
 
 // ---------------------------------------------------------------------------
+// Repository events (AFE-7)
+// ---------------------------------------------------------------------------
+
+export type GitHubWebhookOutcome =
+  | { status: "ingested"; inserted: number; duplicates: number }
+  | { status: "ignored"; reason: string }
+  | { status: "rejected"; reason: string };
+
+/**
+ * Default `github.webhook` processor: maps one verified delivery into
+ * canonical events and ingests them idempotently for the job's tenant.
+ *
+ * - Deliveries for a connection that no longer exists, for repositories not
+ *   selected in the connection config, and events/actions Afe does not record
+ *   are ignored.
+ * - A malformed payload (`GitHubPayloadError`) or a mapping that fails
+ *   validation (`EventValidationError`) is permanent: it is logged (delivery
+ *   id, event and issue paths only, never the payload) and the job completes
+ *   so it is not retried. The delivery can be redelivered from GitHub after a fix.
+ * - Any other error (database) propagates and the job is retried; ingestion
+ *   is idempotent.
+ * - Every delivery processed without error counts as a successful webhook
+ *   observation for connection health.
+ */
+export async function processGitHubWebhook(
+  job: GitHubWebhookJob,
+  rt: GitHubRuntime,
+): Promise<GitHubWebhookOutcome> {
+  const { ctx } = rt;
+  const log = ctx.log.child({
+    source: "github",
+    deliveryId: job.deliveryId,
+    event: job.event,
+    connectionId: job.connectionId,
+  });
+  const connection = await getConnection(ctx.pool, job.tenantId, job.connectionId);
+  if (!connection || connection.source !== CONNECTOR_SOURCE) {
+    log.info("github.webhook: connection not found, delivery ignored");
+    return { status: "ignored", reason: "connection not found" };
+  }
+  const receivedAt = new Date(job.receivedAt);
+  const done = async <T extends GitHubWebhookOutcome>(outcome: T): Promise<T> => {
+    if (connection.status === "active") {
+      await ctx.health?.reportSuccess(job.tenantId, job.connectionId, receivedAt, {
+        via: "webhook",
+      });
+    }
+    return outcome;
+  };
+
+  const repositoryId = repositoryIdOf(job.payload);
+  if (repositoryId !== null && !isRepositorySelected(connection.config, repositoryId)) {
+    log.info({ repositoryId }, "github.webhook: repository not selected, delivery ignored");
+    return done({ status: "ignored", reason: "repository not selected" });
+  }
+
+  try {
+    const result = mapWebhookDelivery({
+      event: job.event,
+      payload: job.payload,
+      rawBody: job.rawBody,
+      deliveryId: job.deliveryId,
+      receivedAt,
+      connectionId: connection.id,
+    });
+    if (result.status === "ignored") {
+      log.debug({ reason: result.reason }, "github.webhook: delivery not recorded");
+      return done({ status: "ignored", reason: result.reason });
+    }
+    let inserted = 0;
+    for (const input of result.events) {
+      const r = await ctx.sink.ingest(job.tenantId, input);
+      if (r.inserted) inserted += 1;
+    }
+    log.info(
+      { action: job.action, inserted, duplicates: result.events.length - inserted },
+      "github.webhook: delivery ingested",
+    );
+    return done({ status: "ingested", inserted, duplicates: result.events.length - inserted });
+  } catch (err) {
+    if (err instanceof GitHubPayloadError) {
+      log.error({ path: err.path }, "github.webhook: malformed payload, delivery dropped");
+      return { status: "rejected", reason: err.message };
+    }
+    if (err instanceof EventValidationError) {
+      log.error(
+        { issues: err.issues.map((i) => ({ path: i.path.join("."), code: i.code })) },
+        "github.webhook: mapped event failed validation, delivery dropped",
+      );
+      return { status: "rejected", reason: "event validation failed" };
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
 
@@ -1094,13 +1196,7 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
           name: GITHUB_WEBHOOK_JOB,
           async handler(data) {
             const job = data as GitHubWebhookJob;
-            if (options.processWebhook) return options.processWebhook(job, rt);
-            // Placeholder until AFE-7 maps repository events into canonical
-            // events. The delivery is verified and recorded; nothing is ingested.
-            ctx.log.debug(
-              { deliveryId: job.deliveryId, event: job.event, connectionId: job.connectionId },
-              "github.webhook job: no processor configured (AFE-7)",
-            );
+            await (options.processWebhook ?? processGitHubWebhook)(job, rt);
           },
         },
       ];

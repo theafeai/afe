@@ -26,6 +26,13 @@ Raw payloads are stored as received, after removing the fields listed in "What
 Afe deliberately does not store" when a source includes them; connectors list
 the paths they strip and test it.
 
+- GitHub (AFE-7): every non-null `email` member and `pull_request.body` are
+  removed from webhook bodies; commit messages, deployment review comments and
+  the caller-supplied `deployment.payload` / `repository_dispatch.client_payload`
+  are kept in the raw payload only (never in `events.data`). Events hold commit
+  SHAs mentioned in commit messages / PR bodies (`data.correlationHints`), not
+  the text. See docs/connectors/github.md "Raw payloads".
+
 ## What Afe deliberately does not store
 
 | Not stored                                                                 | Why / how it is avoided                                                                                                   |

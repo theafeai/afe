@@ -37,6 +37,8 @@ export const ACTIONS = {
   DEPLOYMENT_REVIEW_REJECTED: "deployment.review_rejected",
   /** A deployment protection rule check was requested (GitHub `deployment_protection_rule`). */
   DEPLOYMENT_PROTECTION_RULE_REQUESTED: "deployment.protection_rule_requested",
+  /** A deployment to a protected environment is waiting for a required reviewer (GitHub). */
+  DEPLOYMENT_REVIEW_REQUESTED: "deployment.review_requested",
 
   // --- GitHub Actions ---
   WORKFLOW_RUN_REQUESTED: "workflow_run.requested",
@@ -50,6 +52,14 @@ export const ACTIONS = {
   REF_CREATED: "ref.created",
   REF_DELETED: "ref.deleted",
   PULL_REQUEST_MERGED: "pull_request.merged",
+  PULL_REQUEST_OPENED: "pull_request.opened",
+  PULL_REQUEST_REOPENED: "pull_request.reopened",
+  /** New commits pushed to a pull request's head branch (GitHub `synchronize`). */
+  PULL_REQUEST_SYNCHRONIZED: "pull_request.synchronized",
+  /** Closed without merging. */
+  PULL_REQUEST_CLOSED: "pull_request.closed",
+  /** A `repository_dispatch` was sent to a repository (GitHub, API only). */
+  REPOSITORY_DISPATCH_RECEIVED: "repository_dispatch.received",
   RELEASE_PUBLISHED: "release.published",
 
   // --- ArgoCD ---

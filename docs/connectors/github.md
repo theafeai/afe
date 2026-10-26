@@ -1,6 +1,6 @@
 # GitHub connector
 
-- Issue: AFE-6 (App and install flow). Event mapping is AFE-7, reconciliation and backfill AFE-8.
+- Issues: AFE-6 (App and install flow), AFE-7 (event capture, below). Reconciliation and backfill: AFE-8.
 - Code: `packages/connector-github` (pure logic) and `apps/server/src/connectors/github.ts`
   (routes, jobs, health hooks).
 
@@ -71,7 +71,7 @@ How AFE-7 triggers map onto these:
 
 ### Receiving
 
-`POST /webhooks/github` (body limit 5 MiB):
+`POST /webhooks/github` (body limit 25 MiB, GitHub's maximum payload size):
 
 1. Verify `X-Hub-Signature-256` over the raw body with the App's webhook secret
    (`verifyGitHubSignature`). Missing/invalid → `401` with no detail; the legacy
@@ -100,10 +100,160 @@ How AFE-7 triggers map onto these:
 5. Every other event is enqueued as a **`github.webhook` job** per active connection
    of the installation (`GitHubWebhookJob`: tenant, connection, installation id,
    delivery id, event, action, parsed payload and exact raw body; no credentials).
-   **Boundary with AFE-7:** in this issue the job handler is a deliberate no-op;
-   AFE-7 passes `processWebhook` to `createGitHubModule` to map and ingest.
+   The job runs `processGitHubWebhook` (see [Event capture](#event-capture));
+   `createGitHubModule({ processWebhook })` can replace it (tests).
    Deliveries for installations not connected to any tenant are recorded (with
    `tenant_id = NULL`) and dropped.
+
+## Event capture
+
+- Issue: AFE-7. Code: `packages/connector-github/src/mapping.ts` (pure mapping),
+  `event-ids.ts` (idempotency keys, shared with AFE-8 polling), `raw-payload.ts`
+  (evidence redaction), and `processGitHubWebhook` in `apps/server/src/connectors/github.ts`.
+- Fixtures: `packages/connector-github/test/fixtures/webhooks/*.json`, one per trigger.
+
+### Processing a `github.webhook` job
+
+1. Load the job's connection (tenant-scoped). Gone → ignored.
+2. Repository selection: if the delivery's `repository.id` is not in the connection's
+   `config.repositories` (and the selection is not `"all"`), the delivery is ignored and
+   logged. A connection without a repository list is treated as selecting nothing.
+3. `mapWebhookDelivery` maps it (or returns `ignored` for events/actions Afe does not
+   record), then every event is ingested through `ctx.sink` (idempotent).
+4. Success, including "ignored", calls `ctx.health?.reportSuccess(tenant, connection,
+receivedAt, { via: "webhook" })` for an active connection.
+5. Permanent errors are logged with the delivery id, event and failing field path only
+   (never payload content) and the job completes, so it is **not retried** and does not
+   block the queue: `GitHubPayloadError` (a required field is missing or has the wrong
+   type) and `EventValidationError` (the mapped event is invalid, e.g. a NUL in a string).
+   Fix and use GitHub's "Redeliver" to process the delivery again. Every other error
+   (database) propagates and pg-boss retries the job; ingestion is idempotent.
+
+### What is recorded
+
+| Webhook (action)                                            | Canonical action                                                              | Actor                                                                   | `trigger.type`                                                  | `outcome`                                                                                                    |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `workflow_run` (`requested`/`in_progress`/`completed`)      | `workflow_run.requested` / `.in_progress` / `.completed`                      | `actor`; `triggeredBy` = `triggering_actor` when different (re-runs)    | from `workflow_run.event` (table below); `rerun` if attempt > 1 | `pending` / `in_progress` / from `conclusion`                                                                |
+| `workflow_job` (`completed` only)                           | `workflow_job.completed`                                                      | `sender`                                                                | `upstream` (`rerun` if attempt > 1)                             | from `conclusion`                                                                                            |
+| `deployment` (`created`)                                    | `deployment.created`                                                          | `creator`; `triggeredBy` = linked run's triggering actor when different | `upstream` if `workflow_run` is linked, else `api`              | `pending`                                                                                                    |
+| `deployment_status` (`created`)                             | `deployment.status_updated`                                                   | status `creator`; `triggeredBy` as above                                | as the deployment                                               | `state`: success→succeeded, failure/error→failed, pending/queued/waiting→pending, in_progress, inactive→none |
+| `deployment_review` (`approved`/`rejected`/`requested`)     | `deployment.review_approved` / `.review_rejected` / `.review_requested`       | `approver` (approve/reject), `requestor` (requested)                    | `manual` (`deployment_review.<action>`)                         | `none`                                                                                                       |
+| `deployment_protection_rule` (`requested`)                  | `deployment.protection_rule_requested`                                        | `sender`                                                                | from `event`                                                    | `pending`                                                                                                    |
+| `push`                                                      | `ref.pushed`, `ref.created`, `ref.deleted`                                    | `sender` (fallback `pusher.name`)                                       | `push` (`tag` for a created tag)                                | `none`                                                                                                       |
+| `pull_request` (`opened`/`reopened`/`synchronize`/`closed`) | `pull_request.opened` / `.reopened` / `.synchronized` / `.closed` / `.merged` | `sender`; `merged_by` for merges                                        | `pull_request`                                                  | `none`                                                                                                       |
+| `repository_dispatch`                                       | `repository_dispatch.received`                                                | `sender` (usually an App or token owner)                                | `api`                                                           | `none`                                                                                                       |
+
+`workflow_run.event` → `trigger.type` (`sourceValue` keeps the GitHub value):
+`push`→`push`; `pull_request`, `pull_request_target`, `pull_request_review[_comment]`→`pull_request`;
+`merge_group`→`merge_queue`; `workflow_dispatch`→`manual`, or `api` when the dispatching
+actor is a bot/App; `schedule`→`schedule`; `repository_dispatch`→`api`; `workflow_run`
+(chained), `deployment`, `deployment_status`→`upstream`; `release`→`release`;
+`dynamic`→`system`; anything else→`unknown`. A run with `run_attempt > 1` is `rerun`
+with the original trigger in `detail`.
+
+Honest limits:
+
+- **API vs UI dispatch.** GitHub's payloads do not say whether a `workflow_dispatch` came
+  from the UI or from a user's token calling the REST API; both are `manual` with a
+  `detail` saying so. Only a dispatch by a bot/App (`[bot]`, `type: Bot`) is `api`.
+- **Reusable (called) workflows** (`workflow_call`) have no run or event of their own:
+  they are listed in `data.referencedWorkflows` (`path`, `sha`, `ref`) of the caller's run,
+  and their jobs arrive as `workflow_job` events of the caller ("caller job / called job").
+- **`schedule` actor** is whoever last changed the cron, as GitHub reports it.
+- `push`, `pull_request`, `repository_dispatch` and `deployment_protection_rule` webhooks
+  arrive only if the operator grants the optional permissions (`contents`,
+  `pull_requests`) or registers the App as a protection rule (needs `deployments: write`,
+  which Afe never asks for). Without them, the same triggers are still captured via
+  `workflow_run.event`.
+
+Not recorded, by design: `workflow_job` queued/in_progress/waiting (no new facts;
+approvals come from `deployment_review`, deployments from `deployment`), the
+`workflow_dispatch` webhook (needs `contents`; the run carries the dispatcher; its
+`inputs` may be sensitive), `create`/`delete` (the `push` event already reports
+`created`/`deleted`), `check_suite`/`check_run` (third-party CI is out of scope; Actions
+is covered by `workflow_run`), `release`, `registry_package` (follow-up), and any other
+event. These are acknowledged and ignored.
+
+### Correlation (AFE-15)
+
+Per [research 0001](../research/0001-cross-tool-flow.md#what-the-connectors-must-capture):
+
+- every event: `repositories` (`github.com/owner/name`, plus a fork's head repository);
+- `workflow_run`/`workflow_job`/reviews: `commitShas` = `head_sha`, `refs` = `head_branch`,
+  `runIds` = `github:<run id>`, `pullRequests` from `pull_requests[]`; jobs add
+  `environments` when the payload carries one;
+- deployments and statuses: `commitShas` = `sha`, `refs` = `ref` (unless it is a SHA),
+  `environments`, `deploymentIds` = `github:<id>`, `runIds` from the linked run;
+  `data.correlationHints.deploymentUrls` = hosts of `environment_url`/`target_url`;
+- `push`: `commitShas` = `commits[].id` + `after`, `refs` = `ref`, `data.headCommit`;
+- `pull_request`: `commitShas` = `head.sha` (+ `merge_commit_sha` when merged),
+  `refs` = base (and head, same repository only), `pullRequests`;
+- `push` and `pull_request`: `data.correlationHints.mentionedCommitShas` = full SHAs
+  found in commit messages / the PR body. The text itself is never put in the event.
+
+`refs` are fully qualified where GitHub says what they are (`push.ref`, PR base/head,
+`repository_dispatch.branch`). `workflow_run.head_branch` and `deployment.ref` can be a
+branch or a tag, so they are stored as given (e.g. `main`); match those by commit SHA.
+
+### Idempotency keys (shared with AFE-8)
+
+Built by `event-ids.ts`; polling must use the same builders on REST objects
+(`workflowRunTransition(run.status)` maps REST states to transitions).
+
+| Object                  | `sourceEventId`                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| workflow run transition | `workflow_run:<run id>:<run_attempt>:requested\|in_progress\|completed`                                           |
+| workflow job            | `workflow_job:<job id>:completed`                                                                                 |
+| deployment              | `deployment:<deployment id>:created`                                                                              |
+| deployment status       | `deployment_status:<status id>`                                                                                   |
+| deployment review       | `deployment_review:<run id>:<run_attempt>:<envs sorted, comma-joined>:<reviewer id>:approved\|rejected`           |
+| review requested        | `deployment_review:<run id>:<run_attempt>:<envs>:requested` (webhook only)                                        |
+| protection rule         | `deployment_protection_rule:<deployment id>:<environment>:requested` (webhook only)                               |
+| push                    | `push:<repository id>:<ref>:<before>:<after>`                                                                     |
+| pull request            | `pull_request:<id>:opened\|merged`, `…:synchronize:<head sha>`, `…:closed:<closed_at>`, `…:reopened:<updated_at>` |
+| repository dispatch     | `repository_dispatch:<repository id>:<delivery id>`                                                               |
+
+Two refinements of docs/event-model.md: the review key includes `run_attempt` (a re-run
+needing approval again by the same reviewer is a new event), and `repository_dispatch`
+is keyed by the delivery id, the only exception to that rule: a dispatch has no id, time
+or REST representation, so polling can never see it, and GitHub keeps the delivery GUID
+on redelivery (which the replay guard drops anyway).
+
+### Raw payloads (R8)
+
+The delivery body is stored in `raw_payloads` as received, except: every non-null
+`email` member (commit author/committer, pusher, user objects) and `pull_request.body`
+are removed. Then the stored body is the re-serialised JSON and `observation.detail`
+lists the removed paths; otherwise it is the exact signed bytes. Kept: commit messages
+and run display titles (commit metadata), deployment review comments (the reviewer's
+reason), and the caller-supplied `deployment.payload` and
+`repository_dispatch.client_payload`. Those two are arbitrary data and may contain
+personal data; they are never copied into `data`.
+
+### To verify against docs / a test org
+
+Written without access to GitHub docs or a real org
+(https://docs.github.com/en/webhooks/webhook-events-and-payloads,
+https://docs.github.com/en/rest/actions/workflow-runs,
+https://docs.github.com/en/rest/deployments). Check:
+
+- `deployment_review` payload: `approver`, `workflow_job_runs[].environment`,
+  `workflow_job_run` / `environment` / `requestor` / `reviewers` on `requested`, whether
+  `workflow_run.run_attempt` is present, and which timestamp best marks the review
+  (Afe uses the job runs' `updated_at`).
+- Whether REST `GET /actions/runs/{id}/approvals` lists approvals of earlier attempts
+  (AFE-8 must attach the right `run_attempt`).
+- `deployment.creator` for Actions-created deployments (the triggering user or
+  `github-actions[bot]`), and that `deployment`/`deployment_status` include `workflow_run`.
+- `workflow_job` payloads: whether any field names the job's `environment`.
+- `deployment_protection_rule` payload fields (`event`, `deployment_callback_url`).
+- `push.repository.pushed_at` is epoch seconds and is the push time.
+- `workflow_run.head_branch` for tag-triggered runs (tag name?).
+- **Manual "done when" check:** in a test org, trigger each row of the table above
+  (push, PR, UI dispatch, `gh workflow run` with a PAT and with an App token, schedule,
+  re-run by another user, a reusable workflow, `repository_dispatch`, a workflow chained
+  by `workflow_run`, an environment with required reviewers approved once and rejected
+  once, a REST-created deployment) and compare the events with the fixtures.
 
 ## Install flows
 
