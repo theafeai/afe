@@ -2,8 +2,11 @@
  * ArgoCD connector wiring (AFE-9): connection management API and health probe.
  * Design: docs/decisions/0004-argocd-connection-model.md, docs/connectors/argocd.md.
  *
- * Event capture (application watch + reconciliation) is AFE-10; it builds on
- * `argocdClientForConnection` below and adds jobs to this module.
+ * Event capture (AFE-10): `argocd.watch` (long-running watch per connection,
+ * in time slices that re-enqueue themselves) and `argocd.reconcile`
+ * (scheduled every 5 minutes; fans out per connection and makes sure a watch
+ * is queued), plus the `backfill` health hook. See docs/connectors/argocd.md
+ * "Event capture".
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
@@ -25,6 +28,7 @@ import {
   getConnection,
   getConnectionCredentialIds,
   getCredential,
+  listActiveConnections,
   listConnections,
   revokeCredential,
   setConnectionStatus,
@@ -34,6 +38,7 @@ import {
 import {
   API_TOKEN_KIND,
   API_TOKEN_ROLE,
+  ArgoCdCapture,
   ArgoCdError,
   CONNECTOR_SOURCE,
   InvalidConnectionInputError,
@@ -43,15 +48,81 @@ import {
   parseCaBundle,
   testArgoCdConnection,
   type ArgoCdClientHandle,
+  type CaptureCounts,
+  type CaptureObservation,
   type ConnectionTestResult,
 } from "@afe/connector-argocd";
 import type { ConnectorModule, ServerContext } from "../context.ts";
+import type { JobDefinition } from "../jobs.ts";
+import { createPgCaptureStateStore } from "./argocd-state.ts";
+
+export const ARGOCD_WATCH_JOB = "argocd.watch";
+export const ARGOCD_RECONCILE_JOB = "argocd.reconcile";
+
+/** Payload of `argocd.watch` / `argocd.reconcile` jobs. No credentials. */
+export interface ArgoCdCaptureJob {
+  tenantId?: string;
+  connectionId?: string;
+}
+
+/**
+ * Receives every capture observation (stream or reconciliation, success or
+ * failure), e.g. to feed connection health (AFE-13).
+ */
+export type ArgoCdObservationHook = (
+  ctx: ServerContext,
+  connection: Connection,
+  observation: CaptureObservation,
+) => void | Promise<void>;
+
+/** Structural view of AFE-13's `HealthReporter`, so this module works with or without it. */
+interface HealthReporterLike {
+  reportSuccess(
+    tenantId: string,
+    connectionId: string,
+    at?: Date,
+    options?: { via?: "stream" | "poll" },
+  ): Promise<void>;
+  reportFailure(
+    tenantId: string,
+    connectionId: string,
+    reason: Extract<CaptureObservation, { ok: false }>["reason"],
+    detail?: string,
+    retryAfter?: Date,
+    at?: Date,
+  ): Promise<void>;
+}
+
+/**
+ * Default observation hook: reports to connection health (`ctx.health`,
+ * AFE-13) when it is registered, otherwise does nothing.
+ */
+export const reportObservationToHealth: ArgoCdObservationHook = async (ctx, c, o) => {
+  const health = (ctx as { health?: HealthReporterLike }).health;
+  if (!health) return;
+  if (o.ok) await health.reportSuccess(c.tenantId, c.id, o.at, { via: o.via });
+  else await health.reportFailure(c.tenantId, c.id, o.reason, o.detail, undefined, o.at);
+};
 
 export interface ArgoCdModuleOptions {
   /** Retries per ArgoCD request (default 2). Tests use 0. */
   retries?: number;
   /** Total timeout per ArgoCD request in ms (default 30 s). */
   timeoutMs?: number;
+  /** Length of one `argocd.watch` job run in ms (default 10 min, below pg-boss' 15 min expiry). */
+  watchSliceMs?: number;
+  /** Re-enqueue `argocd.watch` at the end of each slice (default true; tests turn it off). */
+  requeueWatch?: boolean;
+  /** Let the scheduled reconcile fan-out also queue a watch per connection (default true). */
+  scheduleWatch?: boolean;
+  /** Reconnect delay of the watch after attempt n (default 1 s doubling to 60 s). */
+  watchBackoffMs?: (attempt: number) => number;
+  /** Cron for `argocd.reconcile` (default every 5 minutes). */
+  reconcileSchedule?: string;
+  /** Observation hook; default `reportObservationToHealth`. */
+  onObservation?: ArgoCdObservationHook;
+  /** Clock, for tests. */
+  now?: () => Date;
 }
 
 interface ConnectBody {
@@ -368,6 +439,48 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
       );
     },
 
+    jobs(ctx: ServerContext): JobDefinition[] {
+      return [
+        {
+          name: ARGOCD_RECONCILE_JOB,
+          schedule: options.reconcileSchedule ?? "*/5 * * * *",
+          scheduleData: {},
+          handler: async (data) => {
+            const job = data as ArgoCdCaptureJob;
+            if (!job.tenantId || !job.connectionId) {
+              // Scheduled fan-out: one reconcile (and an ensured watch) per connection.
+              for (const c of await listActiveConnections(ctx.pool, CONNECTOR_SOURCE)) {
+                const payload: ArgoCdCaptureJob = { tenantId: c.tenantId, connectionId: c.id };
+                const singletonKey = `${c.tenantId}:${c.id}`;
+                await ctx.jobs.send(ARGOCD_RECONCILE_JOB, payload, { singletonKey });
+                if (options.scheduleWatch !== false) {
+                  await ctx.jobs.send(ARGOCD_WATCH_JOB, payload, { singletonKey });
+                }
+              }
+              return;
+            }
+            const connection = await activeConnection(ctx, job);
+            if (connection) await reconcileArgoCdConnection(ctx, connection, options);
+          },
+        },
+        {
+          name: ARGOCD_WATCH_JOB,
+          retryLimit: 100,
+          handler: async (data) => {
+            const job = data as ArgoCdCaptureJob;
+            const connection = await activeConnection(ctx, job);
+            if (!connection) return;
+            await watchArgoCdConnection(ctx, connection, options);
+            if (options.requeueWatch !== false && (await activeConnection(ctx, job))) {
+              await ctx.jobs.send(ARGOCD_WATCH_JOB, job, {
+                singletonKey: `${connection.tenantId}:${connection.id}`,
+              });
+            }
+          },
+        },
+      ];
+    },
+
     health(ctx: ServerContext): ConnectorHealthHooks {
       return {
         source: CONNECTOR_SOURCE,
@@ -394,10 +507,130 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
             await handle.close();
           }
         },
-        // backfill: AFE-10 (re-list applications and diff operation history).
+        /**
+         * After a gap: re-list applications and diff operation state and
+         * history against the stored state; anything missed is ingested with
+         * observation.method "reconciliation". ArgoCD has no time-range query,
+         * so `from`/`to` are not needed: history keeps the last
+         * `revisionHistoryLimit` (default 10) successful syncs; failed syncs
+         * other than the latest operation are not recoverable.
+         */
+        async backfill(connection, _from, _to) {
+          await reconcileArgoCdConnection(ctx, connection, options);
+        },
       };
     },
   };
+}
+
+async function activeConnection(
+  ctx: ServerContext,
+  job: ArgoCdCaptureJob,
+): Promise<Connection | null> {
+  if (!job.tenantId || !job.connectionId) return null;
+  const c = await getConnection(ctx.pool, job.tenantId, job.connectionId);
+  return c && c.source === CONNECTOR_SOURCE && c.status === "active" ? c : null;
+}
+
+function captureFor(
+  ctx: ServerContext,
+  connection: Connection,
+  handle: ArgoCdClientHandle,
+  options: ArgoCdModuleOptions,
+): ArgoCdCapture {
+  const hook = options.onObservation ?? reportObservationToHealth;
+  return new ArgoCdCapture({
+    tenantId: connection.tenantId,
+    connectionId: connection.id,
+    client: handle.client,
+    sink: ctx.sink,
+    store: createPgCaptureStateStore(ctx.pool, connection.tenantId, connection.id),
+    onObservation: (o) => hook(ctx, connection, o),
+    log: ctx.log,
+    ...(options.now ? { now: options.now } : {}),
+  });
+}
+
+async function reportMissingToken(
+  ctx: ServerContext,
+  connection: Connection,
+  options: ArgoCdModuleOptions,
+  via: "stream" | "poll",
+): Promise<void> {
+  const hook = options.onObservation ?? reportObservationToHealth;
+  await hook(ctx, connection, {
+    ok: false,
+    via,
+    at: options.now?.() ?? new Date(),
+    reason: "revoked",
+    detail: "the connection has no API token",
+  });
+}
+
+/** One reconciliation pass for a connection (`argocd.reconcile`, backfill). */
+export async function reconcileArgoCdConnection(
+  ctx: ServerContext,
+  connection: Connection,
+  options: ArgoCdModuleOptions = {},
+): Promise<CaptureCounts | null> {
+  const handle = await argocdClientForConnection(ctx, connection, options);
+  if (!handle) {
+    await reportMissingToken(ctx, connection, options, "poll");
+    return null;
+  }
+  try {
+    const counts = await captureFor(ctx, connection, handle, options).reconcile();
+    ctx.log.info(
+      { source: CONNECTOR_SOURCE, connectionId: connection.id, ...counts },
+      "argocd reconciliation finished",
+    );
+    return counts;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Connections whose watch runs in this process (avoids duplicate watches per worker). */
+const runningWatches = new Set<string>();
+
+/** One watch slice for a connection (`argocd.watch`). */
+export async function watchArgoCdConnection(
+  ctx: ServerContext,
+  connection: Connection,
+  options: ArgoCdModuleOptions = {},
+  signal?: AbortSignal,
+): Promise<void> {
+  const key = `${connection.tenantId}:${connection.id}`;
+  if (runningWatches.has(key)) return;
+  runningWatches.add(key);
+  try {
+    const handle = await argocdClientForConnection(ctx, connection, options);
+    if (!handle) {
+      await reportMissingToken(ctx, connection, options, "stream");
+      return;
+    }
+    try {
+      const summary = await captureFor(ctx, connection, handle, options).watch({
+        durationMs: options.watchSliceMs ?? 10 * 60_000,
+        ...(signal ? { signal } : {}),
+        ...(options.watchBackoffMs ? { backoffMs: options.watchBackoffMs } : {}),
+      });
+      ctx.log.info(
+        {
+          source: CONNECTOR_SOURCE,
+          connectionId: connection.id,
+          connects: summary.connects,
+          failures: summary.failures,
+          events: summary.events,
+        },
+        "argocd watch slice finished",
+      );
+    } finally {
+      await handle.close();
+    }
+  } finally {
+    runningWatches.delete(key);
+  }
 }
 
 export const argocdModule: ConnectorModule = createArgoCdModule();

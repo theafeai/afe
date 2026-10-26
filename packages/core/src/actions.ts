@@ -75,6 +75,10 @@ export const ACTIONS = {
   ARGOCD_APPLICATION_UPDATED: "argocd.application.updated",
   ARGOCD_APPLICATION_DELETED: "argocd.application.deleted",
   ARGOCD_HEALTH_CHANGED: "argocd.health.changed",
+  /** A refresh (normal/hard) was requested via the refresh annotation. */
+  ARGOCD_APPLICATION_REFRESHED: "argocd.application.refreshed",
+  /** `status.sync.status` changed (Synced/OutOfSync/Unknown). */
+  ARGOCD_SYNC_STATUS_CHANGED: "argocd.sync_status.changed",
 
   // --- Delivery configuration changes that can enable or bypass deployments ---
   /** A deployment-relevant setting changed (environment, protection rule, env vars...). */

@@ -8,6 +8,7 @@ import type {
   ArgoCdApplicationList,
   ArgoCdApplicationWatchEvent,
   ArgoCdCanIResponse,
+  ArgoCdKubeEventList,
   ArgoCdUserInfo,
   ArgoCdVersion,
 } from "./types.ts";
@@ -66,6 +67,17 @@ export interface WatchApplicationsOptions {
   /** Partial fields, e.g. `["result.type", "result.application.metadata"]`. */
   fields?: string[];
   signal?: AbortSignal;
+  /**
+   * Called once the server has accepted the watch (response headers
+   * received), before any event. AFE-10 starts a catch-up reconciliation
+   * here, so nothing that changed while disconnected is missed.
+   */
+  onOpen?: () => void;
+}
+
+export interface ListApplicationEventsOptions {
+  appNamespace?: string;
+  project?: string;
 }
 
 const sleepDefault = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -152,6 +164,26 @@ export class ArgoCdClient {
   }
 
   /**
+   * `GET /api/v1/applications/{name}/events`: Kubernetes Events about the
+   * Application object itself (who created/updated/synced/rolled it back).
+   * Covered by `applications, get`. Kubernetes keeps events for about an hour
+   * (`--event-ttl`), so this is only useful shortly after a change.
+   */
+  listApplicationEvents(
+    name: string,
+    options: ListApplicationEventsOptions = {},
+  ): Promise<ArgoCdKubeEventList> {
+    const q = new URLSearchParams();
+    if (options.appNamespace) q.set("appNamespace", options.appNamespace);
+    if (options.project) q.set("project", options.project);
+    const qs = q.toString();
+    return this.#getJson<ArgoCdKubeEventList>(
+      `/api/v1/applications/${encodeURIComponent(name)}/events${qs ? `?${qs}` : ""}`,
+      "list application events",
+    );
+  }
+
+  /**
    * `GET /api/v1/stream/applications`: watch Application changes (AFE-10).
    * Yields `{ type, application }` until the server closes the stream or
    * `signal` aborts. Not retried here: the caller reconnects with the last
@@ -172,6 +204,7 @@ export class ArgoCdClient {
       `/api/v1/stream/applications${qs ? `?${qs}` : ""}`,
       "watch applications",
       options.signal,
+      options.onOpen,
     )) {
       const result = (item as { result?: ArgoCdApplicationWatchEvent }).result;
       if (result && typeof result === "object" && result.application) yield result;
@@ -184,8 +217,14 @@ export class ArgoCdClient {
    * newline-delimited JSON if the server answers with plain JSON. Frames of the
    * form `{"error": {...}}` end the stream with an `ArgoCdError`.
    */
-  async *streamJson(path: string, what: string, signal?: AbortSignal): AsyncGenerator<unknown> {
+  async *streamJson(
+    path: string,
+    what: string,
+    signal?: AbortSignal,
+    onOpen?: () => void,
+  ): AsyncGenerator<unknown> {
     const res = await this.#send(path, what, { stream: true, signal, accept: "text/event-stream" });
+    onOpen?.();
     if (!res.body) return;
     const contentType = res.headers.get("content-type") ?? "";
     const frames: AsyncIterable<unknown> = contentType.includes("text/event-stream")

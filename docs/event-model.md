@@ -136,6 +136,8 @@ here. Never rename or remove one: stored events keep their names.
 | `argocd.sync.terminated`                               | argocd         | Sync operation was terminated.                                                     |
 | `argocd.application.created` / `.updated` / `.deleted` | argocd         | Application spec created, changed (target revision, source, sync policy), deleted. |
 | `argocd.health.changed`                                | argocd         | Application health status changed; new status in `data`.                           |
+| `argocd.application.refreshed`                         | argocd         | A refresh (normal/hard) was requested; best-effort, the annotation is short-lived. |
+| `argocd.sync_status.changed`                           | argocd         | Application sync status changed (Synced/OutOfSync/Unknown); new status in `data`.  |
 | `configuration.changed`                                | any            | A deployment-relevant setting changed (environment protection, env vars, ...).     |
 | `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                         |
 | `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                   |
