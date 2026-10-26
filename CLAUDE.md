@@ -16,3 +16,17 @@ Read `docs/decisions/` first (ADRs are binding). Key points:
   Tests must not call real external APIs; use recorded fixtures or local fakes.
 - Before committing: `pnpm lint && pnpm typecheck && pnpm test`. Run `pnpm format` to fix style.
 - Commits must be signed off (`git commit -s`).
+
+## Server and connector wiring
+
+- Connections: every connector registers its connections in the shared `connections`
+  table (`upsertConnection` etc. in `@afe/db`, model in `@afe/core` `connection.ts`).
+  Secrets go in `credentials` and are linked with `attachConnectionCredential`.
+- Connector packages hold pure logic (API clients, payload mapping, signature checks).
+  Server wiring lives in `apps/server/src/connectors/<source>.ts` as a `ConnectorModule`
+  (routes, jobs, health hooks), registered in `apps/server/src/connectors/index.ts`.
+- Webhook routes: `POST /webhooks/<source>`; `req.rawBody` holds the exact bytes for
+  signature verification. Verify, record the delivery (replay guard), enqueue a job,
+  return 2xx fast. Workers map and ingest via `ctx.sink`.
+- Jobs: `JobDefinition` (name prefixed by owner, optional cron `schedule`). Tests use
+  `InlineJobQueue` (`register` + `drain`); production uses pg-boss.

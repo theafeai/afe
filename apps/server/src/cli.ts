@@ -1,6 +1,8 @@
 import { createPool, migrate, reencryptAllTenants } from "@afe/db";
 import { EnvKeyProvider } from "@afe/core/security";
-import { createAfe } from "./app.ts";
+import { buildAfe } from "./app.ts";
+import { defaultModules } from "./connectors/index.ts";
+import { PgBossJobRunner } from "./jobs.ts";
 import { loadConfig } from "./config.ts";
 
 const USAGE = "usage: afe <all|server|worker|migrate|reencrypt-credentials>";
@@ -29,10 +31,31 @@ async function main(argv: string[]): Promise<void> {
   if (!["all", "server", "worker"].includes(role)) throw new Error(USAGE);
 
   await migrate(pool);
+  const jobs = new PgBossJobRunner(config.databaseUrl);
+  const { app, jobDefinitions } = await buildAfe({
+    pool,
+    logLevel: config.logLevel,
+    config,
+    keys: EnvKeyProvider.fromEnv(),
+    jobs,
+    connectors: defaultModules,
+  });
+  // Every role creates queues and schedules; only workers consume them.
+  await jobs.register(jobDefinitions, { work: role === "all" || role === "worker" });
   if (role === "all" || role === "server") {
-    const app = await createAfe({ pool, logLevel: config.logLevel });
     await app.listen({ host: config.host, port: config.port });
+  } else {
+    await app.ready();
   }
+
+  const shutdown = async () => {
+    await app.close();
+    await jobs.stop();
+    await pool.end();
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => void shutdown());
+  process.once("SIGINT", () => void shutdown());
 }
 
 main(process.argv.slice(2)).catch((err: unknown) => {

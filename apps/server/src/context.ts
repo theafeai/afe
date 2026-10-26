@@ -1,0 +1,32 @@
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type pg from "pg";
+import type { ConnectorHealthHooks, EventSink } from "@afe/core";
+import type { KeyProvider } from "@afe/core/security";
+import type { AfeConfig } from "./config.ts";
+import type { JobDefinition, JobQueue } from "./jobs.ts";
+
+/** Shared services handed to every connector module and server feature. */
+export interface ServerContext {
+  pool: pg.Pool;
+  /** Append events to the audit log. Connectors never write events directly. */
+  sink: EventSink;
+  keys: KeyProvider;
+  jobs: JobQueue;
+  config: AfeConfig;
+  log: FastifyBaseLogger;
+}
+
+/**
+ * A connector's server-side wiring. The pure logic lives in the connector
+ * package (`@afe/connector-*`); a module adapts it to HTTP routes and jobs.
+ * Register modules in `createAfe({ connectors })`.
+ */
+export interface ConnectorModule {
+  source: string;
+  /** HTTP routes: webhook receivers under `/webhooks/<source>`, API under `/api/connections/<source>`. */
+  routes?(app: FastifyInstance, ctx: ServerContext): void | Promise<void>;
+  /** Background jobs (webhook processing, polling, reconciliation). */
+  jobs?(ctx: ServerContext): JobDefinition[];
+  /** Probe and backfill hooks used by connection health (AFE-13). */
+  health?(ctx: ServerContext): ConnectorHealthHooks;
+}

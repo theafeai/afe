@@ -8,3 +8,4 @@ export * from "./event.ts";
 export * from "./hash-chain.ts";
 export * from "./ingestion.ts";
 export * from "./observation-gap.ts";
+export * from "./connection.ts";

@@ -31,3 +31,17 @@ export {
   type Queryable,
   type VerifyTenantChainOptions,
 } from "./event-store.ts";
+export {
+  attachConnectionCredential,
+  findConnectionByExternalId,
+  getConnection,
+  getConnectionCredentialIds,
+  listActiveConnections,
+  listConnections,
+  resolveConnectionBySourceIdentity,
+  setConnectionStatus,
+  updateConnectionConfig,
+  upsertConnection,
+  type ListConnectionsOptions,
+  type UpsertConnectionInput,
+} from "./connections.ts";
