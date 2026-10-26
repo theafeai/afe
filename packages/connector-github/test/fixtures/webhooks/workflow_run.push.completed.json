@@ -1,0 +1,139 @@
+{
+  "event": "workflow_run",
+  "payload": {
+    "action": "completed",
+    "workflow_run": {
+      "id": 9100001,
+      "name": "Deploy",
+      "node_id": "WFR_1",
+      "head_branch": "main",
+      "head_sha": "8f3c2a1b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+      "path": ".github/workflows/deploy.yml",
+      "display_title": "Bump API version",
+      "run_number": 412,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "workflow_id": 7700001,
+      "check_suite_id": 30001,
+      "url": "https://api.github.com/repos/acme/api/actions/runs/9100001",
+      "html_url": "https://github.com/acme/api/actions/runs/9100001",
+      "pull_requests": [],
+      "created_at": "2026-10-26T10:00:00Z",
+      "updated_at": "2026-10-26T10:04:12Z",
+      "actor": {
+        "login": "alice",
+        "id": 501,
+        "node_id": "U_501",
+        "avatar_url": "https://avatars.githubusercontent.com/u/501?v=4",
+        "url": "https://api.github.com/users/alice",
+        "html_url": "https://github.com/alice",
+        "type": "User",
+        "site_admin": false
+      },
+      "triggering_actor": {
+        "login": "alice",
+        "id": 501,
+        "node_id": "U_501",
+        "avatar_url": "https://avatars.githubusercontent.com/u/501?v=4",
+        "url": "https://api.github.com/users/alice",
+        "html_url": "https://github.com/alice",
+        "type": "User",
+        "site_admin": false
+      },
+      "run_attempt": 1,
+      "referenced_workflows": [],
+      "run_started_at": "2026-10-26T10:00:05Z",
+      "jobs_url": "https://api.github.com/repos/acme/api/actions/runs/9100001/jobs",
+      "head_commit": {
+        "id": "8f3c2a1b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+        "tree_id": "9999999999999999999999999999999999999999",
+        "message": "Bump API version",
+        "timestamp": "2026-10-26T09:58:30Z",
+        "author": {
+          "name": "Alice Example",
+          "email": "alice@example.com"
+        },
+        "committer": {
+          "name": "GitHub",
+          "email": "noreply@github.com"
+        }
+      },
+      "repository": {
+        "id": 11,
+        "name": "api",
+        "full_name": "acme/api",
+        "url": "https://api.github.com/repos/acme/api",
+        "html_url": "https://github.com/acme/api",
+        "private": true,
+        "owner": {
+          "login": "acme",
+          "id": 9001
+        }
+      },
+      "head_repository": {
+        "id": 11,
+        "name": "api",
+        "full_name": "acme/api",
+        "url": "https://api.github.com/repos/acme/api",
+        "html_url": "https://github.com/acme/api",
+        "private": true,
+        "owner": {
+          "login": "acme",
+          "id": 9001
+        }
+      }
+    },
+    "workflow": {
+      "id": 7700001,
+      "name": "Deploy",
+      "path": ".github/workflows/deploy.yml",
+      "state": "active"
+    },
+    "sender": {
+      "login": "alice",
+      "id": 501,
+      "node_id": "U_501",
+      "avatar_url": "https://avatars.githubusercontent.com/u/501?v=4",
+      "url": "https://api.github.com/users/alice",
+      "html_url": "https://github.com/alice",
+      "type": "User",
+      "site_admin": false
+    },
+    "repository": {
+      "id": 11,
+      "node_id": "R_11",
+      "name": "api",
+      "full_name": "acme/api",
+      "private": true,
+      "owner": {
+        "login": "acme",
+        "id": 9001,
+        "node_id": "U_9001",
+        "avatar_url": "https://avatars.githubusercontent.com/u/9001?v=4",
+        "url": "https://api.github.com/users/acme",
+        "html_url": "https://github.com/acme",
+        "type": "Organization",
+        "site_admin": false
+      },
+      "html_url": "https://github.com/acme/api",
+      "url": "https://api.github.com/repos/acme/api",
+      "default_branch": "main",
+      "visibility": "private",
+      "created_at": "2024-01-10T09:00:00Z",
+      "updated_at": "2026-10-20T09:00:00Z",
+      "pushed_at": "2026-10-26T09:59:00Z"
+    },
+    "organization": {
+      "login": "acme",
+      "id": 9001,
+      "node_id": "O_9001",
+      "url": "https://api.github.com/orgs/acme",
+      "description": null
+    },
+    "installation": {
+      "id": 4242,
+      "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNDI0Mg=="
+    }
+  }
+}

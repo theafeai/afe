@@ -81,6 +81,52 @@ export interface GitHubWorkflowRun {
   repository?: { id: number; full_name: string };
   /** Reusable workflows referenced by the run. */
   referenced_workflows?: { path: string; sha: string; ref?: string }[];
+  /** Pull requests the run is associated with (empty for fork PRs). */
+  pull_requests?: GitHubRunPullRequest[];
+  status_reason?: string;
+}
+
+/** Minimal pull request reference on workflow runs (`workflow_run.pull_requests[]`). */
+export interface GitHubRunPullRequest {
+  id?: number;
+  number: number;
+  url?: string;
+  head?: { ref?: string; sha?: string; repo?: { id?: number; url?: string; name?: string } };
+  base?: { ref?: string; sha?: string; repo?: { id?: number; url?: string; name?: string } };
+}
+
+/** A workflow job (`workflow_job` webhook, REST `GET /repos/{o}/{r}/actions/jobs/{id}`). */
+export interface GitHubWorkflowJob {
+  id: number;
+  run_id: number;
+  run_attempt?: number;
+  workflow_name?: string | null;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  head_sha: string;
+  head_branch?: string | null;
+  html_url?: string;
+  created_at?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  labels?: string[];
+  runner_id?: number | null;
+  runner_name?: string | null;
+  runner_group_id?: number | null;
+  runner_group_name?: string | null;
+}
+
+/** Repository object as included in repository webhooks (subset). */
+export interface GitHubWebhookRepository {
+  id: number;
+  name?: string;
+  full_name: string;
+  html_url?: string;
+  default_branch?: string;
+  owner?: { id: number; login: string };
+  /** Push events: epoch seconds; other events: ISO string. */
+  pushed_at?: number | string | null;
 }
 
 export interface GitHubDeployment {
@@ -98,6 +144,9 @@ export interface GitHubDeployment {
   production_environment?: boolean;
   performed_via_github_app?: { id: number; slug?: string; name?: string } | null;
   statuses_url?: string;
+  url?: string;
+  /** Free-form deployment payload set by the creator. Kept in the raw payload only. */
+  payload?: unknown;
 }
 
 export interface GitHubDeploymentStatus {
