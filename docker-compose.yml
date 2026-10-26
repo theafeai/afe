@@ -1,0 +1,88 @@
+# Afe self-hosting quickstart: docs/self-hosting/quickstart.md
+#
+#   mkdir -p secrets && chmod 700 secrets
+#   openssl rand -base64 32 > secrets/afe_encryption_key
+#   cp .env.example .env        # then set POSTGRES_PASSWORD (and pin AFE_VERSION)
+#   docker compose up -d
+#
+# Services:
+#   postgres    PostgreSQL 16, data in the named volume `afe-pgdata`
+#   afe-server  HTTP API, webhook receivers and web UI (role `server`)
+#   afe-worker  background jobs: webhook processing, polling, reconciliation (role `worker`)
+#
+# Migrations are forward-only and run automatically when afe-server or
+# afe-worker starts (serialised by a database lock). Take a backup before
+# upgrading: docs/self-hosting/operations.md.
+#
+# Scaling: run more workers with `docker compose up -d --scale afe-worker=3`.
+# For a single-process install, replace both afe services with one service
+# running the `all` role (the image default).
+
+name: afe
+
+x-afe: &afe
+  image: ${AFE_IMAGE:-ghcr.io/theafeai/afe}:${AFE_VERSION:-latest}
+  # To build from this checkout instead of pulling: uncomment and run
+  # `docker compose up -d --build`.
+  # build: .
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment:
+    DATABASE_URL: postgres://afe:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/afe
+    AFE_ENCRYPTION_KEY_FILE: /run/secrets/afe_encryption_key
+    AFE_LOG_LEVEL: ${AFE_LOG_LEVEL:-info}
+    AFE_ALLOW_PRIVATE_NETWORK_TARGETS: ${AFE_ALLOW_PRIVATE_NETWORK_TARGETS:-false}
+    AFE_ALLOW_INSECURE_HTTP_TARGETS: ${AFE_ALLOW_INSECURE_HTTP_TARGETS:-false}
+  # Further settings (e.g. connector settings) are read from .env; see
+  # docs/self-hosting/configuration.md. Values under `environment` win.
+  env_file: .env
+  secrets:
+    - afe_encryption_key
+  # Hardening: nothing is written to the image filesystem at runtime.
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: afe
+      POSTGRES_DB: afe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - afe-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afe -d afe"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Not published to the host. For backups use `docker compose exec postgres pg_dump ...`.
+
+  afe-server:
+    <<: *afe
+    command: ["server"]
+    ports:
+      # Bound to localhost only. Put a TLS reverse proxy or tunnel in front to
+      # receive webhooks (docs/self-hosting/webhooks-behind-firewall.md).
+      - "127.0.0.1:${AFE_HTTP_PORT:-8080}:8080"
+
+  afe-worker:
+    <<: *afe
+    command: ["worker"]
+    # The worker serves no HTTP, so the image's /healthz check does not apply.
+    healthcheck:
+      disable: true
+
+secrets:
+  afe_encryption_key:
+    file: ./secrets/afe_encryption_key
+
+volumes:
+  afe-pgdata:

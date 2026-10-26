@@ -21,14 +21,26 @@ export interface AfeConfig {
   publicUrl?: string;
   /** Vercel Integration (OAuth) settings; absent = only the access-token fallback is available. */
   vercel?: VercelIntegrationConfig;
+  /** Directory with the built web UI to serve (`AFE_WEB_DIR`); unset serves no UI. */
+  webDir?: string;
 }
 
-/** Reads `NAME`, or the contents of the file named by `NAME_FILE` (Docker/K8s secrets). */
+/**
+ * Reads `name` or `name_FILE` (path to a file holding the value, e.g. a Docker
+ * or Kubernetes secret). Setting both is an error. Values are never echoed.
+ */
 export function readSecretEnv(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const inline = env[name] === "" ? undefined : env[name];
   const file = env[`${name}_FILE`];
-  if (file) return readFileSync(file, "utf8").trim();
-  const value = env[name];
-  return value === undefined || value === "" ? undefined : value;
+  if (inline && file) throw new Error(`set only one of ${name} and ${name}_FILE`);
+  if (file) {
+    try {
+      return readFileSync(file, "utf8").trim();
+    } catch {
+      throw new Error(`${name}_FILE: cannot read ${file}`);
+    }
+  }
+  return inline;
 }
 
 function loadVercelConfig(env: NodeJS.ProcessEnv): VercelIntegrationConfig | undefined {
@@ -46,8 +58,8 @@ function loadVercelConfig(env: NodeJS.ProcessEnv): VercelIntegrationConfig | und
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
-  const databaseUrl = env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is required");
+  const databaseUrl = readSecretEnv(env, "DATABASE_URL");
+  if (!databaseUrl) throw new Error("DATABASE_URL (or DATABASE_URL_FILE) is required");
   const publicUrl = env.AFE_PUBLIC_URL?.replace(/\/+$/, "") || undefined;
   const vercel = loadVercelConfig(env);
   return {
@@ -59,5 +71,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
     allowInsecureHttpTargets: env.AFE_ALLOW_INSECURE_HTTP_TARGETS === "true",
     ...(publicUrl ? { publicUrl } : {}),
     ...(vercel ? { vercel } : {}),
+    ...(env.AFE_WEB_DIR ? { webDir: env.AFE_WEB_DIR } : {}),
   };
 }
