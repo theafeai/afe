@@ -5,6 +5,7 @@
     "packages/*/test",
     "apps/server/src",
     "apps/server/test",
+    "docs/research/prototypes",
     "vitest.config.ts"
   ]
 }
