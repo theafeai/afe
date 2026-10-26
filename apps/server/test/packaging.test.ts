@@ -142,3 +142,27 @@ describe("web UI (AFE_WEB_DIR)", () => {
     await app.close();
   });
 });
+
+describe("server bundle dependencies", () => {
+  it("lists every third-party dependency of the workspace packages it bundles", async () => {
+    // tsup bundles @afe/* and keeps third-party packages external, so they must
+    // be installed with the server (see tsup.config.ts).
+    const root = path.resolve(import.meta.dirname, "../../..");
+    const read = async (p: string) =>
+      JSON.parse(await import("node:fs/promises").then((fs) => fs.readFile(p, "utf8"))) as {
+        dependencies?: Record<string, string>;
+      };
+    const server = Object.keys(
+      (await read(path.join(root, "apps/server/package.json"))).dependencies ?? {},
+    );
+    const missing: string[] = [];
+    for (const dir of await readdir(path.join(root, "packages"))) {
+      const deps =
+        (await read(path.join(root, "packages", dir, "package.json"))).dependencies ?? {};
+      for (const dep of Object.keys(deps)) {
+        if (!dep.startsWith("@afe/") && !server.includes(dep)) missing.push(`${dir}: ${dep}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+});
