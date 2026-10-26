@@ -4,11 +4,22 @@ import { buildAfe } from "./app.ts";
 import { defaultModules } from "./connectors/index.ts";
 import { PgBossJobRunner } from "./jobs.ts";
 import { loadConfig } from "./config.ts";
+import { runExportKeygen, runVerifyExport } from "./verify-export-cli.ts";
 
-const USAGE = "usage: afe <all|server|worker|migrate|reencrypt-credentials>";
+const USAGE =
+  "usage: afe <all|server|worker|migrate|reencrypt-credentials|verify-export|export-keygen>";
 
 async function main(argv: string[]): Promise<void> {
   const role = argv[0] ?? "all";
+  // Offline commands: no database or config needed.
+  if (role === "verify-export") {
+    process.exitCode = await runVerifyExport(argv.slice(1));
+    return;
+  }
+  if (role === "export-keygen") {
+    process.exitCode = runExportKeygen();
+    return;
+  }
   const config = loadConfig();
   const pool = createPool(config.databaseUrl);
 

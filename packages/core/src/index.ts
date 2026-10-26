@@ -9,3 +9,7 @@ export * from "./hash-chain.ts";
 export * from "./ingestion.ts";
 export * from "./observation-gap.ts";
 export * from "./connection.ts";
+// Audit query filter, tenant resolution and verifiable export (AFE-14).
+export * from "./event-filter.ts";
+export * from "./tenant.ts";
+export * from "./export/index.ts";

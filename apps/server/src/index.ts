@@ -9,3 +9,10 @@ export {
   type JobQueue,
   type SendOptions,
 } from "./jobs.ts";
+export {
+  createEventsApiModule,
+  deploymentRow,
+  eventsApiModule,
+  provenanceOf,
+  type EventsApiOptions,
+} from "./api/events.ts";
