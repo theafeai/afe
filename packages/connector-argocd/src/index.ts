@@ -40,6 +40,7 @@ export {
   type ListApplicationsOptions,
   type GetApplicationOptions,
   type WatchApplicationsOptions,
+  type ListApplicationEventsOptions,
 } from "./client.ts";
 export {
   testArgoCdConnection,
@@ -55,3 +56,4 @@ export {
   type ArgoCdClientHandle,
   type CreateClientOptions,
 } from "./connect.ts";
+export * from "./capture/index.ts";
