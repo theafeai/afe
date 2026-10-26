@@ -5,9 +5,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
   },
   "dependencies": {
-    "@afe/core": "workspace:*"
+    "@afe/core": "workspace:*",
+    "undici": "^7.30.1"
   }
 }
