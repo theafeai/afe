@@ -76,6 +76,12 @@ export const ACTIONS = {
   CONNECTION_CREATED: "connection.created",
   CONNECTION_UPDATED: "connection.updated",
   CONNECTION_DELETED: "connection.deleted",
+  /** Access was revoked at the source (e.g. GitHub App uninstalled). */
+  CONNECTION_REVOKED: "connection.revoked",
+  /** Access was suspended at the source (e.g. GitHub App installation suspended). */
+  CONNECTION_SUSPENDED: "connection.suspended",
+  /** A suspended connection was resumed at the source. */
+  CONNECTION_RESUMED: "connection.resumed",
 } as const;
 
 export type KnownAction = (typeof ACTIONS)[keyof typeof ACTIONS];

@@ -135,6 +135,8 @@ here. Never rename or remove one: stored events keep their names.
 | `configuration.changed`                                | any            | A deployment-relevant setting changed (environment protection, env vars, ...).     |
 | `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                         |
 | `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                   |
+| `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                    |
+| `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).            |
 
 The validator accepts any action that matches the pattern, so connectors can
 ship a new action before the shared list is updated; `isKnownAction()` tells
