@@ -46,6 +46,13 @@ export interface GitHubRequest {
   token?: string | Secret<string>;
   /** Rate-limit bucket, e.g. "app" or "installation:<id>". */
   bucket?: string;
+  /**
+   * Conditional request (AFE-8): sent as `If-None-Match`. A `304 Not Modified`
+   * answer is then returned (status 304, `data` null) instead of raising, and
+   * does not count against the primary rate limit.
+   * https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#use-conditional-requests-if-appropriate
+   */
+  ifNoneMatch?: string;
 }
 
 export interface GitHubResponse<T> {
@@ -87,6 +94,8 @@ export class GitHubNetworkError extends Error {
 interface RateState {
   remaining: number;
   resetAt: number;
+  /** `x-ratelimit-limit`, when GitHub sent it. */
+  limit?: number;
 }
 
 const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
@@ -114,9 +123,15 @@ export class GitHubHttp {
   }
 
   /** Last known rate-limit state of a bucket (for health reporting). */
-  rateLimit(bucket: string): { remaining: number; resetAt: Date } | null {
+  rateLimit(bucket: string): { remaining: number; resetAt: Date; limit?: number } | null {
     const s = this.#rate.get(bucket);
-    return s ? { remaining: s.remaining, resetAt: new Date(s.resetAt) } : null;
+    return s
+      ? {
+          remaining: s.remaining,
+          resetAt: new Date(s.resetAt),
+          ...(s.limit !== undefined ? { limit: s.limit } : {}),
+        }
+      : null;
   }
 
   url(path: string, query?: GitHubRequest["query"]): string {
@@ -143,6 +158,7 @@ export class GitHubHttp {
       "x-github-api-version": GITHUB_API_VERSION,
     };
     if (req.token !== undefined) headers.authorization = `Bearer ${revealIfSecret(req.token)}`;
+    if (req.ifNoneMatch) headers["if-none-match"] = req.ifNoneMatch;
     let body: string | undefined;
     if (req.body !== undefined) {
       headers["content-type"] = "application/json";
@@ -173,6 +189,10 @@ export class GitHubHttp {
         await this.#sleep(500 * 2 ** attempt);
         continue;
       }
+      if (res.status === 304 && req.ifNoneMatch) {
+        await res.body?.cancel().catch(() => {});
+        return { status: 304, data: null as T, headers: res.headers };
+      }
       return this.#handle<T>(req.method, url, res);
     }
   }
@@ -180,8 +200,13 @@ export class GitHubHttp {
   #recordRate(bucket: string, h: Headers): void {
     const remaining = h.get("x-ratelimit-remaining");
     const reset = h.get("x-ratelimit-reset");
+    const limit = h.get("x-ratelimit-limit");
     if (remaining !== null && reset !== null && /^\d+$/.test(remaining) && /^\d+$/.test(reset)) {
-      this.#rate.set(bucket, { remaining: Number(remaining), resetAt: Number(reset) * 1000 });
+      this.#rate.set(bucket, {
+        remaining: Number(remaining),
+        resetAt: Number(reset) * 1000,
+        ...(limit !== null && /^\d+$/.test(limit) ? { limit: Number(limit) } : {}),
+      });
     }
   }
 

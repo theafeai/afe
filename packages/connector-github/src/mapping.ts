@@ -935,7 +935,90 @@ function mapProtectionRule(
   });
 }
 
-function pushEvent(
+/**
+ * `deployment.review_approved` / `.review_rejected` from one entry of REST
+ * `GET /repos/{o}/{r}/actions/runs/{id}/approvals` (AFE-8 reconciliation).
+ * Same key, target and correlation as the `deployment_review` webhook.
+ * The REST entry has no timestamp, so the caller passes `occurredAt` (an
+ * approximation, documented in docs/connectors/github.md "Reconciliation"),
+ * and no run attempt, so the caller must only use it when the attempt is
+ * unambiguous.
+ */
+export function deploymentReviewApprovalEvent(
+  approval: { state: string; user: GitHubUser | null; comment?: string | null },
+  environmentNames: string[],
+  run: GitHubWorkflowRun,
+  repo: GitHubWebhookRepository,
+  occurredAt: Date | string,
+  ctx: ObservationContext,
+): CanonicalEventInputLike {
+  const state = approval.state;
+  if (state !== "approved" && state !== "rejected") throw new GitHubPayloadError("state");
+  const environments = [...new Set(environmentNames.filter((e) => e.length > 0))].sort();
+  if (environments.length === 0) throw new GitHubPayloadError("environments[].name");
+  const reviewer = githubActor(approval.user);
+  if (!reviewer?.id) throw new GitHubPayloadError("user.id");
+  return {
+    ...base(ctx),
+    sourceEventId: deploymentReviewEventId({
+      runId: run.id,
+      runAttempt: run.run_attempt ?? null,
+      environments,
+      reviewerId: reviewer.id,
+      state,
+    }),
+    action:
+      state === "approved"
+        ? ACTIONS.DEPLOYMENT_REVIEW_APPROVED
+        : ACTIONS.DEPLOYMENT_REVIEW_REJECTED,
+    actor: actorWith(reviewer),
+    target: {
+      type: "workflow_run",
+      id: `${repo.full_name}/actions/runs/${run.id}`,
+      name: run.name ?? run.path ?? null,
+      url: run.html_url ?? null,
+      repository: repo.full_name,
+      environment: environments.length === 1 ? environments[0]! : null,
+      ref: run.head_branch ?? null,
+    },
+    trigger: { type: "manual", sourceValue: `deployment_review.${state}` },
+    outcome: "none",
+    occurredAt,
+    correlation: { ...workflowRunCorrelation(run, repo), environments },
+    data: {
+      run: runSummary(run),
+      environments,
+      jobs: [],
+      state,
+      hasComment: typeof approval.comment === "string" && approval.comment.length > 0,
+    },
+  };
+}
+
+/**
+ * A `pull_request` payload (`{ action, pull_request, sender }`) as a canonical
+ * event, or null for actions Afe does not record. Used for the repository
+ * events API (AFE-8), whose `PullRequestEvent` payload has the same shape.
+ */
+export function pullRequestEvent(
+  payload: Record<string, unknown>,
+  repo: GitHubWebhookRepository,
+  ctx: ObservationContext,
+): CanonicalEventInputLike | null {
+  const action = typeof payload.action === "string" ? payload.action : null;
+  const result = mapPullRequest(
+    payload,
+    repo,
+    action,
+    ctx,
+    (reason) => ({ status: "ignored", reason }),
+    (...events) => ({ status: "mapped", events, repositoryId: repo.id }),
+  );
+  return result.status === "mapped" ? (result.events[0] ?? null) : null;
+}
+
+/** A `push` payload as a canonical event (`ref.pushed` / `ref.created` / `ref.deleted`). */
+export function pushEvent(
   p: Record<string, unknown>,
   repo: GitHubWebhookRepository,
   ctx: ObservationContext,

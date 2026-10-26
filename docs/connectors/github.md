@@ -1,6 +1,7 @@
 # GitHub connector
 
-- Issues: AFE-6 (App and install flow), AFE-7 (event capture, below). Reconciliation and backfill: AFE-8.
+- Issues: AFE-6 (App and install flow), AFE-7 (event capture, below), AFE-8
+  ([reconciliation and backfill](#reconciliation)).
 - Code: `packages/connector-github` (pure logic) and `apps/server/src/connectors/github.ts`
   (routes, jobs, health hooks).
 
@@ -255,6 +256,210 @@ https://docs.github.com/en/rest/deployments). Check:
   by `workflow_run`, an environment with required reviewers approved once and rejected
   once, a REST-created deployment) and compare the events with the fixtures.
 
+## Reconciliation
+
+- Issue: AFE-8. Code: `packages/connector-github/src/reconcile.ts` (pure pass over one
+  repository, budget maths), the `github.reconcile`, `github.reconcile-repo` and
+  `github.backfill` jobs and the `backfill` health hook in
+  `apps/server/src/connectors/github.ts`, migration `0013_github_poll_state.sql`.
+- Tests: `packages/connector-github/test/reconcile.test.ts` and
+  `apps/server/test/github-reconcile.test.ts`, against a local fake of the REST API
+  (`packages/connector-github/test/fake-repo-api.ts`) serving the same objects as the
+  AFE-7 webhook fixtures.
+
+Webhooks can be missed (failed deliveries, Afe down, webhooks switched off on the App),
+so every selected repository is also re-read through the REST API and compared with
+what the audit log holds. Whatever is missing is ingested, built by the **same AFE-7
+builders** (`workflowRunEvent`, `deploymentEvent`, `deploymentStatusEvent`, the
+review/push/pull request builders) from the REST objects, so it gets exactly the
+`sourceEventId` the webhook would have produced ([keys](#idempotency-keys-shared-with-afe-8)).
+Ingestion is first-stored-wins (docs/event-model.md): a webhook arriving after the poll
+is a duplicate, and a poll after the webhook adds nothing for that transition.
+
+| `observation.method` | When                                                                           | `observation.detail` starts with                                    |
+| -------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `reconciliation`     | routine passes, and the re-read of an observation gap (health `backfill` hook) | `discovered by reconciliation (not recorded from a webhook): GET …` |
+| `backfill`           | history imported when an installation is connected (first install)             | `history imported by backfill: GET …`                               |
+
+The detail also names the endpoint, any reconstructed transition, approximations (see
+below), the gap or window it belongs to, and fields removed from the raw payload. The
+raw payload is the REST object the event was built from, re-serialised with the same
+R8 redaction as webhooks (`email` members, pull request bodies); deployment status
+events store `{ deployment_status, deployment }`.
+
+### What one pass reads
+
+For a repository and a window `[from, to]` (routine: `now − AFE_GITHUB_RECONCILE_LOOKBACK`
+to now, so consecutive passes overlap):
+
+| Object                                   | Endpoint                                                   | Notes                                                                                                                                                                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| workflow runs                            | `GET /repos/{o}/{r}/actions/runs?created=…&per_page=100`   | Routine passes use `created=>=<day of from>` (a stable URL for the day, so ETags can match). GitHub returns at most 1000 runs per `created`-filtered query: when `total_count` exceeds it, the window is halved until it fits.    |
+| earlier attempts of a re-run             | `GET …/actions/runs/{id}/attempts/{n}`                     | Only for attempts whose `completed` event is not recorded yet (up to 10).                                                                                                                                                         |
+| runs still open after leaving the window | `GET …/actions/runs/{id}` (conditional)                    | Runs seen queued/waiting/in progress are remembered (35 days at most) and re-read until completed, so long runs and runs waiting for approval still get `completed`.                                                              |
+| environment approvals                    | `GET …/actions/runs/{id}/approvals`                        | Only for runs found missing (a webhook gap) on their first attempt, see limits.                                                                                                                                                   |
+| deployments                              | `GET /repos/{o}/{r}/deployments?per_page=100`              | Newest first, until older than `from`.                                                                                                                                                                                            |
+| deployment statuses                      | `GET …/deployments/{id}/statuses` (conditional)            | For deployments created in the window and deployments whose latest status was not final (`success`, `failure`, `error`, `inactive`). The linked run is found from the status `log_url`/`target_url` (`/actions/runs/<id>/job/…`). |
+| pushes, pull requests                    | `GET /repos/{o}/{r}/events` (conditional, at most 3 pages) | Only if the installation granted `contents` (pushes) / `pull_requests` (pull requests): the same permissions the push / pull_request webhooks need. Without them Afe does not record those events from any feed.                  |
+
+Workflow jobs (`workflow_job.completed`) are **not** reconciled: the REST job has no
+`sender`, and jobs add detail, not new deployments (the run and its deployments are
+reconciled). `repository_dispatch`, `deployment_review.requested` and
+`deployment_protection_rule` have no REST representation and stay webhook-only.
+
+### Which run transitions are reconstructed
+
+REST shows a run's current state, not its history. Afe records only what it can state
+honestly:
+
+| REST `status`                               | Events recorded                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `queued`, `requested`, `waiting`, `pending` | `workflow_run.requested` (`occurredAt` = `created_at`)                                          |
+| `in_progress`                               | `requested` + `workflow_run.in_progress` (`run_started_at`)                                     |
+| `completed`                                 | `requested` (`created_at`) + `workflow_run.completed` (`updated_at`, outcome from `conclusion`) |
+
+`in_progress` is **not** reconstructed for a run first seen completed: Afe cannot tell
+when (or whether) it started, because `run_started_at` is set for runs that never left
+the queue. A reconstructed `requested` says so in `observation.detail`; its `data.status`
+/ `data.conclusion` are the run's state when Afe read it. These are the same timestamp
+rules the webhook builder applies, so a later webhook for the same transition would have
+recorded the same time.
+
+### Poll state, ETags and rate limits
+
+- `github_poll_state` (migration 0013) holds, per (connection, repository, endpoint and
+  page): the `ETag` of the last response that was **fully processed**, the next-page URL,
+  the ids on a deployments page, and per repository the open runs / deployments and the
+  events API's `X-Poll-Interval`. Only ids, URLs and timestamps — never bodies or
+  credentials. Rows untouched for 40 days are pruned by the scheduler.
+- Routine passes send `If-None-Match`. A `304 Not Modified` does not count against the
+  primary rate limit; it means the page is identical to one already processed, so it is
+  skipped. A repository where nothing changed costs zero counted requests.
+- `GitHubHttp` tracks `x-ratelimit-limit/remaining/reset` per installation and refuses
+  to call an exhausted bucket before its reset; `403`/`429` rate-limit answers (primary,
+  or secondary with `retry-after`, else one minute) raise `GitHubRateLimitError`.
+- On a rate limit a pass calls `ctx.health.reportFailure(…, "rate_limited", …, retryAfter)`
+  and re-enqueues itself with `startAfter = retryAfter` (it does not throw, so the queue
+  does not retry early). Network errors report `unreachable`, `401/403` `unauthorized`,
+  other API errors `error`; a `404` for the repository (removed from the installation)
+  skips it. Every successful pass reports `reportSuccess(…, { via: "poll" })`
+  (`"backfill"` for install history). Connections for which `canAttempt` is false
+  (backing off) are not polled.
+
+### Scheduling and budget
+
+`github.reconcile` runs every 5 minutes (cron). For each active GitHub connection it
+reads the selected repositories (the connection's list, or `GET /installation/repositories`
+for "all", conditionally) — the same selection rule as webhooks (`isRepositorySelected`);
+unselected repositories are never read. It computes the connection's interval and
+enqueues a `github.reconcile-repo` job for every repository whose last scheduling is
+older than the interval, spread evenly over the interval (`startAfter`), with a
+`singletonKey` per repository.
+
+```
+interval = max(AFE_GITHUB_RECONCILE_INTERVAL,
+               repos × 4 / (limit × 0.5) hours,
+               repos × 4 / (remaining × 0.5 / time until reset))      capped at 6 h
+```
+
+- `limit` is the installation's `x-ratelimit-limit` (baseline **5,000 requests/hour per
+  installation**; GitHub raises it for organisations with many repositories and users,
+  up to 12,500, and 15,000 on Enterprise Cloud), `remaining`/reset the last seen values.
+- `4` is the worst-case counted requests of a pass where everything changed (runs,
+  deployments, one statuses page, events). Unchanged endpoints are 304s and cost nothing,
+  so real use is far below the plan.
+- `0.5` keeps half of the budget for webhooks' follow-up reads, health probes and backfills.
+- Example: 5-minute base, 5,000/h: up to 5000 × 0.5 / (12 × 4) ≈ 52 repositories are
+  polled every 5 minutes; 1,000 repositories every 1.6 h; with a 12,500 limit, every 38 min.
+  When only 100 requests remain for the next 30 minutes, 40 repositories are spaced 96 min apart.
+
+### First-install backfill and gaps
+
+- When an installation is connected (`installation.created` webhook or the setup
+  callback), `github.backfill` is enqueued **once** per connection (row in
+  `github_backfills`), for `AFE_GITHUB_BACKFILL_DAYS` (default 30) up to now. It reads
+  every selected repository in turn (unconditionally, without touching the routine poll
+  state), with `observation.method = backfill`. On a rate limit it re-enqueues itself
+  after the reset, remembering the repositories already done. The scheduler also enqueues
+  it for any active connection that never had one (e.g. connected before AFE-8).
+- `health().backfill(connection, from, to)` (called by `health.backfill` after an
+  observation gap closes, AFE-13) re-reads `[from − AFE_GITHUB_RECONCILE_LOOKBACK, to]` for
+  every selected repository with `method = reconciliation`; the extra lookback catches runs
+  created before the gap that changed state during it. On a rate limit it reports it and
+  throws, so the health job retries.
+
+### Configuration
+
+| Variable                        | Default | Meaning                                                                              |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `AFE_GITHUB_RECONCILE`          | `true`  | `false` disables polling, install backfill and the gap hook                          |
+| `AFE_GITHUB_RECONCILE_INTERVAL` | `5m`    | Shortest interval between passes of one repository (scaled up by the budget formula) |
+| `AFE_GITHUB_RECONCILE_LOOKBACK` | `24h`   | Window of a routine pass (overlap between passes), and extra lookback before a gap   |
+| `AFE_GITHUB_BACKFILL_DAYS`      | `30`    | History imported on first install (`0` disables)                                     |
+
+`createGitHubModule({ reconcile: { … } })` overrides them (also `budgetShare`, `schedule`).
+
+### Honest limits
+
+- **Approvals.** `GET …/runs/{id}/approvals` has no timestamp and no run attempt. Afe reads
+  it only for runs found missing on their first attempt (for a re-run it cannot tell which
+  attempt an approval belongs to, and the key includes it), and uses the run's `updated_at`
+  as `occurredAt`, saying so in the detail. Webhook-recorded reviews keep their exact time.
+- **Deployment ↔ run link.** REST deployments do not name their run. Afe links it from
+  the status job URL; for a re-run whose deployment predates the current attempt the link
+  is left out (trigger `api` with a detail saying the attempt is unknown). Deployments
+  created through the API with no Actions status are `api`, as for webhooks.
+- **Statuses on old deployments.** `inactive` statuses that GitHub adds to a deployment
+  created before the window, after its last final status, are only found by webhook.
+- **Events API (pushes, pull requests)** is eventually consistent (events appear seconds
+  to minutes late), keeps at most 300 events and 90 days, lists at most 20 commits per
+  push and does not report forced pushes (`data.forced` is `null`, `commitCount` is the
+  push `size`). A busy repository can push more than 300 events between two passes:
+  **those pushes / pull request transitions are lost to reconciliation**, and older history
+  cannot be backfilled. A 403/404 from it (permission not granted) is noted and the API is
+  not tried again for 24 h. Pushes are keyed by `before`/`head` exactly as the webhook keys
+  `before`/`after`.
+- **1000-run cap.** If more than 1000 runs are created within one minute the window cannot
+  be split further; the pass notes that some may be missed.
+- **Long-open runs** are tracked only from when Afe first saw them open; a run that started
+  more than one lookback before a gap and finished during it is found by the open-run
+  tracking only if a pass saw it open. Increase `AFE_GITHUB_RECONCILE_LOOKBACK` if runs
+  regularly wait longer than a day.
+
+### To verify against docs / a test org (AFE-8)
+
+Written without access to GitHub docs or a real org
+(https://docs.github.com/en/rest/actions/workflow-runs,
+https://docs.github.com/en/rest/deployments/deployments,
+https://docs.github.com/en/rest/deployments/statuses,
+https://docs.github.com/en/rest/activity/events,
+https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api,
+https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api). Check:
+
+- `created` accepts `>=YYYY-MM-DD` and `YYYY-MM-DDTHH:MM:SSZ..YYYY-MM-DDTHH:MM:SSZ`, and
+  `total_count` reports the full match count when over the 1000-result cap.
+- Conditional requests with installation tokens return `304` and do not decrement
+  `x-ratelimit-remaining`; whether `Link` is present on a 304 (Afe stores the next URL).
+- `GET /deployments` is sorted newest first; statuses newest first.
+- Actions deployment statuses carry `log_url`/`target_url` `…/actions/runs/<id>/job/<id>`.
+- The approvals response shape (`state`, `user`, `environments[].name`, `comment`), that
+  it lists approvals of all attempts, and whether a later API version adds a timestamp.
+- Whether `run_started_at` is set for runs cancelled while queued (why `in_progress` is
+  not reconstructed for completed runs).
+- Events API: the permission an App installation needs for `GET /repos/{o}/{r}/events` on
+  private repositories; whether the 2025 payload trimming removed `commits` from `PushEvent`
+  and fields (`updated_at`, `closed_at`, `merged`, `merged_by`, `head.sha`) from
+  `PullRequestEvent.payload.pull_request` (missing fields make Afe skip that event, noted);
+  that `before` of a branch-creating push is all zeros as in the webhook; whether
+  `synchronize` appears as a `PullRequestEvent` action.
+- `x-ratelimit-limit` for installations on large organisations (the formula uses it).
+- **Manual "done when" check:** in a test org, deactivate the App's webhook (App settings →
+  uncheck "Active"), trigger a push run, a PR run, a manual dispatch, a re-run, a REST
+  deployment with statuses and an approved environment deployment; after the next
+  scheduler tick (≤ 5 min plus spread) every run and deployment must be in `/api/events`
+  with `observation.method = reconciliation`. Then re-enable the webhook, redeliver one
+  delivery from GitHub's "Recent deliveries" and check it is a duplicate.
+
 ## Install flows
 
 ### Connecting an organization (hosted and self-host)
@@ -338,8 +543,10 @@ to `createGitHubModule({ app, adoptInstallationsInto: null, resolveTenant })`.
 
 `GitHubAppClient` / `InstallationClient` (fetch-based, `fetch` injectable):
 `getInstallation`, `listRepositories`, `listWorkflowRuns`, `getWorkflowRun`,
-`listDeployments`, `listDeploymentStatuses`, and a `paginate` helper following
-`Link: rel="next"` (same host only, page cap). Every request sends `User-Agent`,
+`listDeployments`, `listDeploymentStatuses`, `getWorkflowRunAttempt`,
+`listWorkflowRunApprovals`, `getDeployment`, a `paginate` helper following
+`Link: rel="next"` (same host only, page cap), and `getPage` (one page, optionally
+conditional with `If-None-Match`; a `304` is returned, not raised, AFE-8). Every request sends `User-Agent`,
 `Accept: application/vnd.github+json` and `X-GitHub-Api-Version: 2022-11-28`.
 Rate limits: `x-ratelimit-remaining/reset` are tracked per bucket (App JWT, each
 installation) and an exhausted bucket is not called again before its reset;
@@ -355,6 +562,10 @@ conversion; tests assert this.
 then mint (or reuse) an installation token. `404` → `revoked`, suspended →
 `unauthorized`, `401/403` → `unauthorized`, rate limit → `rate_limited` with
 `retryAfter`, network → `unreachable`.
+
+`health().backfill(connection, from, to)`: re-reads an observation gap, see
+[Reconciliation](#first-install-backfill-and-gaps). Polling reports `reportSuccess`
+(`via: "poll"` / `"backfill"`) and `reportFailure` as described there.
 
 ## References
 

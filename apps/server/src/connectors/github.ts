@@ -6,6 +6,13 @@
  * event mapping) lives in `@afe/connector-github`. The webhook route
  * verifies, de-duplicates and enqueues repository events as `github.webhook`
  * jobs; `processGitHubWebhook` (AFE-7) maps and ingests them.
+ *
+ * Reconciliation (AFE-8): the `github.reconcile` scheduler enqueues
+ * `github.reconcile-repo` passes per selected repository (spread over an
+ * interval that scales with the repository count and rate-limit budget);
+ * `github.backfill` imports history when an installation is connected; the
+ * `backfill` health hook re-reads an observation gap. The pure pass is
+ * `reconcileRepository` in `@afe/connector-github`.
  */
 import { createHash, randomUUID } from "node:crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -36,6 +43,9 @@ import {
   GitHubRateLimitError,
   applyRepositoryChange,
   assertRsaPrivateKey,
+  reconcileIntervalMs,
+  reconcileRepository,
+  spreadStart,
   buildAppManifest,
   connectionConfig,
   convertManifestCode,
@@ -62,12 +72,20 @@ import {
   type GitHubWebhookJob,
   type InstallationEventPayload,
   type InstallationRepositoriesEventPayload,
+  type ConditionalPage,
+  type PollKey,
+  type PollState,
+  type PollStateStore,
+  type ReconcileMode,
+  type ReconcileResult,
+  type RepoRef,
   type StatePurpose,
 } from "@afe/connector-github";
 import {
   findConnectionByExternalId,
   getConnection,
   getCredential,
+  listActiveConnections,
   recordDelivery,
   resolveConnectionBySourceIdentity,
   setConnectionStatus,
@@ -75,6 +93,7 @@ import {
   upsertConnection,
 } from "@afe/db";
 import type { ConnectorModule, ServerContext } from "../context.ts";
+import { parseDuration } from "../health/config.ts";
 
 type Db = pg.Pool | pg.PoolClient;
 
@@ -114,7 +133,59 @@ export interface GitHubModuleOptions {
    * `processGitHubWebhook` (map and ingest, AFE-7). Override in tests.
    */
   processWebhook?: (job: GitHubWebhookJob, runtime: GitHubRuntime) => Promise<unknown>;
+  /** Reconciliation settings (AFE-8), on top of the environment (AFE_GITHUB_RECONCILE_*). */
+  reconcile?: Partial<GitHubReconcileConfig>;
   clock?: () => number;
+}
+
+/** Reconciliation polling and backfill settings (docs/connectors/github.md "Reconciliation"). */
+export interface GitHubReconcileConfig {
+  /** AFE_GITHUB_RECONCILE=false disables polling, backfill and the gap hook. */
+  enabled: boolean;
+  /** Shortest interval between two passes of one repository. AFE_GITHUB_RECONCILE_INTERVAL, default 5m. */
+  intervalMs: number;
+  /**
+   * Window of each routine pass: runs and deployments created this far back
+   * are re-read (so consecutive passes overlap), and gap backfills start this
+   * much before the gap. AFE_GITHUB_RECONCILE_LOOKBACK, default 24h.
+   */
+  lookbackMs: number;
+  /** History imported when an installation is connected (0 disables). AFE_GITHUB_BACKFILL_DAYS, default 30. */
+  backfillDays: number;
+  /** Share of the installation's hourly rate limit polling may plan to use. Default 0.5. */
+  budgetShare: number;
+  /** Cron of the `github.reconcile` scheduler. Default every 5 minutes. */
+  schedule: string;
+}
+
+export const DEFAULT_GITHUB_RECONCILE_CONFIG: GitHubReconcileConfig = {
+  enabled: true,
+  intervalMs: 5 * 60_000,
+  lookbackMs: 24 * 3600_000,
+  backfillDays: 30,
+  budgetShare: 0.5,
+  schedule: "*/5 * * * *",
+};
+
+export function loadGitHubReconcileConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): GitHubReconcileConfig {
+  const d = DEFAULT_GITHUB_RECONCILE_CONFIG;
+  const days = env.AFE_GITHUB_BACKFILL_DAYS?.trim();
+  if (days !== undefined && !/^\d{1,4}$/.test(days)) {
+    throw new Error("AFE_GITHUB_BACKFILL_DAYS must be a whole number of days (0 disables)");
+  }
+  return {
+    ...d,
+    enabled: env.AFE_GITHUB_RECONCILE !== "false",
+    intervalMs: env.AFE_GITHUB_RECONCILE_INTERVAL
+      ? parseDuration(env.AFE_GITHUB_RECONCILE_INTERVAL, "AFE_GITHUB_RECONCILE_INTERVAL")
+      : d.intervalMs,
+    lookbackMs: env.AFE_GITHUB_RECONCILE_LOOKBACK
+      ? parseDuration(env.AFE_GITHUB_RECONCILE_LOOKBACK, "AFE_GITHUB_RECONCILE_LOOKBACK")
+      : d.lookbackMs,
+    backfillDays: days !== undefined ? Number(days) : d.backfillDays,
+  };
 }
 
 /** GitHub caps webhook payloads at 25 MB. */
@@ -156,6 +227,16 @@ export class GitHubRuntime {
 
   get clock(): () => number {
     return this.options.clock ?? Date.now;
+  }
+
+  #reconcile: GitHubReconcileConfig | undefined;
+
+  /** Reconciliation settings: environment, then `options.reconcile`. */
+  get reconcileConfig(): GitHubReconcileConfig {
+    return (this.#reconcile ??= {
+      ...loadGitHubReconcileConfig(this.options.env ?? process.env),
+      ...this.options.reconcile,
+    });
   }
 
   get appTenantId(): string {
@@ -659,6 +740,27 @@ async function withTransaction<T>(pool: pg.Pool, fn: (client: pg.PoolClient) => 
 
 class Replay extends Error {}
 
+/**
+ * After an installation is connected: enqueue its first-install history
+ * backfill (AFE-8). Best effort: the lifecycle change is already committed,
+ * and the reconcile scheduler enqueues any backfill that is still missing.
+ */
+async function startInstallBackfills(rt: GitHubRuntime, installationId: string) {
+  try {
+    const conns = await resolveConnectionBySourceIdentity(
+      rt.ctx.pool,
+      CONNECTOR_SOURCE,
+      installationId,
+    );
+    for (const conn of conns) await ensureInstallBackfill(rt, conn);
+  } catch (err) {
+    rt.ctx.log.warn(
+      { source: "github", installationId, err: err instanceof Error ? err.name : "error" },
+      "github install backfill not enqueued; the scheduler will retry",
+    );
+  }
+}
+
 async function handleWebhook(rt: GitHubRuntime, req: FastifyRequest, reply: FastifyReply) {
   const { ctx } = rt;
   const app = await rt.app();
@@ -721,6 +823,9 @@ async function handleWebhook(rt: GitHubRuntime, req: FastifyRequest, reply: Fast
         { action: (payload as { action?: unknown }).action, changes: outcome.events.length },
         "github lifecycle event applied",
       );
+      if (delivery.event === "installation" && payload.action === "created") {
+        await startInstallBackfills(rt, String(installationIdOf(payload)));
+      }
       return reply
         .code(outcome.events.length > 0 ? 200 : 202)
         .send({ ok: true, applied: outcome.events.length });
@@ -924,6 +1029,7 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
     return conn;
   });
   warnOnPermissions(ctx, conn);
+  await startInstallBackfills(rt, String(installation.id));
   const config = conn.config as unknown as GitHubConnectionConfig;
   if (wantsHtml(req)) {
     return reply.redirect(uiUrl(rt, `/connections/${conn.id}?connected=github`), 303);
@@ -1134,6 +1240,543 @@ export async function processGitHubWebhook(
 }
 
 // ---------------------------------------------------------------------------
+// Reconciliation and backfill (AFE-8)
+// ---------------------------------------------------------------------------
+
+export const GITHUB_JOBS = {
+  /** Cron: decides which repositories are due and enqueues their passes. */
+  RECONCILE: "github.reconcile",
+  /** One pass over one repository (routine, or a window of a backfill). */
+  RECONCILE_REPO: "github.reconcile-repo",
+  /** History import of a whole connection (first install). */
+  BACKFILL: "github.backfill",
+} as const;
+
+/** Payload of `github.reconcile-repo`. No credentials. */
+export interface GitHubReconcileRepoJob {
+  tenantId: string;
+  connectionId: string;
+  repositoryId: number;
+  fullName: string;
+  /** Explicit window (ISO); absent for routine passes (now - lookback .. now). */
+  from?: string;
+  to?: string;
+}
+
+/** Payload of `github.backfill`. No credentials. */
+export interface GitHubBackfillJob {
+  tenantId: string;
+  connectionId: string;
+  kind: "install";
+  from: string;
+  to: string;
+  /** Repositories already done (the job is re-sent after a rate limit). */
+  done?: number[];
+}
+
+/** Poll cursors and ETags in `github_poll_state` (migration 0013). */
+export function pgPollStateStore(pool: pg.Pool): PollStateStore {
+  return {
+    async get(key: PollKey): Promise<PollState | null> {
+      const { rows } = await pool.query<{ etag: string | null; data: JsonObject; polled_at: Date }>(
+        `SELECT etag, data, polled_at FROM github_poll_state
+          WHERE tenant_id = $1 AND connection_id = $2 AND repository_id = $3 AND endpoint = $4`,
+        [key.tenantId, key.connectionId, key.repositoryId, key.endpoint],
+      );
+      const r = rows[0];
+      return r ? { etag: r.etag, data: r.data, polledAt: r.polled_at } : null;
+    },
+    async put(key: PollKey, state: PollState): Promise<void> {
+      await pool.query(
+        `INSERT INTO github_poll_state (tenant_id, connection_id, repository_id, endpoint, etag, data, polled_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (tenant_id, connection_id, repository_id, endpoint) DO UPDATE
+           SET etag = EXCLUDED.etag, data = EXCLUDED.data, polled_at = EXCLUDED.polled_at,
+               updated_at = now()`,
+        [
+          key.tenantId,
+          key.connectionId,
+          key.repositoryId,
+          key.endpoint.slice(0, 512),
+          state.etag && state.etag.length <= 512 ? state.etag : null,
+          state.data,
+          state.polledAt,
+        ],
+      );
+    },
+  };
+}
+
+/**
+ * Operator maintenance (reads across tenants, R5.2): drops poll state not
+ * touched for 40 days (ETags of past days' queries, closed deployments).
+ */
+export async function pruneGitHubPollStateAcrossTenants(pool: pg.Pool, now: Date) {
+  await pool.query(`DELETE FROM github_poll_state WHERE updated_at < $1`, [
+    new Date(now.getTime() - 40 * 24 * 3600_000),
+  ]);
+}
+
+/** Which GitHub source event ids the tenant's log already holds. */
+async function recordedGitHubEvents(pool: pg.Pool, tenantId: string, ids: string[]) {
+  const { rows } = await pool.query<{ source_event_id: string }>(
+    `SELECT source_event_id FROM events
+      WHERE tenant_id = $1 AND source = $2 AND source_event_id = ANY($3::text[])`,
+    [tenantId, CONNECTOR_SOURCE, ids],
+  );
+  return new Set(rows.map((r) => r.source_event_id));
+}
+
+/**
+ * Repositories selected on the connection (same rule as the webhook path,
+ * `isRepositorySelected`). For "all repositories" the installation's list is
+ * read (conditionally, cached in poll state as repository 0).
+ */
+export async function selectedRepositories(
+  rt: GitHubRuntime,
+  connection: Connection,
+): Promise<RepoRef[]> {
+  const config = connection.config as unknown as Partial<GitHubConnectionConfig>;
+  if (Array.isArray(config.repositories)) {
+    return config.repositories.filter((r) => isRepositorySelected(connection.config, r.id));
+  }
+  if (config.repositories !== "all") return [];
+  const client = await rt.installationClient(connection);
+  const store = pgPollStateStore(rt.ctx.pool);
+  const now = new Date(rt.clock());
+  const repos: RepoRef[] = [];
+  let url: string | null = "/installation/repositories";
+  let query: Record<string, number> | undefined = { per_page: 100 };
+  for (let n = 1; url && n <= 50; n++) {
+    const key: PollKey = {
+      tenantId: connection.tenantId,
+      connectionId: connection.id,
+      repositoryId: 0,
+      endpoint: `installation/repositories#${n}`,
+    };
+    const stored = await store.get(key);
+    const page: ConditionalPage<{ repositories?: GitHubInstallationRepo[] }> =
+      await client.getPage<{ repositories?: GitHubInstallationRepo[] }>(url, query, {
+        etag: stored?.etag ?? null,
+      });
+    query = undefined;
+    if (page.status === 304 && stored) {
+      const cached = Array.isArray(stored.data.repos) ? stored.data.repos : [];
+      for (const r of cached) {
+        if (r && typeof r === "object" && !Array.isArray(r)) {
+          repos.push({ id: Number(r.id), fullName: String(r.fullName) });
+        }
+      }
+      url = typeof stored.data.next === "string" ? stored.data.next : null;
+      continue;
+    }
+    const pageRepos = (page.data?.repositories ?? [])
+      .filter((r) => typeof r?.id === "number" && typeof r.full_name === "string")
+      .map((r) => ({ id: r.id, fullName: r.full_name }));
+    repos.push(...pageRepos);
+    await store.put(key, {
+      etag: page.etag,
+      data: { next: page.next, repos: pageRepos },
+      polledAt: now,
+    });
+    url = page.next;
+  }
+  return repos;
+}
+
+interface GitHubInstallationRepo {
+  id: number;
+  full_name: string;
+}
+
+function permissionGranted(connection: Connection, name: string): boolean {
+  const perms = (connection.config as unknown as Partial<GitHubConnectionConfig>).permissions;
+  const level = perms?.[name];
+  return level === "read" || level === "write" || level === "admin";
+}
+
+/** Maps a source error to a health failure; null for errors that are not the connection's fault. */
+function failureOf(err: unknown): {
+  reason: "unreachable" | "rate_limited" | "unauthorized" | "error";
+  detail: string;
+  retryAfter?: Date;
+} | null {
+  if (err instanceof GitHubRateLimitError) {
+    return {
+      reason: "rate_limited",
+      detail: "GitHub rate limit exhausted",
+      retryAfter: err.retryAfter,
+    };
+  }
+  if (err instanceof GitHubNetworkError) return { reason: "unreachable", detail: err.message };
+  if (err instanceof GitHubApiError) {
+    if (err.status === 401 || err.status === 403) {
+      return { reason: "unauthorized", detail: `GitHub returned ${err.status}` };
+    }
+    if (err.status === 404) return null; // repository removed or no longer accessible
+    return { reason: "error", detail: `GitHub returned ${err.status}` };
+  }
+  return null;
+}
+
+export interface RepoPassOutcome {
+  status: "done" | "skipped" | "rate_limited" | "failed";
+  result?: ReconcileResult;
+  retryAfter?: Date;
+  reason?: string;
+}
+
+/** One reconciliation or backfill pass over one repository, with health reporting. */
+export async function reconcileRepo(
+  rt: GitHubRuntime,
+  connection: Connection,
+  repo: RepoRef,
+  p: { mode: ReconcileMode; from?: Date; to?: Date; reason?: string },
+): Promise<RepoPassOutcome> {
+  const { ctx } = rt;
+  const cfg = rt.reconcileConfig;
+  const now = new Date(rt.clock());
+  const log = ctx.log.child({
+    source: "github",
+    connectionId: connection.id,
+    repository: repo.fullName,
+    mode: p.mode,
+  });
+  if (!isRepositorySelected(connection.config, repo.id)) {
+    log.info("github reconcile: repository not selected, skipped");
+    return { status: "skipped", reason: "repository not selected" };
+  }
+  const routine = !p.from;
+  try {
+    const client = await rt.installationClient(connection);
+    const result = await reconcileRepository(
+      {
+        client,
+        sink: ctx.sink,
+        state: pgPollStateStore(ctx.pool),
+        recorded: (tenantId, ids) => recordedGitHubEvents(ctx.pool, tenantId, ids),
+      },
+      {
+        tenantId: connection.tenantId,
+        connectionId: connection.id,
+        repository: repo,
+        mode: p.mode,
+        from: p.from ?? new Date(now.getTime() - cfg.lookbackMs),
+        to: p.to ?? now,
+        conditional: routine,
+        pushes: permissionGranted(connection, "contents"),
+        pullRequests: permissionGranted(connection, "pull_requests"),
+        now,
+        ...(p.reason ? { reason: p.reason } : {}),
+      },
+    );
+    if (connection.status === "active") {
+      await ctx.health?.reportSuccess(connection.tenantId, connection.id, now, {
+        via: p.mode === "backfill" ? "backfill" : "poll",
+      });
+    }
+    const counts = {
+      inserted: result.inserted,
+      insertedByAction: result.insertedByAction,
+      alreadyRecorded: result.alreadyRecorded,
+      rejected: result.rejected,
+      requests: result.requests,
+      notModified: result.notModified,
+      notes: result.notes,
+    };
+    if (result.inserted > 0 && p.mode === "reconciliation") {
+      log.warn(counts, "github reconcile: recorded events missed by webhooks");
+    } else {
+      log.info(counts, "github reconcile pass done");
+    }
+    return { status: "done", result };
+  } catch (err) {
+    const failure = failureOf(err);
+    if (!failure) {
+      if (err instanceof GitHubApiError && err.status === 404) {
+        log.info("github reconcile: repository not found or not accessible, skipped");
+        return { status: "skipped", reason: "repository not accessible" };
+      }
+      throw err;
+    }
+    log.warn({ reason: failure.reason, detail: failure.detail }, "github reconcile pass failed");
+    await ctx.health?.reportFailure(
+      connection.tenantId,
+      connection.id,
+      failure.reason,
+      failure.detail,
+      failure.retryAfter,
+      now,
+    );
+    return failure.reason === "rate_limited"
+      ? { status: "rate_limited", retryAfter: failure.retryAfter! }
+      : { status: "failed", reason: failure.reason };
+  }
+}
+
+/** `github.reconcile-repo` handler. */
+export async function runReconcileRepoJob(rt: GitHubRuntime, job: GitHubReconcileRepoJob) {
+  const { ctx } = rt;
+  const connection = await getConnection(ctx.pool, job.tenantId, job.connectionId);
+  if (!connection || connection.source !== CONNECTOR_SOURCE || connection.status !== "active") {
+    return { status: "skipped" as const, reason: "connection not active" };
+  }
+  const now = new Date(rt.clock());
+  if ((await ctx.health?.canAttempt(job.tenantId, job.connectionId, now)) === false) {
+    return { status: "skipped" as const, reason: "connection backing off" };
+  }
+  const outcome = await reconcileRepo(
+    rt,
+    connection,
+    { id: job.repositoryId, fullName: job.fullName },
+    {
+      mode: "reconciliation",
+      ...(job.from ? { from: new Date(job.from) } : {}),
+      ...(job.to ? { to: new Date(job.to) } : {}),
+    },
+  );
+  if (outcome.status === "rate_limited") {
+    // Reschedule after the reset instead of letting the queue retry early.
+    await ctx.jobs.send(GITHUB_JOBS.RECONCILE_REPO, job, {
+      startAfter: outcome.retryAfter!,
+      singletonKey: `${repoJobKey(job)}:after:${outcome.retryAfter!.toISOString()}`,
+    });
+  }
+  return outcome;
+}
+
+function repoJobKey(job: { connectionId: string; repositoryId: number }) {
+  return `${GITHUB_JOBS.RECONCILE_REPO}:${job.connectionId}:${job.repositoryId}`;
+}
+
+export interface BackfillOutcome {
+  repositories: number;
+  done: number[];
+  inserted: number;
+  rateLimited?: Date;
+  failed?: string;
+}
+
+/**
+ * Re-reads every selected repository of a connection for [from, to]
+ * (install history, or an observation gap), one after the other. Stops at a
+ * rate limit and reports which repositories are done.
+ */
+export async function backfillConnection(
+  rt: GitHubRuntime,
+  connection: Connection,
+  p: { mode: ReconcileMode; from: Date; to: Date; reason: string; done?: number[] },
+): Promise<BackfillOutcome> {
+  const repos = await selectedRepositories(rt, connection);
+  const done = new Set(p.done ?? []);
+  const out: BackfillOutcome = { repositories: repos.length, done: [...done], inserted: 0 };
+  for (const repo of repos) {
+    if (done.has(repo.id)) continue;
+    const r = await reconcileRepo(rt, connection, repo, {
+      mode: p.mode,
+      from: p.from,
+      to: p.to,
+      reason: p.reason,
+    });
+    if (r.status === "rate_limited") return { ...out, rateLimited: r.retryAfter! };
+    if (r.status === "failed") return { ...out, failed: r.reason ?? "failed" };
+    out.inserted += r.result?.inserted ?? 0;
+    out.done.push(repo.id);
+  }
+  return out;
+}
+
+/** `github.backfill` handler (first-install history). */
+export async function runBackfillJob(rt: GitHubRuntime, job: GitHubBackfillJob) {
+  const { ctx } = rt;
+  const connection = await getConnection(ctx.pool, job.tenantId, job.connectionId);
+  if (!connection || connection.source !== CONNECTOR_SOURCE || connection.status !== "active") {
+    return null;
+  }
+  const outcome = await backfillConnection(rt, connection, {
+    mode: "backfill",
+    from: new Date(job.from),
+    to: new Date(job.to),
+    reason: `first-install history ${job.from}..${job.to}`,
+    ...(job.done ? { done: job.done } : {}),
+  });
+  if (outcome.rateLimited) {
+    await ctx.jobs.send(
+      GITHUB_JOBS.BACKFILL,
+      { ...job, done: outcome.done },
+      {
+        startAfter: outcome.rateLimited,
+        singletonKey: `${GITHUB_JOBS.BACKFILL}:${job.connectionId}:${outcome.done.length}`,
+      },
+    );
+    return outcome;
+  }
+  const failed = outcome.failed !== undefined;
+  await ctx.pool.query(
+    `UPDATE github_backfills SET status = $4, completed_at = CASE WHEN $4 = 'succeeded' THEN now() END,
+            last_error = $5
+      WHERE tenant_id = $1 AND connection_id = $2 AND kind = $3`,
+    [
+      job.tenantId,
+      job.connectionId,
+      job.kind,
+      failed ? "failed" : "succeeded",
+      outcome.failed ?? null,
+    ],
+  );
+  ctx.log.info(
+    {
+      source: "github",
+      connectionId: job.connectionId,
+      repositories: outcome.repositories,
+      inserted: outcome.inserted,
+      failed: outcome.failed ?? null,
+    },
+    "github first-install backfill finished",
+  );
+  if (failed) throw new Error(`github backfill failed: ${outcome.failed}`); // queue retries
+  return outcome;
+}
+
+/**
+ * Enqueues the first-install history backfill of a connection once
+ * (`github_backfills` row claimed first). Called when an installation is
+ * connected (webhook or setup callback) and by the scheduler for connections
+ * that never had one.
+ */
+export async function ensureInstallBackfill(rt: GitHubRuntime, connection: Connection) {
+  const cfg = rt.reconcileConfig;
+  if (!cfg.enabled || cfg.backfillDays <= 0 || connection.status !== "active") return false;
+  const to = new Date(rt.clock());
+  const from = new Date(to.getTime() - cfg.backfillDays * 24 * 3600_000);
+  const { rowCount } = await rt.ctx.pool.query(
+    `INSERT INTO github_backfills (tenant_id, connection_id, kind, window_from, window_to)
+     VALUES ($1, $2, 'install', $3, $4) ON CONFLICT DO NOTHING`,
+    [connection.tenantId, connection.id, from, to],
+  );
+  if (!rowCount) return false;
+  const job: GitHubBackfillJob = {
+    tenantId: connection.tenantId,
+    connectionId: connection.id,
+    kind: "install",
+    from: from.toISOString(),
+    to: to.toISOString(),
+  };
+  try {
+    await rt.ctx.jobs.send(GITHUB_JOBS.BACKFILL, job, {
+      singletonKey: `${GITHUB_JOBS.BACKFILL}:${connection.id}`,
+    });
+  } catch (err) {
+    await rt.ctx.pool.query(
+      `DELETE FROM github_backfills WHERE tenant_id = $1 AND connection_id = $2 AND kind = 'install'`,
+      [connection.tenantId, connection.id],
+    );
+    throw err;
+  }
+  return true;
+}
+
+export interface ReconcileScheduleSummary {
+  connections: number;
+  enqueued: number;
+  intervals: Record<string, number>;
+}
+
+/**
+ * `github.reconcile` handler: for every active GitHub connection, enqueue a
+ * pass for each selected repository whose interval has elapsed, spread over
+ * the interval. The interval scales with the number of repositories and the
+ * installation's remaining rate-limit budget (`reconcileIntervalMs`).
+ */
+export async function scheduleReconciliation(rt: GitHubRuntime): Promise<ReconcileScheduleSummary> {
+  const { ctx } = rt;
+  const cfg = rt.reconcileConfig;
+  const summary: ReconcileScheduleSummary = { connections: 0, enqueued: 0, intervals: {} };
+  if (!cfg.enabled || !(await rt.app())) return summary;
+  const now = new Date(rt.clock());
+  const store = pgPollStateStore(ctx.pool);
+  await pruneGitHubPollStateAcrossTenants(ctx.pool, now);
+  for (const connection of await listActiveConnections(ctx.pool, CONNECTOR_SOURCE)) {
+    const log = ctx.log.child({ source: "github", connectionId: connection.id });
+    try {
+      if ((await ctx.health?.canAttempt(connection.tenantId, connection.id, now)) === false)
+        continue;
+      summary.connections += 1;
+      await ensureInstallBackfill(rt, connection);
+      let repos: RepoRef[];
+      try {
+        repos = await selectedRepositories(rt, connection);
+      } catch (err) {
+        const failure = failureOf(err);
+        if (!failure) throw err;
+        await ctx.health?.reportFailure(
+          connection.tenantId,
+          connection.id,
+          failure.reason,
+          failure.detail,
+          failure.retryAfter,
+          now,
+        );
+        continue;
+      }
+      const client = await rt.installationClient(connection);
+      const rl = client.rateLimit();
+      const interval = reconcileIntervalMs({
+        repositories: repos.length,
+        baseIntervalMs: cfg.intervalMs,
+        budgetShare: cfg.budgetShare,
+        ...(rl?.limit ? { hourlyLimit: rl.limit } : {}),
+        remaining: rl?.remaining ?? null,
+        resetAt: rl?.resetAt ?? null,
+        now,
+      });
+      summary.intervals[connection.id] = interval;
+      const due: RepoRef[] = [];
+      for (const repo of repos) {
+        const s = await store.get({
+          tenantId: connection.tenantId,
+          connectionId: connection.id,
+          repositoryId: repo.id,
+          endpoint: "schedule",
+        });
+        // A little slack so a pass due just after this tick is not delayed a whole tick.
+        if (!s?.polledAt || now.getTime() - s.polledAt.getTime() >= interval - 30_000)
+          due.push(repo);
+      }
+      for (const [i, repo] of due.entries()) {
+        const job: GitHubReconcileRepoJob = {
+          tenantId: connection.tenantId,
+          connectionId: connection.id,
+          repositoryId: repo.id,
+          fullName: repo.fullName,
+        };
+        await ctx.jobs.send(GITHUB_JOBS.RECONCILE_REPO, job, {
+          singletonKey: repoJobKey(job),
+          startAfter: spreadStart(now, i, due.length, interval),
+        });
+        await store.put(
+          {
+            tenantId: connection.tenantId,
+            connectionId: connection.id,
+            repositoryId: repo.id,
+            endpoint: "schedule",
+          },
+          { etag: null, data: { intervalMs: interval }, polledAt: now },
+        );
+        summary.enqueued += 1;
+      }
+    } catch (err) {
+      // One broken connection must not stop the others.
+      log.error(
+        { err: err instanceof Error ? err.name : "error" },
+        "github reconcile scheduling failed",
+      );
+    }
+  }
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
 
@@ -1252,12 +1895,54 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
             await (options.processWebhook ?? processGitHubWebhook)(job, rt);
           },
         },
+        {
+          name: GITHUB_JOBS.RECONCILE,
+          schedule: rt.reconcileConfig.schedule,
+          retryLimit: 0,
+          async handler() {
+            await scheduleReconciliation(rt);
+          },
+        },
+        {
+          name: GITHUB_JOBS.RECONCILE_REPO,
+          retryLimit: 3,
+          async handler(data) {
+            await runReconcileRepoJob(rt, data as GitHubReconcileRepoJob);
+          },
+        },
+        {
+          name: GITHUB_JOBS.BACKFILL,
+          retryLimit: 5,
+          async handler(data) {
+            await runBackfillJob(rt, data as GitHubBackfillJob);
+          },
+        },
       ];
     },
 
     health(ctx): ConnectorHealthHooks {
       const rt = runtime(ctx);
-      return { source: CONNECTOR_SOURCE, probe: (connection) => probeInstallation(rt, connection) };
+      return {
+        source: CONNECTOR_SOURCE,
+        probe: (connection) => probeInstallation(rt, connection),
+        // Re-read an observation gap (AFE-13). Runs created up to one lookback
+        // before the gap are included, so transitions that happened during the
+        // gap (a long run completing) are found too.
+        backfill: async (connection, from, to) => {
+          if (!rt.reconcileConfig.enabled) return;
+          const start = new Date(from.getTime() - rt.reconcileConfig.lookbackMs);
+          const outcome = await backfillConnection(rt, connection, {
+            mode: "reconciliation",
+            from: start,
+            to,
+            reason: `re-read after observation gap ${from.toISOString()}..${to.toISOString()}`,
+          });
+          if (outcome.rateLimited) {
+            throw new GitHubRateLimitError(0, null, outcome.rateLimited); // health retries
+          }
+          if (outcome.failed) throw new Error(`github gap backfill failed: ${outcome.failed}`);
+        },
+      };
     },
   };
 }

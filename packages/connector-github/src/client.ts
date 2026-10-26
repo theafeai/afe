@@ -10,9 +10,23 @@ import type {
   GitHubInstallationTokenResponse,
   GitHubManifestConversion,
   GitHubRepository,
+  GitHubRunApproval,
   GitHubWorkflowRun,
   PermissionMap,
 } from "./types.ts";
+
+/** One page of a (possibly conditional) GET, for reconciliation (AFE-8). */
+export interface ConditionalPage<T> {
+  /** 200, or 304 when the request was conditional and nothing changed (`data` is null). */
+  status: number;
+  data: T | null;
+  /** `ETag` of the response (on 304, the one sent or GitHub's echo of it). */
+  etag: string | null;
+  /** `Link: rel="next"` URL, if any. */
+  next: string | null;
+  /** `X-Poll-Interval` in seconds (events API), if any. */
+  pollIntervalSeconds: number | null;
+}
 
 export interface PageOptions {
   /** Items per page (GitHub max 100). Default 100. */
@@ -107,15 +121,47 @@ export class InstallationClient {
     readonly token: TokenRequest,
   ) {}
 
-  async #get<T>(path: string, query?: GitHubRequest["query"]) {
+  /** Rate-limit bucket of this installation in the shared transport. */
+  get bucket(): string {
+    return `installation:${this.token.installationId}`;
+  }
+
+  /** Last known rate-limit state of this installation (null before the first call). */
+  rateLimit(): { remaining: number; resetAt: Date; limit?: number } | null {
+    return this.app.http.rateLimit(this.bucket);
+  }
+
+  async #get<T>(path: string, query?: GitHubRequest["query"], ifNoneMatch?: string) {
     const { token } = await this.app.tokens.get(this.token);
     return this.app.http.request<T>({
       method: "GET",
       path,
       ...(query ? { query } : {}),
+      ...(ifNoneMatch ? { ifNoneMatch } : {}),
       token,
-      bucket: `installation:${this.token.installationId}`,
+      bucket: this.bucket,
     });
+  }
+
+  /**
+   * One GET page (a path below the API, or a pagination URL on the same
+   * host), optionally conditional on a stored `ETag`. Used by reconciliation
+   * (AFE-8), which stores ETags per endpoint and page.
+   */
+  async getPage<T>(
+    path: string,
+    query?: GitHubRequest["query"],
+    options: { etag?: string | null } = {},
+  ): Promise<ConditionalPage<T>> {
+    const res = await this.#get<T>(path, query, options.etag ?? undefined);
+    const poll = res.headers.get("x-poll-interval");
+    return {
+      status: res.status,
+      data: res.status === 304 ? null : res.data,
+      etag: res.headers.get("etag") ?? (res.status === 304 ? (options.etag ?? null) : null),
+      next: nextPageUrl(res.headers.get("link")),
+      pollIntervalSeconds: poll && /^\d+$/.test(poll) ? Number(poll) : null,
+    };
   }
 
   /**
@@ -183,6 +229,48 @@ export class InstallationClient {
     return (
       await this.#get<GitHubWorkflowRun>(
         `/repos/${seg(owner)}/${seg(repo)}/actions/runs/${seg(runId)}`,
+      )
+    ).data;
+  }
+
+  /** GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number} */
+  async getWorkflowRunAttempt(
+    owner: string,
+    repo: string,
+    runId: number,
+    attempt: number,
+  ): Promise<GitHubWorkflowRun> {
+    return (
+      await this.#get<GitHubWorkflowRun>(
+        `/repos/${seg(owner)}/${seg(repo)}/actions/runs/${seg(runId)}/attempts/${seg(attempt)}`,
+      )
+    ).data;
+  }
+
+  /** GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals (environment reviews). */
+  async listWorkflowRunApprovals(
+    owner: string,
+    repo: string,
+    runId: number,
+  ): Promise<GitHubRunApproval[]> {
+    return (
+      (
+        await this.#get<GitHubRunApproval[]>(
+          `/repos/${seg(owner)}/${seg(repo)}/actions/runs/${seg(runId)}/approvals`,
+        )
+      ).data ?? []
+    );
+  }
+
+  /** GET /repos/{owner}/{repo}/deployments/{deployment_id} */
+  async getDeployment(
+    owner: string,
+    repo: string,
+    deploymentId: number,
+  ): Promise<GitHubDeployment> {
+    return (
+      await this.#get<GitHubDeployment>(
+        `/repos/${seg(owner)}/${seg(repo)}/deployments/${seg(deploymentId)}`,
       )
     ).data;
   }
