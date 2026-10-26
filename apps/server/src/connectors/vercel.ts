@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   type Connection,
   type ConnectorHealthHooks,
+  type HealthFailureReason,
   type JsonObject,
   type ObservationGapReason,
   type ProbeResult,
@@ -155,6 +156,38 @@ export type VercelObservation = {
   | { ok: true; result?: PollResult }
   | { ok: false; reason: ObservationGapReason; detail: string; retryAfter?: Date }
 );
+
+const HEALTH_REASON: Record<ObservationGapReason, HealthFailureReason> = {
+  connection_error: "unreachable",
+  source_unavailable: "unreachable",
+  auth_failed: "unauthorized",
+  permission_denied: "unauthorized",
+  rate_limited: "rate_limited",
+  webhook_delivery_failed: "error",
+  history_unavailable: "error",
+  afe_unavailable: "error",
+  connection_paused: "error",
+  unknown: "error",
+};
+
+/** Default `onObservation`: report to connection health (AFE-13) when it is enabled. */
+async function reportHealth(ctx: ServerContext, obs: VercelObservation): Promise<void> {
+  if (!ctx.health) return;
+  if (obs.ok) {
+    await ctx.health.reportSuccess(obs.tenantId, obs.connectionId, obs.at, {
+      via: obs.kind === "webhook" ? "webhook" : obs.kind === "poll" ? "poll" : "backfill",
+    });
+  } else {
+    await ctx.health.reportFailure(
+      obs.tenantId,
+      obs.connectionId,
+      HEALTH_REASON[obs.reason],
+      obs.detail,
+      obs.retryAfter,
+      obs.at,
+    );
+  }
+}
 
 class MissingCredentialError extends Error {
   constructor() {
@@ -398,9 +431,9 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
   // --- event capture (AFE-12) --------------------------------------------------
 
   async function observe(ctx: ServerContext, obs: VercelObservation): Promise<void> {
-    if (!options.onObservation) return;
+    const report = options.onObservation ?? ((o: VercelObservation) => reportHealth(ctx, o));
     try {
-      await options.onObservation(obs);
+      await report(obs);
     } catch (err) {
       ctx.log.warn(
         { source: SOURCE, connectionId: obs.connectionId, err: (err as Error).name },

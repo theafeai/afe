@@ -278,6 +278,46 @@ describe("vercel event capture (server wiring)", () => {
     expect(logs.join("")).not.toContain("SECRET");
   });
 
+  it("reports observations to connection health by default", async () => {
+    const id = await connect();
+    const reports: unknown[][] = [];
+    const defaultModule = createVercelModule({ fetch: api.fetch, now: () => clock });
+    const built = await buildAfe({
+      pool,
+      keys,
+      jobs: new InlineJobQueue(),
+      config: ctx.config,
+      logLevel: "silent",
+      connectors: [defaultModule],
+    });
+    built.context.health = {
+      reportSuccess: async (...args) => void reports.push(["success", ...args]),
+      reportFailure: async (...args) => void reports.push(["failure", ...args]),
+      canAttempt: async () => true,
+    };
+    const q = built.context.jobs as InlineJobQueue;
+    q.register(built.jobDefinitions);
+
+    clock += 5 * MIN;
+    await q.send(VERCEL_POLL_DISPATCH_JOB, {});
+    await q.drain();
+    expect(reports.at(-1)).toMatchObject([
+      "success",
+      "default",
+      id,
+      new Date(clock),
+      { via: "poll" },
+    ]);
+
+    api.rateLimitNext = 10;
+    clock += 5 * MIN;
+    await q.send(VERCEL_POLL_DISPATCH_JOB, {});
+    await expect(q.drain()).rejects.toThrow(/429/);
+    expect(reports.at(-1)?.slice(0, 4)).toMatchObject(["failure", "default", id, "rate_limited"]);
+    api.rateLimitNext = 0;
+    await built.app.close();
+  });
+
   it("keeps capture state per tenant (R5.10)", async () => {
     const id = await connect();
     const s = {
