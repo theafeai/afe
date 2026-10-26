@@ -8,18 +8,18 @@ answer that with evidence, and deliberately nothing more.
 
 ## What Afe stores
 
-| Data                                     | Examples                                                                                    | Table(s)                       | Sensitivity                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------ |
-| Tenants                                  | id, name                                                                                    | `tenants`                      | Low                                  |
-| Canonical deployment events              | source, event type, time, target environment/app/project, commit SHA, ref, status, actor    | `events`                       | Confidential (business)              |
-| Actor identity as reported by the source | GitHub login and numeric id, Vercel user id/username, ArgoCD username/SSO subject           | `events`                       | Personal data                        |
-| Raw source payloads (evidence)           | webhook bodies and API responses for deployment-related resources                           | `raw_payloads`                 | Confidential; may hold personal data |
-| Hash chain values                        | per-event hash, previous hash                                                               | `events`                       | Low                                  |
-| Connection configuration                 | tool kind, ArgoCD server URL, GitHub installation id, Vercel team id, custom CA certificate | connection tables (connectors) | Confidential                         |
-| Encrypted credentials                    | ciphertext, wrapped data key, nonce, key id, kind, timestamps                               | `credentials`                  | Secret (encrypted)                   |
-| Webhook delivery ids                     | source, delivery id, received time, tenant id                                               | `webhook_deliveries`           | Low                                  |
-| Operational state                        | polling cursors, connection health, observation gaps, job queue rows                        | connector / pg-boss tables     | Low                                  |
-| Logs (stdout, not the DB)                | request method/path/status, delivery ids, error kinds                                       | –                              | Low (redacted)                       |
+| Data                                     | Examples                                                                                                                                             | Table(s)                       | Sensitivity                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------ |
+| Tenants                                  | id, name                                                                                                                                             | `tenants`                      | Low                                  |
+| Canonical deployment events              | source, event type, time, target environment/app/project, commit SHA, ref, status, actor                                                             | `events`                       | Confidential (business)              |
+| Actor identity as reported by the source | GitHub login and numeric id, Vercel user id/username, ArgoCD username/SSO subject                                                                    | `events`                       | Personal data                        |
+| Raw source payloads (evidence)           | webhook bodies and API responses for deployment-related resources                                                                                    | `raw_payloads`                 | Confidential; may hold personal data |
+| Hash chain values                        | per-event hash, previous hash                                                                                                                        | `events`                       | Low                                  |
+| Connection configuration                 | tool kind, ArgoCD server URL, GitHub installation id, Vercel team id, custom CA certificate; ArgoCD version, account name and read-only check result | connection tables (connectors) | Confidential                         |
+| Encrypted credentials                    | ciphertext, wrapped data key, nonce, key id, kind, timestamps                                                                                        | `credentials`                  | Secret (encrypted)                   |
+| Webhook delivery ids                     | source, delivery id, received time, tenant id                                                                                                        | `webhook_deliveries`           | Low                                  |
+| Operational state                        | polling cursors, connection health, observation gaps, job queue rows                                                                                 | connector / pg-boss tables     | Low                                  |
+| Logs (stdout, not the DB)                | request method/path/status, delivery ids, error kinds                                                                                                | –                              | Low (redacted)                       |
 
 Raw payloads are stored as received, after removing the fields listed in "What
 Afe deliberately does not store" when a source includes them; connectors list
