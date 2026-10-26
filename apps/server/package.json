@@ -1,0 +1,31 @@
+{
+  "name": "@afe/server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "afe": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx watch src/cli.ts all",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@afe/connector-argocd": "workspace:*",
+    "@afe/connector-github": "workspace:*",
+    "@afe/connector-vercel": "workspace:*",
+    "@afe/core": "workspace:*",
+    "@afe/db": "workspace:*",
+    "fastify": "^5.2.0",
+    "pg": "^8.13.1",
+    "pg-boss": "^10.1.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "tsup": "^8.3.5"
+  }
+}
