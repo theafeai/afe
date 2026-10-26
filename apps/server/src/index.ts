@@ -9,3 +9,4 @@ export {
   type JobQueue,
   type SendOptions,
 } from "./jobs.ts";
+export * from "./health/index.ts";

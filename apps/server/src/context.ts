@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type pg from "pg";
-import type { ConnectorHealthHooks, EventSink } from "@afe/core";
+import type { ConnectorHealthHooks, EventSink, HealthReporter } from "@afe/core";
 import type { KeyProvider } from "@afe/core/security";
 import type { AfeConfig } from "./config.ts";
 import type { JobDefinition, JobQueue } from "./jobs.ts";
@@ -14,6 +14,13 @@ export interface ServerContext {
   jobs: JobQueue;
   config: AfeConfig;
   log: FastifyBaseLogger;
+  /** All registered modules (set by buildAfe), e.g. to collect health hooks. */
+  modules?: readonly ConnectorModule[];
+  /**
+   * Connection health reporting (AFE-13), set when the health module is
+   * registered. Connectors call `ctx.health?.reportSuccess/reportFailure`.
+   */
+  health?: HealthReporter;
 }
 
 /**
