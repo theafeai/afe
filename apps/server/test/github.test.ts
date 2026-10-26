@@ -433,9 +433,13 @@ describe("GitHub connector module", () => {
 
     it("rejects a bad, forged or cookie-less state", async () => {
       const { state, cookie } = await startInstall();
+      // Change a character away from the end: trailing base64url characters can
+      // carry only padding bits, so editing them may not change the decoded bytes.
+      const i = state.length - 6;
+      const forged = state.slice(0, i) + (state[i] === "A" ? "B" : "A") + state.slice(i + 1);
       const cases = [
         { q: "state=garbage", cookie },
-        { q: `state=${encodeURIComponent(state.slice(0, -2) + "xx")}`, cookie },
+        { q: `state=${encodeURIComponent(forged)}`, cookie },
         { q: `state=${encodeURIComponent(state)}`, cookie: undefined },
         { q: `state=${encodeURIComponent(state)}`, cookie: "afe_github_flow=someone-else" },
       ];
