@@ -444,6 +444,23 @@ describe("vercel connector module", () => {
     for (const url of ["/api/connections/vercel/install", "/api/connections/vercel/callback"]) {
       expect((await built.app.inject({ method: "GET", url })).statusCode).toBe(404);
     }
+    const status = await built.app.inject({
+      method: "GET",
+      url: "/api/connections/vercel/integration",
+    });
+    expect(status.json()).toMatchObject({ configured: false, installUrl: null });
+    expect(status.json().missing).toContain("AFE_VERCEL_CLIENT_ID");
     await built.app.close();
+  });
+
+  it("tells the UI whether the integration is configured, without secrets", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/connections/vercel/integration" });
+    expect(res.json()).toEqual({
+      configured: true,
+      slug: "afe-test",
+      installUrl: "/api/connections/vercel/install",
+      missing: [],
+    });
+    expect(res.body).not.toContain(api.clientSecret);
   });
 });

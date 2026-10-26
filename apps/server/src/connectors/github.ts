@@ -784,6 +784,35 @@ async function handleWebhook(rt: GitHubRuntime, req: FastifyRequest, reply: Fast
   return reply.code(202).send({ ok: true, queued: connections.length });
 }
 
+/** A browser navigation (not an API client) asks for HTML. */
+function wantsHtml(req: FastifyRequest): boolean {
+  return String(req.headers.accept ?? "").includes("text/html");
+}
+
+/** Where the web UI (AFE-16) shows the result of the install flow. */
+function uiUrl(rt: GitHubRuntime, path: string): string {
+  return `${rt.publicUrl ?? ""}${path}`;
+}
+
+/**
+ * Setup URL handler. API clients get JSON; a browser coming back from GitHub
+ * is redirected to the web UI (`/connections/<id>`, or `/connections/github`
+ * with `status` / `error`) so the install flow ends on a page, not on JSON.
+ */
+async function handleSetupForBrowser(rt: GitHubRuntime, req: FastifyRequest, reply: FastifyReply) {
+  if (!wantsHtml(req)) return handleSetup(rt, req, reply);
+  try {
+    await handleSetup(rt, req, reply);
+  } catch (err) {
+    if (!(err instanceof HttpError)) throw err;
+    return reply.redirect(
+      uiUrl(rt, `/connections/github?error=${encodeURIComponent(err.message)}`),
+      303,
+    );
+  }
+  return reply;
+}
+
 async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: FastifyReply) {
   const { ctx } = rt;
   const q = req.query as Record<string, string | undefined>;
@@ -805,6 +834,9 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
   reply.header("cache-control", "no-store");
 
   if (q.setup_action === "request") {
+    if (wantsHtml(req)) {
+      return reply.redirect(uiUrl(rt, "/connections/github?status=pending_approval"), 303);
+    }
     return reply.code(202).send({ status: "pending_approval" });
   }
   if (!q.installation_id || !/^[1-9][0-9]{0,18}$/.test(q.installation_id)) {
@@ -887,6 +919,9 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
   });
   warnOnPermissions(ctx, conn);
   const config = conn.config as unknown as GitHubConnectionConfig;
+  if (wantsHtml(req)) {
+    return reply.redirect(uiUrl(rt, `/connections/${conn.id}?connected=github`), 303);
+  }
   return reply.code(200).send({
     connection: {
       id: conn.id,
@@ -1082,7 +1117,25 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
           return reply.redirect(installUrl(resolved.config.slug, state), 302);
         }),
       );
-      app.get(GITHUB_ROUTES.setup, wrap(handleSetup));
+      app.get(GITHUB_ROUTES.setup, wrap(handleSetupForBrowser));
+      // For the web UI (AFE-16): which connect options are available. No secrets.
+      app.get(
+        "/api/connections/github/app",
+        wrap(async (rt) => {
+          const resolved = await rt.app();
+          return {
+            configured: resolved !== null,
+            slug: resolved?.config.slug ?? null,
+            origin: resolved?.origin ?? null,
+            installUrl: resolved ? GITHUB_ROUTES.install : null,
+            manifestFlow: {
+              available: !resolved && rt.options.manifestFlow !== false,
+              publicUrlConfigured: rt.publicUrl !== null,
+              url: GITHUB_ROUTES.manifest,
+            },
+          };
+        }),
+      );
       app.get(GITHUB_ROUTES.manifest, wrap(handleManifest));
       app.get(GITHUB_ROUTES.manifestCallback, wrap(handleManifestCallback));
     },

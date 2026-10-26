@@ -501,6 +501,50 @@ describe("GitHub connector module", () => {
       expect(jobs.sent[0]!.data).toMatchObject({ connectionId: other.id });
     });
 
+    it("redirects a browser to the web UI after setup", async () => {
+      const html = { accept: "text/html,application/xhtml+xml" };
+      const { state, cookie } = await startInstall();
+      const res = await afe.app.inject({
+        method: "GET",
+        url: `/api/connections/github/setup?installation_id=4242&setup_action=install&state=${encodeURIComponent(state)}`,
+        headers: { cookie, ...html },
+      });
+      expect(res.statusCode).toBe(303);
+      const conn = await only();
+      expect(res.headers.location).toMatch(
+        new RegExp(`/connections/${conn.id}\\?connected=github$`),
+      );
+      const bad = await afe.app.inject({
+        method: "GET",
+        url: "/api/connections/github/setup?installation_id=4242&state=garbage",
+        headers: { cookie, ...html },
+      });
+      expect(bad.statusCode).toBe(303);
+      expect(bad.headers.location).toMatch(
+        /\/connections\/github\?error=invalid%20or%20expired%20state$/,
+      );
+      const second = await startInstall();
+      const pending = await afe.app.inject({
+        method: "GET",
+        url: `/api/connections/github/setup?setup_action=request&state=${encodeURIComponent(second.state)}`,
+        headers: { cookie: second.cookie, ...html },
+      });
+      expect(pending.statusCode).toBe(303);
+      expect(pending.headers.location).toMatch(/\/connections\/github\?status=pending_approval$/);
+    });
+
+    it("tells the UI whether the App is configured, without secrets", async () => {
+      const res = await afe.app.inject({ method: "GET", url: "/api/connections/github/app" });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        configured: true,
+        slug: "afe-test",
+        installUrl: "/api/connections/github/install",
+        manifestFlow: { available: false },
+      });
+      expect(res.body).not.toMatch(/PRIVATE KEY|secret/i);
+    });
+
     it("reports installs awaiting org-owner approval", async () => {
       const { state, cookie } = await startInstall();
       const res = await afe.app.inject({

@@ -415,6 +415,19 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
       const redirectUri = () => `${ctx.config.publicUrl}/api/connections/vercel/callback`;
       const integrationReady = () => Boolean(ctx.config.vercel && ctx.config.publicUrl);
 
+      // For the web UI (AFE-16): is the integration (OAuth) path available? No secrets.
+      app.get("/api/connections/vercel/integration", async () => ({
+        configured: integrationReady(),
+        slug: integrationReady() ? (ctx.config.vercel?.integrationSlug ?? null) : null,
+        installUrl: integrationReady() ? "/api/connections/vercel/install" : null,
+        missing: [
+          ...(ctx.config.vercel
+            ? []
+            : ["AFE_VERCEL_CLIENT_ID", "AFE_VERCEL_CLIENT_SECRET", "AFE_VERCEL_INTEGRATION_SLUG"]),
+          ...(ctx.config.publicUrl ? [] : ["AFE_PUBLIC_URL"]),
+        ],
+      }));
+
       // --- Integration (OAuth) flow ---------------------------------------
       app.get("/api/connections/vercel/install", async (req, reply) => {
         const vc = ctx.config.vercel;
