@@ -1,0 +1,305 @@
+import { randomBytes } from "node:crypto";
+import { Writable } from "node:stream";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type pg from "pg";
+import type { FastifyInstance } from "fastify";
+import type { CanonicalEvent } from "@afe/core";
+import { EnvKeyProvider } from "@afe/core/security";
+import { createTestPool } from "@afe/db/testing";
+import { getConnection, listEvents, verifyTenantChain } from "@afe/db";
+import { FakeVercelApi } from "@afe/connector-vercel/testing";
+import { buildAfe, InlineJobQueue, type AfeConfig, type ServerContext } from "../src/index.ts";
+import {
+  createVercelModule,
+  type VercelObservation,
+  VERCEL_POLL_DISPATCH_JOB,
+} from "../src/connectors/vercel.ts";
+import {
+  getVercelProductionState,
+  loadVercelPollState,
+  putVercelProductionState,
+  saveVercelPollState,
+} from "../src/connectors/vercel-state.ts";
+
+const MIN = 60_000;
+const T0 = 1_800_000_000_000;
+const TEAM = { id: "team_acme", slug: "acme", name: "Acme" };
+const USER = { id: "usr_alice", username: "alice" };
+const TOKEN = "pat-token-SECRET";
+const WHSEC = "account-webhook-secret-SECRET";
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+describe("vercel event capture (server wiring)", () => {
+  let pool: pg.Pool;
+  let api: FakeVercelApi;
+  let app: FastifyInstance;
+  let ctx: ServerContext;
+  let jobs: InlineJobQueue;
+  let module: ReturnType<typeof createVercelModule>;
+  let clock = T0;
+  let seq = 0;
+  let baseline = 0;
+  const logs: string[] = [];
+  const observations: VercelObservation[] = [];
+  const keys = new EnvKeyProvider({ keys: { k1: randomBytes(32) } });
+
+  beforeAll(async () => {
+    pool = await createTestPool();
+  });
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM vercel_production_state");
+    await pool.query("DELETE FROM vercel_poll_state");
+    await pool.query("DELETE FROM connection_credentials");
+    await pool.query("DELETE FROM connections");
+    await pool.query("DELETE FROM webhook_deliveries");
+    clock = T0;
+    seq = 0;
+    logs.length = 0;
+    observations.length = 0;
+    baseline = Math.max(
+      0,
+      ...(await listEvents(pool, "default", { limit: 1000 })).events.map((e) => e.seq),
+    );
+    api = new FakeVercelApi()
+      .addUser(USER)
+      .addTeam(TEAM)
+      .addProject(TEAM.id, {
+        id: "prj_web",
+        name: "web",
+        updatedAt: 2,
+        link: { type: "github", org: "acme", repo: "web" },
+      })
+      .addProject(TEAM.id, { id: "prj_secret", name: "secret", updatedAt: 1 })
+      .grant(TOKEN, USER.id, [TEAM.id]);
+    jobs = new InlineJobQueue();
+    const config: AfeConfig = {
+      databaseUrl: "unused",
+      host: "127.0.0.1",
+      port: 0,
+      logLevel: "info",
+      allowPrivateNetworkTargets: false,
+      allowInsecureHttpTargets: false,
+      publicUrl: "https://afe.example.com",
+    };
+    module = createVercelModule({
+      fetch: api.fetch,
+      now: () => clock,
+      onObservation: (o) => {
+        observations.push(o);
+      },
+    });
+    const built = await buildAfe({
+      pool,
+      keys,
+      jobs,
+      config,
+      logLevel: "debug",
+      logStream: new Writable({
+        write(chunk, _e, cb) {
+          logs.push(String(chunk));
+          cb();
+        },
+      }),
+      connectors: [module],
+    });
+    app = built.app;
+    ctx = built.context;
+    jobs.register(built.jobDefinitions);
+  });
+
+  /** Events of this test only (the log is append-only, so earlier tests' events stay). */
+  async function events(): Promise<CanonicalEvent[]> {
+    return (await listEvents(pool, "default", { limit: 1000 })).events.filter(
+      (e) => e.seq > baseline,
+    );
+  }
+
+  async function connect(): Promise<string> {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/connections/vercel",
+      payload: { token: TOKEN, teamId: TEAM.id, webhookSecret: WHSEC },
+    });
+    expect(res.statusCode).toBe(201);
+    const id = res.json().connection.id as string;
+    const put = await app.inject({
+      method: "PUT",
+      url: `/api/connections/vercel/${id}/projects`,
+      payload: { projectIds: ["prj_web"] },
+    });
+    expect(put.statusCode).toBe(200);
+    // Selecting projects queues the first poll (backfill).
+    expect(jobs.sent.map((j) => j.name)).toEqual(["vercel.poll"]);
+    await jobs.drain();
+    return id;
+  }
+
+  function deploy(id: string, over: Record<string, unknown> = {}, projectId = "prj_web") {
+    api.addDeployment(TEAM.id, {
+      id,
+      name: "web",
+      projectId,
+      url: `${id}.vercel.app`,
+      createdAt: clock + seq++,
+      readyState: "READY",
+      ready: clock + 2 * MIN,
+      aliasAssigned: clock + 2 * MIN,
+      source: "git",
+      target: "production",
+      creator: { uid: USER.id, username: USER.username },
+      meta: {
+        githubCommitSha: SHA,
+        githubCommitRef: "main",
+        githubCommitOrg: "acme",
+        githubCommitRepo: "web",
+      },
+      ...over,
+    });
+  }
+
+  async function sendWebhook(type: string, deploymentId: string, projectId = "prj_web") {
+    const hook = api.signedWebhook(
+      {
+        id: `evt_${type}_${deploymentId}`,
+        type,
+        createdAt: clock,
+        payload: {
+          team: { id: TEAM.id },
+          user: { id: USER.id },
+          project: { id: projectId },
+          deployment: { id: deploymentId, url: `${deploymentId}.vercel.app`, meta: {} },
+          target: "production",
+        },
+      },
+      WHSEC,
+    );
+    const res = await app.inject({ method: "POST", url: `/webhooks/vercel/${TEAM.id}`, ...hook });
+    expect(res.statusCode).toBe(200);
+    await jobs.drain();
+  }
+
+  async function poll() {
+    await jobs.send(VERCEL_POLL_DISPATCH_JOB, {});
+    await jobs.drain();
+  }
+
+  it("ingests webhooks, polls (dispatch → per-connection poll) and dedupes across both", async () => {
+    deploy("dpl_a", { createdAt: T0 - 60 * MIN, ready: T0 - 58 * MIN });
+    api.setProduction(TEAM.id, "prj_web", "dpl_a");
+    const id = await connect();
+    // Backfill on first connect.
+    expect((await events()).map((e) => [e.sourceEventId, e.observation.method])).toEqual([
+      ["deployment:dpl_a:created", "backfill"],
+      ["deployment:dpl_a:succeeded", "backfill"],
+    ]);
+    const state = await loadVercelPollState(pool, "default", id);
+    expect(state).toMatchObject({ backfilled: { mode: "selected", projectIds: ["prj_web"] } });
+    expect((await getVercelProductionState(pool, "default", id, "prj_web"))!.deploymentId).toBe(
+      "dpl_a",
+    );
+
+    // Webhook first.
+    clock += MIN;
+    deploy("dpl_b", { readyState: "BUILDING", ready: null });
+    await sendWebhook("deployment.created", "dpl_b");
+    // Unselected project: not queued, not ingested.
+    deploy("dpl_s", {}, "prj_secret");
+    await sendWebhook("deployment.created", "dpl_s", "prj_secret");
+
+    // Webhooks missed: dpl_b finishes and a rollback to dpl_a happens.
+    clock += 3 * MIN;
+    api.updateDeployment("dpl_b", { readyState: "READY", ready: clock - MIN });
+    api.setProduction(TEAM.id, "prj_web", "dpl_b");
+    clock += 5 * MIN;
+    await poll();
+    clock += 5 * MIN;
+    api.setProduction(TEAM.id, "prj_web", "dpl_a");
+    await poll();
+    // The late webhook for the rollback is a duplicate.
+    await sendWebhook("deployment.promoted", "dpl_a");
+
+    const all = await events();
+    expect(all.map((e) => [e.sourceEventId, e.action, e.observation.method])).toEqual([
+      ["deployment:dpl_a:created", "deployment.created", "backfill"],
+      ["deployment:dpl_a:succeeded", "deployment.status_updated", "backfill"],
+      ["deployment:dpl_b:created", "deployment.created", "webhook"],
+      ["deployment:dpl_b:succeeded", "deployment.status_updated", "reconciliation"],
+      ["production_alias:prj_web:dpl_b:dpl_a", "deployment.rolled_back", "reconciliation"],
+    ]);
+    expect(all.find((e) => e.action === "deployment.rolled_back")).toMatchObject({
+      correlation: { commitShas: [SHA], deploymentIds: ["vercel:dpl_a", "vercel:dpl_b"] },
+      data: { confidence: "inferred", aliasAssigned: true },
+    });
+    expect((await verifyTenantChain(pool, "default")).ok).toBe(true);
+    expect(api.requests.every((r) => r.method === "GET")).toBe(true);
+    expect(api.requests.some((r) => JSON.stringify(r).includes("prj_secret"))).toBe(false);
+    expect(observations.some((o) => o.ok && o.kind === "webhook")).toBe(true);
+    expect(observations.filter((o) => o.kind === "poll").every((o) => o.ok)).toBe(true);
+    expect(logs.join("")).not.toContain("SECRET");
+  });
+
+  it("re-observes a gap through the health backfill hook", async () => {
+    const id = await connect();
+    clock += 30 * MIN;
+    deploy("dpl_gap", { createdAt: T0 + 5 * MIN, ready: T0 + 7 * MIN });
+    const conn = (await getConnection(pool, "default", id))!;
+    await module.health!(ctx).backfill!(conn, new Date(T0), new Date(T0 + 20 * MIN));
+    const all = await events();
+    expect(all.map((e) => [e.sourceEventId, e.observation.method])).toEqual([
+      ["deployment:dpl_gap:created", "reconciliation"],
+      ["deployment:dpl_gap:succeeded", "reconciliation"],
+    ]);
+    expect(observations.at(-1)).toMatchObject({ ok: true, kind: "reconcile" });
+  });
+
+  it("reports failures to the observation callback and revokes on 401", async () => {
+    const id = await connect();
+    api.rateLimitNext = 10;
+    clock += 5 * MIN;
+    await expect(poll()).rejects.toThrow(/429/);
+    expect(observations.at(-1)).toMatchObject({ ok: false, kind: "poll", reason: "rate_limited" });
+    const before = await loadVercelPollState(pool, "default", id);
+
+    api.rateLimitNext = 0;
+    api.revoke(TOKEN);
+    await poll(); // not retried: the connection is revoked
+    expect(observations.at(-1)).toMatchObject({ ok: false, kind: "poll", reason: "auth_failed" });
+    expect((await getConnection(pool, "default", id))!.status).toBe("revoked");
+    // The cursor did not move on failure.
+    expect(await loadVercelPollState(pool, "default", id)).toEqual(before);
+    // Revoked connections are no longer polled.
+    jobs.sent.length = 0;
+    await jobs.send(VERCEL_POLL_DISPATCH_JOB, {});
+    await jobs.drain();
+    expect(logs.join("")).not.toContain("SECRET");
+  });
+
+  it("keeps capture state per tenant (R5.10)", async () => {
+    const id = await connect();
+    const s = {
+      deploymentId: "dpl_x",
+      deploymentCreatedAt: null,
+      previousDeploymentId: null,
+      previousDeploymentCreatedAt: null,
+      lastSeenAt: T0,
+      changedAt: T0,
+    };
+    await putVercelProductionState(pool, "default", id, "prj_web", s);
+    expect(await getVercelProductionState(pool, "tenant-b", id, "prj_web")).toBeNull();
+    expect(await loadVercelPollState(pool, "tenant-b", id)).toBeNull();
+    await expect(
+      saveVercelPollState(
+        pool,
+        "tenant-b",
+        id,
+        { cursor: 1, openDeployments: [], backfilled: { mode: "none" } },
+        T0,
+      ),
+    ).rejects.toThrow(); // no such connection in tenant-b (foreign key)
+    expect((await loadVercelPollState(pool, "default", id))!.cursor).not.toBe(1);
+  });
+});

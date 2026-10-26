@@ -281,6 +281,7 @@ state transition of one source object. Keys below are written as
 | argocd | application created/updated/deleted | `application`, `<metadata.uid>`, `<metadata.generation>` (or `deleted`)                                                  |
 | argocd | health changed                      | `health`, `<metadata.uid>`, `<status>`, `<observed transition time>`                                                     |
 | vercel | deployment transition               | `deployment`, `<dpl_ id>`, `created\|succeeded\|failed\|cancelled\|promoted`                                             |
+| vercel | production promotion / rollback     | `production_alias`, `<project id>`, `<previous dpl_ id or none>`, `<new dpl_ id>` (AFE-12, docs/connectors/vercel.md)    |
 | afe    | observation gap                     | `observation_gap`, `<gapId>`, `opened\|closed`                                                                           |
 
 Rules: never use webhook delivery ids, poll timestamps or Afe-generated ids;

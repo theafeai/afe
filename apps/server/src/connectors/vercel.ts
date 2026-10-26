@@ -1,20 +1,28 @@
 /**
  * Vercel connector wiring (AFE-11, ADR 0005): connection model (Vercel
  * Integration via OAuth, or an access-token fallback), project selection,
- * disconnect/revocation and the webhook receiver. Ingesting deployment events
- * (mapping, polling, backfill) is AFE-12: this module only enqueues
- * `vercel.webhook` jobs whose handler is a placeholder.
+ * disconnect/revocation and the webhook receiver; and event capture (AFE-12):
+ * `vercel.webhook` maps and ingests deliveries, `vercel.poll.dispatch` (cron)
+ * fans out `vercel.poll` per active connection (backfill on first connect,
+ * reconciliation polling, promotion/rollback detection), and the health
+ * `backfill` hook re-observes a gap. See docs/connectors/vercel.md "Event capture".
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   type Connection,
   type ConnectorHealthHooks,
   type JsonObject,
+  type ObservationGapReason,
   type ProbeResult,
   DEFAULT_TENANT_ID,
+  EventValidationError,
 } from "@afe/core";
 import { Secret } from "@afe/core/security";
 import {
+  type CaptureWebhookResult,
+  type PollResult,
+  VercelPoller,
+  captureWebhookEvent,
   type FetchLike,
   type ProjectSelection,
   type VercelWebhookEvent,
@@ -44,6 +52,7 @@ import {
   getConnection,
   getConnectionCredentialIds,
   getCredential,
+  listActiveConnections,
   recordDelivery,
   resolveConnectionBySourceIdentity,
   revokeCredential,
@@ -54,9 +63,14 @@ import {
 } from "@afe/db";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import type { JobDefinition } from "../jobs.ts";
+import { pgVercelCaptureStore, withVercelPollLock } from "./vercel-state.ts";
 
 const SOURCE = CONNECTOR_SOURCE;
 export const VERCEL_WEBHOOK_JOB = "vercel.webhook";
+export const VERCEL_POLL_JOB = "vercel.poll";
+export const VERCEL_POLL_DISPATCH_JOB = "vercel.poll.dispatch";
+/** Every 3 minutes (UTC cron). */
+export const DEFAULT_POLL_SCHEDULE = "*/3 * * * *";
 const ROLE_TOKEN = "access_token";
 const ROLE_WEBHOOK_SECRET = "webhook_secret";
 const STATE_COOKIE = "afe_vercel_state";
@@ -109,7 +123,38 @@ export interface VercelModuleOptions {
   resolveTenant?: (req: FastifyRequest) => string | Promise<string>;
   now?: () => number;
   webhookToleranceMs?: number;
+  /** Cron for `vercel.poll.dispatch`. Default every 3 minutes. */
+  pollSchedule?: string;
+  /** History imported when a connection (or a newly selected project) is first polled. Default 30. */
+  backfillDays?: number;
+  /** Polls leave transitions younger than this to the next poll (webhooks win). Default 60 s. */
+  settleMs?: number;
+  /** Polls re-read this far before the cursor. Default 10 minutes. */
+  overlapMs?: number;
+  /**
+   * Called after each webhook job, poll and gap reconciliation with whether
+   * Vercel could be observed. Connection health (AFE-13) wires this up to
+   * open and close observation gaps; this module tracks no health itself.
+   */
+  onObservation?: (observation: VercelObservation) => void | Promise<void>;
 }
+
+/** Payload of `vercel.poll` jobs. */
+export interface VercelPollJob {
+  tenantId: string;
+  connectionId: string;
+}
+
+/** Outcome of one attempt to observe Vercel for a connection (see `onObservation`). */
+export type VercelObservation = {
+  tenantId: string;
+  connectionId: string;
+  kind: "webhook" | "poll" | "reconcile";
+  at: Date;
+} & (
+  | { ok: true; result?: PollResult }
+  | { ok: false; reason: ObservationGapReason; detail: string; retryAfter?: Date }
+);
 
 class MissingCredentialError extends Error {
   constructor() {
@@ -350,6 +395,207 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
     return { status: "accepted" };
   }
 
+  // --- event capture (AFE-12) --------------------------------------------------
+
+  async function observe(ctx: ServerContext, obs: VercelObservation): Promise<void> {
+    if (!options.onObservation) return;
+    try {
+      await options.onObservation(obs);
+    } catch (err) {
+      ctx.log.warn(
+        { source: SOURCE, connectionId: obs.connectionId, err: (err as Error).name },
+        "vercel observation callback failed",
+      );
+    }
+  }
+
+  /** Classifies a capture failure; 401/403 and missing credentials revoke the connection. */
+  async function failure(
+    ctx: ServerContext,
+    conn: Connection,
+    kind: VercelObservation["kind"],
+    err: unknown,
+  ): Promise<VercelObservation> {
+    const base = { ok: false as const, tenantId: conn.tenantId, connectionId: conn.id, kind };
+    const at = new Date(now());
+    if (err instanceof MissingCredentialError) {
+      await markRevoked(ctx, conn, "credential missing or revoked");
+      return { ...base, at, reason: "auth_failed", detail: "credential missing or revoked" };
+    }
+    if (err instanceof VercelRateLimitError) {
+      return {
+        ...base,
+        at,
+        reason: "rate_limited",
+        detail: "Vercel API rate limit",
+        ...(err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+      };
+    }
+    if (err instanceof VercelApiError) {
+      if (err.isAuthError) {
+        await markRevoked(
+          ctx,
+          conn,
+          `Vercel API returned ${err.status}: the token was revoked or expired, or lost access to the team`,
+        );
+        return {
+          ...base,
+          at,
+          reason: err.status === 403 ? "permission_denied" : "auth_failed",
+          detail: `HTTP ${err.status}`,
+        };
+      }
+      return {
+        ...base,
+        at,
+        reason: err.status >= 500 ? "source_unavailable" : "unknown",
+        detail: `HTTP ${err.status}`,
+      };
+    }
+    if (err instanceof EventValidationError) {
+      return { ...base, at, reason: "unknown", detail: "event mapping failed validation" };
+    }
+    return { ...base, at, reason: "connection_error", detail: (err as Error)?.name ?? "error" };
+  }
+
+  function readerFor(ctx: ServerContext, conn: Connection): ScopedVercelReader {
+    return vercelReader(ctx, conn, {
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.apiBaseUrl ? { apiBaseUrl: options.apiBaseUrl } : {}),
+    });
+  }
+
+  async function loadActive(ctx: ServerContext, tenantId: string, connectionId: string) {
+    const conn = await getConnection(ctx.pool, tenantId, connectionId);
+    return conn && conn.source === SOURCE && conn.status === "active" ? conn : null;
+  }
+
+  async function processWebhookJob(ctx: ServerContext, job: VercelWebhookJob): Promise<void> {
+    const conn = await loadActive(ctx, job.tenantId, job.connectionId);
+    if (!conn) return;
+    let result: CaptureWebhookResult;
+    try {
+      result = await captureWebhookEvent({
+        event: job,
+        reader: readerFor(ctx, conn),
+        sink: ctx.sink,
+        store: pgVercelCaptureStore(ctx.pool, conn.tenantId, conn.id),
+        tenantId: conn.tenantId,
+        connectionId: conn.id,
+        observedAt: new Date(now()),
+      });
+    } catch (err) {
+      if (err instanceof EventValidationError) {
+        // A mapping bug: retrying cannot help (docs/event-model.md rule 5).
+        ctx.log.error(
+          { source: SOURCE, connectionId: conn.id, deliveryId: job.deliveryId, type: job.type },
+          "vercel webhook event failed validation",
+        );
+        return;
+      }
+      throw err;
+    }
+    if (result.enrichmentError !== undefined) {
+      const obs = await failure(ctx, conn, "webhook", result.enrichmentError);
+      ctx.log.warn(
+        {
+          source: SOURCE,
+          connectionId: conn.id,
+          deliveryId: job.deliveryId,
+          reason: obs.ok ? null : obs.reason,
+        },
+        "vercel deployment read failed; event mapped from the webhook payload only",
+      );
+      await observe(ctx, obs);
+    } else {
+      await observe(ctx, {
+        ok: true,
+        tenantId: conn.tenantId,
+        connectionId: conn.id,
+        kind: "webhook",
+        at: new Date(now()),
+      });
+    }
+    ctx.log.debug(
+      {
+        source: SOURCE,
+        connectionId: conn.id,
+        deliveryId: job.deliveryId,
+        type: job.type,
+        status: result.status,
+      },
+      "vercel webhook processed",
+    );
+  }
+
+  async function runCapture(
+    ctx: ServerContext,
+    conn: Connection,
+    kind: "poll" | "reconcile",
+    fn: (poller: VercelPoller) => Promise<PollResult>,
+  ): Promise<PollResult | null> {
+    const poller = new VercelPoller({
+      reader: readerFor(ctx, conn),
+      sink: ctx.sink,
+      store: pgVercelCaptureStore(ctx.pool, conn.tenantId, conn.id),
+      tenantId: conn.tenantId,
+      connectionId: conn.id,
+      now,
+      ...(options.backfillDays !== undefined ? { backfillDays: options.backfillDays } : {}),
+      ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
+      ...(options.overlapMs !== undefined ? { overlapMs: options.overlapMs } : {}),
+    });
+    try {
+      const result = await withVercelPollLock(ctx.pool, conn.tenantId, conn.id, () => fn(poller));
+      if (result === null) {
+        ctx.log.debug({ source: SOURCE, connectionId: conn.id }, "vercel poll already running");
+        return null;
+      }
+      ctx.log.info(
+        {
+          source: SOURCE,
+          connectionId: conn.id,
+          kind,
+          seen: result.deploymentsSeen,
+          inserted: result.inserted,
+          productionChanges: result.productionChanges,
+          truncated: result.truncated,
+        },
+        "vercel deployments polled",
+      );
+      await observe(ctx, {
+        ok: true,
+        tenantId: conn.tenantId,
+        connectionId: conn.id,
+        kind,
+        at: new Date(now()),
+        result,
+      });
+      return result;
+    } catch (err) {
+      const obs = await failure(ctx, conn, kind, err);
+      ctx.log.warn(
+        { source: SOURCE, connectionId: conn.id, kind, reason: obs.ok ? null : obs.reason },
+        "vercel poll failed",
+      );
+      await observe(ctx, obs);
+      // Auth problems revoke the connection; retrying would not help.
+      if (
+        err instanceof MissingCredentialError ||
+        (err instanceof VercelApiError && err.isAuthError)
+      ) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async function processPollJob(ctx: ServerContext, job: VercelPollJob): Promise<void> {
+    const conn = await loadActive(ctx, job.tenantId, job.connectionId);
+    if (!conn) return;
+    await runCapture(ctx, conn, "poll", (poller) => poller.poll());
+  }
+
   function rejectWebhook(req: FastifyRequest, reply: FastifyReply, reason: string) {
     // R3.4: log source and reason only, never the signature or body.
     req.log.warn({ source: SOURCE, reason }, "vercel webhook rejected");
@@ -363,21 +609,24 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
       return [
         {
           name: VERCEL_WEBHOOK_JOB,
-          // AFE-12 boundary: mapping Vercel events to canonical events and
-          // ingesting them via ctx.sink is implemented there. Until then the job
-          // only acknowledges the delivery.
-          handler: async (data) => {
-            const job = data as VercelWebhookJob;
-            ctx.log.debug(
-              {
-                source: SOURCE,
-                connectionId: job.connectionId,
-                deliveryId: job.deliveryId,
-                type: job.type,
-              },
-              "vercel webhook received (ingestion: AFE-12)",
-            );
+          handler: (data) => processWebhookJob(ctx, data as VercelWebhookJob),
+        },
+        {
+          name: VERCEL_POLL_DISPATCH_JOB,
+          schedule: options.pollSchedule ?? DEFAULT_POLL_SCHEDULE,
+          scheduleData: {},
+          retryLimit: 0,
+          handler: async () => {
+            for (const conn of await listActiveConnections(ctx.pool, SOURCE)) {
+              const job: VercelPollJob = { tenantId: conn.tenantId, connectionId: conn.id };
+              await ctx.jobs.send(VERCEL_POLL_JOB, job, { singletonKey: conn.id });
+            }
           },
+        },
+        {
+          name: VERCEL_POLL_JOB,
+          retryLimit: 1,
+          handler: (data) => processPollJob(ctx, data as VercelPollJob),
         },
       ];
     },
@@ -385,6 +634,10 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
     health(ctx): ConnectorHealthHooks {
       return {
         source: SOURCE,
+        async backfill(conn: Connection, from: Date, to: Date): Promise<void> {
+          if (conn.source !== SOURCE || conn.status !== "active") return;
+          await runCapture(ctx, conn, "reconcile", (poller) => poller.reconcile(from, to));
+        },
         async probe(conn: Connection): Promise<ProbeResult> {
           try {
             await withClient(ctx, conn, async (client, cfg) =>
@@ -660,6 +913,11 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
           const updated = await updateConnectionConfig(ctx.pool, conn.tenantId, conn.id, {
             projectSelection: selection as unknown as JsonObject,
           });
+          // Start capturing (and backfilling newly selected projects) right away.
+          if (selection.mode !== "none") {
+            const job: VercelPollJob = { tenantId: conn.tenantId, connectionId: conn.id };
+            await ctx.jobs.send(VERCEL_POLL_JOB, job, { singletonKey: conn.id });
+          }
           return { selection: readVercelConfig(updated!).projectSelection };
         },
       );

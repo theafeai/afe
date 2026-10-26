@@ -284,6 +284,37 @@ export class VercelClient {
     );
   }
 
+  /**
+   * One page of `GET /v6/deployments` (newest first). Pass `pagination.next`
+   * back as `until` for the next page. Used by AFE-12 polling, which processes
+   * page by page instead of buffering a whole window.
+   */
+  async listDeploymentsPage(options: {
+    teamId: string | null;
+    projectId?: string;
+    since?: number;
+    until?: number;
+    limit?: number;
+  }): Promise<{ deployments: VercelDeploymentListItem[]; next: number | null }> {
+    const body = await this.get<{
+      deployments?: VercelDeploymentListItem[];
+      pagination?: VercelPagination;
+    }>("/v6/deployments", {
+      teamId: options.teamId,
+      projectId: options.projectId,
+      since: options.since,
+      until: options.until,
+      limit: options.limit ?? 100,
+    });
+    const deployments = body.deployments ?? [];
+    return { deployments, next: deployments.length > 0 ? (body.pagination?.next ?? null) : null };
+  }
+
+  /** `GET /v9/projects/{id}` (includes `targets` and `lastAliasRequest`). */
+  getProject(projectId: string, teamId: string | null): Promise<VercelProject> {
+    return this.get<VercelProject>(`/v9/projects/${encodeURIComponent(projectId)}`, { teamId });
+  }
+
   /** `GET /v13/deployments/{id}`. */
   getDeployment(id: string, teamId: string | null): Promise<VercelDeployment> {
     return this.get<VercelDeployment>(`/v13/deployments/${encodeURIComponent(id)}`, { teamId });

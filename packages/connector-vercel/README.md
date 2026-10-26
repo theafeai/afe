@@ -33,4 +33,9 @@ documented exception in docs/security/rules.md R1.3.
 - `webhook.ts`: `verifyVercelWebhook` (HMAC-SHA1 over the raw body through
   `verifyVercelSignature`, plus a `createdAt` freshness check) and lifecycle
   event types.
-- `testing.ts`: `FakeVercelApi`, a local fake used in tests.
+- `mapping.ts`, `capture.ts`, `polling.ts` (AFE-12): map deployments to
+  canonical events, process deployment webhooks, poll, backfill and
+  reconcile, and detect promotions and rollbacks. See
+  docs/connectors/vercel.md "Event capture".
+- `testing.ts`: `FakeVercelApi`, a local fake used in tests, and
+  `MemoryVercelCaptureStore`.

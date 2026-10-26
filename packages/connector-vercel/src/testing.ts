@@ -4,7 +4,10 @@
  */
 import { signHmac } from "@afe/core/security";
 import type { FetchLike } from "./client.ts";
+import type { VercelCaptureStore, VercelPollState } from "./capture.ts";
+import type { ProductionState } from "./mapping.ts";
 import type {
+  VercelAliasRequest,
   VercelDeployment,
   VercelDeploymentListItem,
   VercelProject,
@@ -68,6 +71,42 @@ export class FakeVercelApi {
     this.deployments.push({ ...d, ownerId });
     return this;
   }
+  /** Updates a stored deployment (state changes, cancellation, ...). */
+  updateDeployment(id: string, patch: Partial<VercelDeployment>): this {
+    const d = this.deployments.find((x) => x.id === id);
+    if (!d) throw new Error(`no deployment ${id}`);
+    Object.assign(d, patch);
+    return this;
+  }
+
+  /**
+   * Points a project's production target at a deployment, as a git
+   * production deploy, a promotion or an instant rollback would. With
+   * `aliasRequest`, also sets `lastAliasRequest`.
+   */
+  setProduction(
+    ownerId: string,
+    projectId: string,
+    deploymentId: string,
+    aliasRequest?: VercelAliasRequest | null,
+  ): this {
+    const project = (this.projects.get(ownerId) ?? []).find((x) => x.id === projectId);
+    const d = this.deployments.find((x) => x.id === deploymentId);
+    if (!project || !d) throw new Error("unknown project or deployment");
+    project.targets = {
+      ...(project.targets ?? {}),
+      production: {
+        id: d.id,
+        createdAt: d.createdAt,
+        ...(d.readyState ? { readyState: d.readyState } : {}),
+        target: d.target ?? null,
+        url: d.url ?? null,
+      },
+    };
+    if (aliasRequest !== undefined) project.lastAliasRequest = aliasRequest;
+    return this;
+  }
+
   grant(token: string, userId: string, teamIds: string[] | null): this {
     this.tokens.set(token, { userId, teamIds });
     return this;
@@ -169,8 +208,17 @@ export class FakeVercelApi {
           target: d.target ?? null,
           created: d.createdAt,
           ...(d.creator ? { creator: d.creator } : {}),
+          ...(d.meta ? { meta: d.meta } : {}),
+          ...captureFields(d),
         }));
       return this.page("deployments", list, u, (x) => x.created);
+    }
+    const projectMatch = /^\/v9\/projects\/([^/]+)$/.exec(p);
+    if (projectMatch) {
+      const id = decodeURIComponent(projectMatch[1]!);
+      const project = (this.projects.get(owner) ?? []).find((x) => x.id === id);
+      if (!project) return json(404, { error: { code: "not_found" } });
+      return json(200, { ...project, env: [{ key: "SECRET", value: "env-SECRET-value" }] });
     }
     const depMatch = /^\/v13\/deployments\/([^/]+)$/.exec(p);
     if (depMatch) {
@@ -217,6 +265,57 @@ export class FakeVercelApi {
         "x-vercel-signature": signHmac("sha1", secret, payload),
       },
     };
+  }
+}
+
+function captureFields(d: VercelDeployment): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of [
+    "source",
+    "buildingAt",
+    "ready",
+    "canceledAt",
+    "inspectorUrl",
+    "aliasAssigned",
+    "isRollbackCandidate",
+    "customEnvironment",
+    "readyState",
+  ] as const) {
+    if (d[k] !== undefined) out[k] = d[k];
+  }
+  return out;
+}
+
+/** In-memory `VercelCaptureStore` for connector tests. */
+export class MemoryVercelCaptureStore implements VercelCaptureStore {
+  pollState: VercelPollState | null = null;
+  lastPolledAt: number | null = null;
+  readonly production = new Map<string, ProductionState>();
+  #locks = new Map<string, Promise<unknown>>();
+
+  async loadPollState(): Promise<VercelPollState | null> {
+    return this.pollState ? structuredClone(this.pollState) : null;
+  }
+  async savePollState(state: VercelPollState, polledAt: number): Promise<void> {
+    this.pollState = structuredClone(state);
+    this.lastPolledAt = polledAt;
+  }
+  async withProductionState<T>(
+    projectId: string,
+    fn: (current: ProductionState | null) => Promise<{ next?: ProductionState; result: T }>,
+  ): Promise<T> {
+    const prev = this.#locks.get(projectId) ?? Promise.resolve();
+    const run = prev.then(async () => {
+      const current = this.production.get(projectId) ?? null;
+      const { next, result } = await fn(current ? { ...current } : null);
+      if (next) this.production.set(projectId, next);
+      return result;
+    });
+    this.#locks.set(
+      projectId,
+      run.catch(() => {}),
+    );
+    return run;
   }
 }
 
