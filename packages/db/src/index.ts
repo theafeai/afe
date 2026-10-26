@@ -19,3 +19,15 @@ export {
   createDbReplayGuard,
   pruneWebhookDeliveries,
 } from "./webhook-deliveries.ts";
+export {
+  createPgEventSink,
+  findEventBySourceId,
+  getEvent,
+  ingestEvent,
+  listEvents,
+  verifyTenantChain,
+  type EventPage,
+  type ListEventsOptions,
+  type Queryable,
+  type VerifyTenantChainOptions,
+} from "./event-store.ts";

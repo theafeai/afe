@@ -8,5 +8,7 @@
     ".": "./src/index.ts",
     "./security": "./src/security/index.ts"
   },
-  "dependencies": {}
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
 }
