@@ -25,6 +25,11 @@ what, to where, and when?" with evidence you can export and verify.
 | `packages/connector-*` | GitHub, ArgoCD and Vercel connectors                  |
 | `docs/`                | Decisions, security model, self-hosting guides        |
 
+## Self-hosting
+
+`docker compose up` with the published image: see the
+[self-hosting quickstart](docs/self-hosting/quickstart.md).
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).

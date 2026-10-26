@@ -6,6 +6,7 @@ import { createPgEventSink } from "@afe/db";
 import { loadConfig, type AfeConfig } from "./config.ts";
 import type { ConnectorModule, ServerContext } from "./context.ts";
 import { InlineJobQueue, type JobDefinition, type JobQueue } from "./jobs.ts";
+import { registerWebUi } from "./web.ts";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -26,6 +27,8 @@ export interface CreateAfeOptions {
   jobs?: JobQueue;
   sink?: EventSink;
   connectors?: ConnectorModule[];
+  /** Built web UI to serve; defaults to `config.webDir` (`AFE_WEB_DIR`). */
+  webDir?: string;
 }
 
 export interface AfeApp {
@@ -99,6 +102,9 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     await connector.routes?.(app, context);
     jobDefinitions.push(...(connector.jobs?.(context) ?? []));
   }
+
+  const webDir = options.webDir ?? options.config?.webDir;
+  if (webDir) await registerWebUi(app, webDir);
 
   return { app, context, jobDefinitions };
 }

@@ -1,9 +1,11 @@
+#!/usr/bin/env node
 import { createPool, migrate, reencryptAllTenants } from "@afe/db";
 import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe } from "./app.ts";
 import { defaultModules } from "./connectors/index.ts";
 import { PgBossJobRunner } from "./jobs.ts";
 import { loadConfig } from "./config.ts";
+import { resolveMigrationsDir } from "./migrations-dir.ts";
 
 const USAGE = "usage: afe <all|server|worker|migrate|reencrypt-credentials>";
 
@@ -11,9 +13,10 @@ async function main(argv: string[]): Promise<void> {
   const role = argv[0] ?? "all";
   const config = loadConfig();
   const pool = createPool(config.databaseUrl);
+  const migrationsDir = resolveMigrationsDir();
 
   if (role === "migrate") {
-    const applied = await migrate(pool);
+    const applied = await migrate(pool, migrationsDir);
     console.warn(`applied ${applied.length} migration(s)`);
     await pool.end();
     return;
@@ -21,7 +24,7 @@ async function main(argv: string[]): Promise<void> {
   if (role === "reencrypt-credentials") {
     // Key rotation, see docs/security/key-management.md.
     const keys = EnvKeyProvider.fromEnv();
-    await migrate(pool);
+    await migrate(pool, migrationsDir);
     const counts = await reencryptAllTenants(pool, keys, keys.activeKeyId());
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
     console.warn(`re-encrypted ${total} credential(s) under key ${keys.activeKeyId()}`);
@@ -30,7 +33,7 @@ async function main(argv: string[]): Promise<void> {
   }
   if (!["all", "server", "worker"].includes(role)) throw new Error(USAGE);
 
-  await migrate(pool);
+  await migrate(pool, migrationsDir);
   const jobs = new PgBossJobRunner(config.databaseUrl);
   const { app, jobDefinitions } = await buildAfe({
     pool,
