@@ -97,6 +97,45 @@ describe("web UI (AFE_WEB_DIR)", () => {
     await app.close();
   });
 
+  it("falls back to index.html for client-side routes only", async () => {
+    const web = path.join(tmp, "web-spa");
+    await mkdir(path.join(web, "assets"), { recursive: true });
+    await writeFile(path.join(web, "index.html"), "<!doctype html><title>Afe SPA</title>");
+
+    const app = await createAfe({
+      pool,
+      logLevel: "silent",
+      config: { ...loadConfig({ DATABASE_URL: "unused" }), webDir: web },
+    });
+    for (const url of [
+      "/events",
+      "/events/3f6c1a52-0000-4000-8000-000000000000",
+      "/connections/vercel/3f6c1a52-0000-4000-8000-000000000000/projects?x=1",
+      "/connections/github",
+    ]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/^text\/html/);
+      expect(res.body).toContain("Afe SPA");
+    }
+    for (const url of [
+      "/api/nope",
+      "/api",
+      "/webhooks/unknown",
+      "/assets/missing.js",
+      "/favicon.png",
+      "/../package.json",
+      "/etc/passwd",
+      "/events/app.js",
+    ]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.headers["content-type"], url).toMatch(/^application\/json/);
+    }
+    expect((await app.inject({ method: "POST", url: "/events" })).statusCode).toBe(404);
+    await app.close();
+  });
+
   it("serves no UI when AFE_WEB_DIR is unset", async () => {
     const app = await createAfe({ pool, logLevel: "silent" });
     expect((await app.inject({ method: "GET", url: "/" })).statusCode).toBe(404);

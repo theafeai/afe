@@ -33,12 +33,33 @@ async function listFiles(dir: string, prefix = ""): Promise<string[]> {
 }
 
 /**
+ * Top-level client-side routes of the web UI (apps/web/src/routes.ts). Deep
+ * links below these get `index.html`; everything else keeps the normal 404.
+ */
+export const CLIENT_ROUTE_ROOTS = ["events", "deployments", "connections"] as const;
+
+/**
+ * True for a GET/HEAD of a client-side route (e.g. `/events/<id>`,
+ * `/connections/vercel/<id>/projects`) that should get `index.html`.
+ */
+export function isClientRoute(method: string, url: string): boolean {
+  if (method !== "GET" && method !== "HEAD") return false;
+  const pathname = url.split("?")[0] ?? "/";
+  if (pathname.includes("..") || pathname.includes("%") || pathname.includes(".")) return false;
+  const root = pathname.split("/")[1] ?? "";
+  return (CLIENT_ROUTE_ROOTS as readonly string[]).includes(root);
+}
+
+/**
  * Serves the built web UI (`apps/web/dist`) from `dir` (`AFE_WEB_DIR`).
  *
  * The file set is read once at startup and one GET route is registered per
  * file, so only files that existed at startup can be served (no path
  * traversal surface) and the root filesystem can stay read-only.
- * `index.html` is also served at `/`. Returns the number of files served.
+ * `index.html` is also served at `/` and, as an SPA fallback, for any other
+ * GET of a client-side route (deep links and OAuth/install redirects such as
+ * `/connections/vercel/<id>/projects`). Unknown `/api/*`, `/webhooks/*` and
+ * asset paths keep their JSON 404. Returns the number of files served.
  */
 export async function registerWebUi(app: FastifyInstance, dir: string): Promise<number> {
   const files = (await listFiles(dir)).filter((f) => SAFE_PATH.test(f));
@@ -54,7 +75,17 @@ export async function registerWebUi(app: FastifyInstance, dir: string): Promise<
         .header("x-content-type-options", "nosniff")
         .send(body);
     app.get(`/${rel}`, send);
-    if (rel === "index.html") app.get("/", send);
+    if (rel === "index.html") {
+      app.get("/", send);
+      app.setNotFoundHandler((req, reply) => {
+        if (isClientRoute(req.method, req.url)) return send(req, reply);
+        return reply.code(404).send({
+          message: `Route ${req.method}:${req.url.split("?")[0]} not found`,
+          error: "Not Found",
+          statusCode: 404,
+        });
+      });
+    }
   }
   return files.length;
 }

@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./security": "./src/security/index.ts",
     "./export": "./src/export/index.ts",
-    "./correlation": "./src/correlation/index.ts"
+    "./correlation": "./src/correlation/index.ts",
+    "./types": "./src/types.ts"
   },
   "dependencies": {
     "zod": "^4.6.7"
