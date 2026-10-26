@@ -83,6 +83,7 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     jobs: options.jobs ?? new InlineJobQueue(),
     config: options.config ?? loadConfig({ DATABASE_URL: "unused" }),
     log: app.log,
+    modules: options.connectors ?? [],
   };
 
   app.get("/healthz", async (_req, reply) => {

@@ -76,6 +76,10 @@ export const ACTIONS = {
   CONNECTION_CREATED: "connection.created",
   CONNECTION_UPDATED: "connection.updated",
   CONNECTION_DELETED: "connection.deleted",
+  /** Afe raised an alert about a connection (e.g. blind longer than the threshold). */
+  CONNECTION_ALERT_OPENED: "connection.alert.opened",
+  /** A connection alert was resolved (the connection recovered). */
+  CONNECTION_ALERT_RESOLVED: "connection.alert.resolved",
 } as const;
 
 export type KnownAction = (typeof ACTIONS)[keyof typeof ACTIONS];

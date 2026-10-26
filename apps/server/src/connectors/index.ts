@@ -1,4 +1,5 @@
 import type { ConnectorModule } from "../context.ts";
+import { healthModule } from "../health/index.ts";
 import { argocdModule } from "./argocd.ts";
 import { vercelModule } from "./vercel.ts";
 
@@ -6,4 +7,9 @@ import { vercelModule } from "./vercel.ts";
  * Server modules enabled by default. Each connector or shared feature
  * (connection health, query API) adds its module here.
  */
-export const defaultModules: ConnectorModule[] = [argocdModule, vercelModule];
+export const defaultModules: ConnectorModule[] = [
+  argocdModule,
+  vercelModule,
+  // Connection health (AFE-13): collects every module's `health` hooks.
+  healthModule,
+];

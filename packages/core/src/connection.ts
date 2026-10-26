@@ -62,3 +62,42 @@ export interface ConnectorHealthHooks {
    */
   backfill?(connection: Connection, from: Date, to: Date): Promise<void>;
 }
+
+/** Failure reasons a connector (or a probe) can report to connection health. */
+export type HealthFailureReason = Extract<ProbeResult, { ok: false }>["reason"];
+
+/** How a successful observation was made. */
+export type ObservationVia = "webhook" | "poll" | "probe" | "stream" | "backfill";
+
+/**
+ * Connection health reporting (AFE-13), available to connectors as
+ * `ctx.health` when the health module is registered. Connectors call
+ * `reportSuccess` whenever an observation of the source succeeds (webhook
+ * verified and ingested, poll returned) and `reportFailure` when it fails.
+ * Both are idempotent and safe to call concurrently. See docs/connection-health.md.
+ */
+export interface HealthReporter {
+  reportSuccess(
+    tenantId: string,
+    connectionId: string,
+    at?: Date,
+    options?: { via?: ObservationVia },
+  ): Promise<void>;
+  /**
+   * `detail` is sanitised before it is stored, but never pass credentials,
+   * headers or response bodies; status code and request id are enough.
+   */
+  reportFailure(
+    tenantId: string,
+    connectionId: string,
+    reason: HealthFailureReason,
+    detail?: string,
+    retryAfter?: Date,
+    at?: Date,
+  ): Promise<void>;
+  /**
+   * false while the connection is backing off (rate limit Retry-After,
+   * exponential backoff, revoked credentials). Pollers should skip the call.
+   */
+  canAttempt(tenantId: string, connectionId: string, at?: Date): Promise<boolean>;
+}

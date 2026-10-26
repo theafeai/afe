@@ -135,6 +135,7 @@ here. Never rename or remove one: stored events keep their names.
 | `configuration.changed`                                | any            | A deployment-relevant setting changed (environment protection, env vars, ...).     |
 | `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                         |
 | `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                   |
+| `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).      |
 
 The validator accepts any action that matches the pattern, so connectors can
 ship a new action before the shared list is updated; `isKnownAction()` tells
@@ -282,6 +283,7 @@ state transition of one source object. Keys below are written as
 | argocd | health changed                      | `health`, `<metadata.uid>`, `<status>`, `<observed transition time>`                                                     |
 | vercel | deployment transition               | `deployment`, `<dpl_ id>`, `created\|succeeded\|failed\|cancelled\|promoted`                                             |
 | afe    | observation gap                     | `observation_gap`, `<gapId>`, `opened\|closed`                                                                           |
+| afe    | connection alert                    | `connection_alert`, `<alertId>`, `opened\|resolved`                                                                      |
 
 Rules: never use webhook delivery ids, poll timestamps or Afe-generated ids;
 use the source's immutable numeric/opaque id rather than names (names can be
