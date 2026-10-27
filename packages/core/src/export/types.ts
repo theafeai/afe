@@ -5,6 +5,7 @@
  */
 import type { CanonicalEvent } from "../event.ts";
 import type { EventFilter } from "../event-filter.ts";
+import type { AnchorReceipt } from "../anchoring/types.ts";
 
 /** Version of the export container format (manifest + records). */
 export const EXPORT_FORMAT_VERSION = 1 as const;
@@ -65,6 +66,12 @@ export interface ExportManifest {
   eventsSha256: string;
   /** SHA-256 over the exact bytes of the export file before the manifest record. */
   contentSha256: string;
+  /**
+   * Optional (AFE-29): receipts of the newest chain checkpoint at or before
+   * `chainHead` when the export was made. Absent in older exports and when
+   * anchoring is not configured. Covered by the manifest signature.
+   */
+  anchors?: AnchorReceipt[];
   signature?: ExportSignature;
 }
 
@@ -87,6 +94,8 @@ export interface AuditExportRequest {
   exportId: string;
   createdAt: Date;
   includeRawPayloads: boolean;
+  /** Anchor receipts to embed in the manifest (AFE-29); omitted when empty. */
+  anchors?: AnchorReceipt[];
   /** Selected events in ascending seq order. */
   records: AsyncIterable<ExportRecord> | Iterable<ExportRecord>;
 }

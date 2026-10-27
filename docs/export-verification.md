@@ -215,6 +215,101 @@ afe verify-export afe-export-default-20261026T090000Z.afe.csv \
   --tenant default --expect-head 1234:9f86d0…
 ```
 
+## Chain anchors
+
+An export proves its events are intact relative to its `chainHead`. It does
+not prove that the chain itself was not rewritten consistently in the
+database before the export (triggers disabled, every hash recomputed). That
+is what **anchors** are for ([ADR 0007](decisions/0007-chain-anchoring.md)):
+signed checkpoints `{tenantId, seq, hash, createdAt}` that Afe publishes
+periodically to places outside the database (an append-only file on another
+volume, an operator webhook, an RFC 3161 timestamp authority).
+
+### Receipt format
+
+The anchor file (`<AFE_ANCHOR_DIR>/<tenant>.anchors.jsonl`) has one receipt
+per line, RFC 8785 JSON:
+
+```json
+{
+  "afeAnchor": 1,
+  "anchor": { "kind": "file", "location": "/anchors/default.anchors.jsonl", "publishedAt": "…" },
+  "checkpoint": {
+    "createdAt": "2026-10-27T10:00:00.000Z",
+    "hash": "…",
+    "seq": 1234,
+    "tenantId": "default",
+    "type": "afe.chain-checkpoint",
+    "version": 1
+  },
+  "signature": { "algorithm": "ed25519", "keyId": "…", "publicKey": "…", "value": "…" },
+  "timestamp": { "kind": "rfc3161", "tsaUrl": "…", "token": "<base64 DER>", "genTime": "…" }
+}
+```
+
+- `signature`: Ed25519 over UTF-8(JCS(`checkpoint`)). Same key formats and
+  `keyId` as export signatures. Only `checkpoint`, `signature` and `timestamp`
+  are evidence; `anchor` is unsigned metadata.
+- `timestamp` (optional): an RFC 3161 TimeStampToken whose message imprint is
+  SHA-256(UTF-8(JCS(`checkpoint`))).
+- Exports made while anchoring is enabled carry the newest receipts at or
+  before `chainHead` in `manifest.anchors` (optional member, covered by the
+  manifest signature; exports without it verify as before).
+
+### Verifying an export against anchors
+
+```sh
+afe verify-export export.afe.jsonl --public-key <key> \
+  --anchors /mnt/worm/afe-anchors/default.anchors.jsonl [--anchor-public-key <key>] [--require-anchor]
+```
+
+`--anchors` accepts JSON Lines (the anchor file), a JSON array or a single
+receipt, and may be repeated. Anchor signatures must match
+`--anchor-public-key` if given, else `--public-key`. For every receipt of the
+export's tenant, after checking its signature and timestamp imprint:
+
+| Anchored seq `s` vs. export                         | Result                                                                                                    |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `s = chainHead.seq`                                 | `match` if `chainHead.hash` equals the anchored hash, else `anchor_mismatch`                              |
+| `s < chainHead.seq`, event `s` in the export        | `match` if its (recomputed) hash equals the anchored hash, else `anchor_mismatch`                         |
+| `s < chainHead.seq`, complete export, event missing | `anchor_mismatch`                                                                                         |
+| `s < chainHead.seq`, filtered export without `s`    | `not_covered` (warning): a filtered export cannot prove anything about an event it does not contain       |
+| `s > chainHead.seq`, anchor made before the export  | `anchor_beyond_head`: the chain was shorter at export time than an earlier anchor, so events were removed |
+| `s > chainHead.seq`, anchor made after the export   | `after_view`: nothing to compare                                                                          |
+
+What this proves: for a **complete** export, a `match` at seq `s` means the
+whole exported prefix 1..`s` is the history that existed when the anchor was
+made (every link is verified), so a consistent rewrite of anything up to `s`
+is detected. For a **filtered** export, an anchor at `chainHead` confirms
+the head the (signed) manifest names, and anchors at exported seqs confirm
+those events; membership of the other filtered events still rests on the
+signed manifest and the live check. `--require-anchor` fails unless at least
+one anchor was confirmed (`anchor_missing`).
+
+### Verifying the live chain against anchors
+
+`GET /api/audit/verify` reports `anchors` (see [api.md](api.md)): every
+receipt from the anchor file and the database copy is re-checked and
+compared with the live chain; any mismatch makes `ok` false. To use receipts
+you kept yourself: `POST /api/audit/anchors/verify` with
+`{"text": "<anchor file contents>"}` or `{"receipts": [...]}`.
+
+### Checking the TSA token
+
+Afe checks the token's imprint and nonce, not the TSA's signature. To verify
+the TSA signature (needs the TSA's CA certificate):
+
+```sh
+jq -r 'select(.checkpoint.seq == 1234) | .timestamp.token' default.anchors.jsonl | base64 -d > cp.tst
+DIGEST=$(jq -cjS 'select(.checkpoint.seq == 1234) | .checkpoint' default.anchors.jsonl | sha256sum | cut -d" " -f1)
+openssl ts -verify -digest "$DIGEST" -in cp.tst -token_in -CAfile tsa-ca.pem
+```
+
+The digest is SHA-256 of the RFC 8785 JSON of `checkpoint`; for its fields
+(ASCII strings and integers) `jq -cjS` (compact, sorted keys, no newline)
+produces the same bytes. `afe verify-export --json` prints
+`anchors.results[].timestamp` (imprint status) and `timestampGenTime`.
+
 ## Keys
 
 `afe export-keygen` prints a new `AFE_EXPORT_SIGNING_KEY` (the 32-byte Ed25519
