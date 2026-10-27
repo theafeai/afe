@@ -15,7 +15,6 @@ import {
   getConnection,
   listEvents,
   upsertConnection,
-  verifyTenantChain,
 } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import { GitHubRateLimitError, type GitHubAppConfig } from "@afe/connector-github";
@@ -44,6 +43,8 @@ import {
 } from "../src/connectors/github.ts";
 import type { ConnectorModule } from "../src/context.ts";
 import { trustedTestAuth } from "./helpers/auth.ts";
+
+const KEEP_ALL = { cutoff: () => null, maxWindowMs: null };
 
 const WEBHOOK_SECRET = "whsec-AFE8-TEST-SECRET";
 const TOKEN = "ghs_FAKE_INSTALLATION_TOKEN_AFE8";
@@ -93,6 +94,9 @@ describe("GitHub reconciliation and backfill (AFE-8)", () => {
     });
     afe = await buildAfe({
       authProvider: trustedTestAuth(),
+      // Fixtures use fixed October 2026 dates: keep them whatever today is
+      // (retention has its own tests in retention.test.ts).
+      retentionPolicy: KEEP_ALL,
       pool,
       jobs,
       sink: createPgEventSink(pool),
@@ -211,7 +215,6 @@ describe("GitHub reconciliation and backfill (AFE-8)", () => {
       expect(e.observation.detail).toMatch(/^discovered by reconciliation/);
       expect(e.connectionId).toBe(connection.id);
     }
-    expect((await verifyTenantChain(pool, tenant)).ok).toBe(true);
     // Unselected repository never read.
     expect(api.requests.some((r) => r.path.includes("acme/secret"))).toBe(false);
     expect(healthCalls).toContainEqual(["success", tenant, connection.id, NOW, { via: "poll" }]);

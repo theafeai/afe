@@ -55,8 +55,8 @@ export const SESSION_ROUTE = "/api/session";
 
 /**
  * Reads that are admin-only: they start install/OAuth flows (and their
- * callbacks, which must come from the admin who started them), list a
- * source's projects for selection, or concern export signing keys.
+ * callbacks, which must come from the admin who started them), or list a
+ * source's projects for selection.
  */
 export const ADMIN_READ_ROUTES: ReadonlySet<string> = new Set([
   "/api/connections/github/install",
@@ -66,7 +66,6 @@ export const ADMIN_READ_ROUTES: ReadonlySet<string> = new Set([
   "/api/connections/vercel/install",
   "/api/connections/vercel/callback",
   "/api/connections/vercel/:id/projects",
-  "/api/export/public-key",
 ]);
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);

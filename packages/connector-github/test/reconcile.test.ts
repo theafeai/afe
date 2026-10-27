@@ -191,7 +191,7 @@ describe("GitHub reconciliation (AFE-8)", () => {
       for (const e of webhookEvents(SCENARIO_WEBHOOKS)) {
         const r = await sink.ingest("default", e);
         expect(r.inserted, e.sourceEventId).toBe(false);
-        expect(r.event.observation.method).toBe("reconciliation");
+        expect(r.event?.observation.method).toBe("reconciliation");
       }
     });
 

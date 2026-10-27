@@ -404,7 +404,7 @@ describe("connection health", () => {
     const tEnd = advance(MIN);
     await service.reportSuccess("default", c.id, tEnd);
     await jobs.drain();
-    // Gap history is read from the audit log; this test uses the memory sink,
+    // Gap history is read from stored events; this test uses the memory sink,
     // so copy the events into the database through the real sink.
     const { createPgEventSink } = await import("@afe/db");
     const pgSink = createPgEventSink(pool);
@@ -415,8 +415,6 @@ describe("connection health", () => {
         seq: _s,
         tenantId: _t,
         recordedAt: _r,
-        prevHash: _p,
-        hash: _h,
         ...rest
       } = e;
       await pgSink.ingest("default", { ...rest, rawPayload: null });

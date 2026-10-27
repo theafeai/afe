@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import type { CanonicalEvent } from "@afe/core";
 import { EnvKeyProvider } from "@afe/core/security";
 import { createTestPool } from "@afe/db/testing";
-import { getConnection, listEvents, verifyTenantChain } from "@afe/db";
+import { getConnection, listEvents } from "@afe/db";
 import { FakeVercelApi } from "@afe/connector-vercel/testing";
 import { normalizeDeployment, productionChangeEvent } from "@afe/connector-vercel";
 import { buildAfe, InlineJobQueue, type AfeConfig, type ServerContext } from "../src/index.ts";
@@ -22,6 +22,8 @@ import {
   saveVercelPollState,
 } from "../src/connectors/vercel-state.ts";
 import { trustedTestAuth } from "./helpers/auth.ts";
+
+const KEEP_ALL = { cutoff: () => null, maxWindowMs: null };
 
 const MIN = 60_000;
 const T0 = 1_800_000_000_000;
@@ -96,6 +98,9 @@ describe("vercel event capture (server wiring)", () => {
     });
     const built = await buildAfe({
       authProvider: trustedTestAuth(),
+      // Fixtures use fixed October 2026 dates: keep them whatever today is
+      // (retention has its own tests in retention.test.ts).
+      retentionPolicy: KEEP_ALL,
       pool,
       keys,
       jobs,
@@ -246,7 +251,6 @@ describe("vercel event capture (server wiring)", () => {
       correlation: { commitShas: [SHA], deploymentIds: ["vercel:dpl_a", "vercel:dpl_b"] },
       data: { confidence: "inferred", aliasAssigned: true },
     });
-    expect((await verifyTenantChain(pool, "default")).ok).toBe(true);
     expect(api.requests.every((r) => r.method === "GET")).toBe(true);
     expect(api.requests.some((r) => JSON.stringify(r).includes("prj_secret"))).toBe(false);
     expect(observations.some((o) => o.ok && o.kind === "webhook")).toBe(true);
@@ -300,7 +304,6 @@ describe("vercel event capture (server wiring)", () => {
     const state = (await getVercelProductionState(pool, "default", id, "prj_web"))!;
     expect(state.deploymentId).toBe("dpl_b");
     expect(state.changes.map((c) => c.key).slice(1)).toEqual(alias.map((e) => e.sourceEventId));
-    expect((await verifyTenantChain(pool, "default")).ok).toBe(true);
   });
 
   it("upgrade: a production state row stored before migration 0015 is the baseline (AFE-30)", async () => {
@@ -402,6 +405,9 @@ describe("vercel event capture (server wiring)", () => {
     const defaultModule = createVercelModule({ fetch: api.fetch, now: () => clock });
     const built = await buildAfe({
       authProvider: trustedTestAuth(),
+      // Fixtures use fixed October 2026 dates: keep them whatever today is
+      // (retention has its own tests in retention.test.ts).
+      retentionPolicy: KEEP_ALL,
       pool,
       keys,
       jobs: new InlineJobQueue(),

@@ -6,15 +6,13 @@ import { describe, expect, it } from "vitest";
 import { buildLinks, hintsOf, type CorrelationEvent } from "../src/correlation/index.ts";
 import {
   ACTIONS,
-  buildChainedEvent,
+  buildStoredEvent,
   canonicalEventSchema,
   deploymentUrlKey,
-  GENESIS_HASH,
   isKnownAction,
   parseEventInput,
   safeParseEventInput,
   sha256Hex,
-  verifyChain,
   type CanonicalEvent,
   type CanonicalEventInputLike,
 } from "../src/index.ts";
@@ -22,19 +20,16 @@ import { deploymentInput, SHA } from "./fixtures.ts";
 
 const A = "a".repeat(40);
 const DIGEST = `sha256:${"ab".repeat(32)}`;
-/** Golden hash pinned in hash-chain.test.ts; it must never change. */
-const GOLDEN_HASH = "10d43e189b804e4dc1b69fbc5a89acc90c26589505256b974aff665f81a1a431";
 
 function withCorrelation(extra: Record<string, unknown>): CanonicalEventInputLike {
   const base = deploymentInput();
   return { ...base, correlation: { ...base.correlation, ...extra } } as CanonicalEventInputLike;
 }
 
-function chained(input: CanonicalEventInputLike, seq = 1, prevHash = GENESIS_HASH) {
-  return buildChainedEvent({
+function stored(input: CanonicalEventInputLike, seq = 1) {
+  return buildStoredEvent({
     tenantId: "default",
     seq,
-    prevHash,
     input: parseEventInput(input),
     rawPayload: {
       id: "6f1c3c1e-8a7e-4b8e-9d4a-2f1e0c9b8a70",
@@ -123,47 +118,35 @@ describe("correlation schema: new keys", () => {
   });
 });
 
-describe("hash-chain compatibility", () => {
-  it("absent and empty new keys hash identically to the pre-AFE-18 golden event", () => {
-    // Empty lists are normalised away (keyList → undefined, then compacted),
-    // so neither form adds anything to the canonical JSON.
-    expect(chained(deploymentInput()).hash).toBe(GOLDEN_HASH);
-    const empty = chained(withCorrelation({ upstreamCommitShas: [], deploymentUrls: [] }));
-    expect(empty.hash).toBe(GOLDEN_HASH);
+describe("stored-event compatibility", () => {
+  it("absent, empty and null new keys store identically", () => {
+    // Empty lists are normalised away (keyList → undefined, then compacted).
+    const base = stored(deploymentInput());
+    const empty = stored(withCorrelation({ upstreamCommitShas: [], deploymentUrls: [] }));
+    expect(empty).toEqual(base);
     expect(empty.correlation).not.toHaveProperty("upstreamCommitShas");
     expect(empty.correlation).not.toHaveProperty("deploymentUrls");
-    const nulls = chained(withCorrelation({ upstreamCommitShas: null, deploymentUrls: null }));
-    expect(nulls.hash).toBe(GOLDEN_HASH);
+    const nulls = stored(withCorrelation({ upstreamCommitShas: null, deploymentUrls: null }));
+    expect(nulls).toEqual(base);
   });
 
-  it("new keys are covered by the hash when set", () => {
-    const e = chained(withCorrelation({ deploymentUrls: ["api.acme.example"] }));
-    expect(e.hash).not.toBe(GOLDEN_HASH);
-    expect(verifyChain([e]).ok).toBe(true);
-  });
-
-  it("events stored before the upgrade (legacy data.correlationHints) still verify", () => {
-    // The shape connectors wrote before AFE-18, as read back from storage/export.
-    const legacy = chained({
+  it("events stored before the upgrade (legacy data.correlationHints) still parse", () => {
+    // The shape connectors wrote before AFE-18, as read back from storage.
+    const legacy = stored({
       ...deploymentInput(),
       data: {
         task: "deploy",
         correlationHints: { mentionedCommitShas: [A], deploymentUrls: ["api.acme.example"] },
       },
     });
-    const stored = JSON.parse(JSON.stringify(legacy)) as CanonicalEvent;
-    const next = JSON.parse(
-      JSON.stringify(
-        chained(
-          withCorrelation({ upstreamCommitShas: [A], deploymentUrls: ["api.acme.example"] }),
-          2,
-          legacy.hash,
-        ),
-      ),
-    ) as CanonicalEvent;
-    expect(canonicalEventSchema.safeParse(stored).success).toBe(true);
-    expect(canonicalEventSchema.safeParse(next).success).toBe(true);
-    expect(verifyChain([stored, next], { tenantId: "default" })).toMatchObject({ ok: true });
+    const next = stored(
+      withCorrelation({ upstreamCommitShas: [A], deploymentUrls: ["api.acme.example"] }),
+      2,
+    );
+    for (const e of [legacy, next]) {
+      const roundTripped = JSON.parse(JSON.stringify(e)) as CanonicalEvent;
+      expect(canonicalEventSchema.safeParse(roundTripped).success).toBe(true);
+    }
   });
 });
 
