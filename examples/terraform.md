@@ -17,7 +17,7 @@ terraform -chdir=terraform init
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan
 terraform -chdir=terraform apply
-curl -fsS http://127.0.0.1:8092/
+curl --retry 10 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:8092/
 ```
 
 Review and approve the local image/container resources when prompted. The page
@@ -32,7 +32,7 @@ Change the page to a new version:
 python3 -c 'from pathlib import Path; p=Path("site/index.html"); p.write_text(p.read_text().replace("Version 1", "Version 2"))'
 terraform -chdir=terraform plan
 terraform -chdir=terraform apply
-curl -fsS http://127.0.0.1:8092/
+curl --retry 10 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:8092/
 ```
 
 The content hash is in the container environment, so the changed page causes a
