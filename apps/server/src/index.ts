@@ -26,3 +26,11 @@ export {
   provenanceOf,
   type EventsApiOptions,
 } from "./api/events.ts";
+export {
+  correlationModule,
+  correlationService,
+  createCorrelationModule,
+  CorrelationService,
+  type CorrelationModuleOptions,
+  type JourneyContainmentHook,
+} from "./correlation/index.ts";

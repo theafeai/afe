@@ -1,6 +1,7 @@
 import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
 import { containmentModule } from "../containment/index.ts";
+import { correlationModule } from "../correlation/index.ts";
 import { healthModule } from "../health/index.ts";
 import { mappingModule } from "../mapping/index.ts";
 import { retentionModule } from "../retention.ts";
@@ -29,4 +30,6 @@ export const defaultModules: ConnectorModule[] = [
   retentionModule,
   // Commit containment: is commit X in what is live (AFE-22).
   containmentModule,
+  // Correlation: environment state, placement history, journeys, event links (AFE-20).
+  correlationModule,
 ];
