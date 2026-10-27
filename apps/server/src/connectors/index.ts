@@ -3,6 +3,7 @@ import { eventsApiModule } from "../api/events.ts";
 import { healthModule } from "../health/index.ts";
 import { anchorModule } from "../anchoring/index.ts";
 import { argocdModule } from "./argocd.ts";
+import { argocdAgentModule } from "./argocd-agent.ts";
 import { githubModule } from "./github.ts";
 import { vercelModule } from "./vercel.ts";
 
@@ -13,6 +14,8 @@ import { vercelModule } from "./vercel.ts";
 export const defaultModules: ConnectorModule[] = [
   githubModule,
   argocdModule,
+  // In-cluster ArgoCD agent ingest (AFE-28).
+  argocdAgentModule,
   vercelModule,
   // Connection health (AFE-13): collects every module's `health` hooks.
   healthModule,

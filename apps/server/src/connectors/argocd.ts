@@ -55,6 +55,11 @@ import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import type { JobDefinition } from "../jobs.ts";
 import { createPgCaptureStateStore } from "./argocd-state.ts";
+import {
+  isAgentConnection,
+  probeAgentConnection,
+  requestAgentResync,
+} from "./argocd-agent-state.ts";
 
 export const ARGOCD_WATCH_JOB = "argocd.watch";
 export const ARGOCD_RECONCILE_JOB = "argocd.reconcile";
@@ -450,6 +455,8 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
             if (!job.tenantId || !job.connectionId) {
               // Scheduled fan-out: one reconcile (and an ensured watch) per connection.
               for (const c of await listActiveConnections(ctx.pool, CONNECTOR_SOURCE)) {
+                // Agent connections (AFE-28) are fed by their agent, not pulled.
+                if (isAgentConnection(c)) continue;
                 const payload: ArgoCdCaptureJob = { tenantId: c.tenantId, connectionId: c.id };
                 const singletonKey = `${c.tenantId}:${c.id}`;
                 await ctx.jobs.send(ARGOCD_RECONCILE_JOB, payload, { singletonKey });
@@ -485,6 +492,8 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
       return {
         source: CONNECTOR_SOURCE,
         async probe(connection) {
+          // Agent connections (AFE-28): health comes from the agent's heartbeats.
+          if (isAgentConnection(connection)) return probeAgentConnection(ctx.pool, connection);
           let handle: ArgoCdClientHandle | null;
           try {
             handle = await argocdClientForConnection(ctx, connection, options);
@@ -516,6 +525,8 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
          * other than the latest operation are not recoverable.
          */
         async backfill(connection, _from, _to) {
+          // Agent connections (AFE-28): ask the agent for a full snapshot instead.
+          if (isAgentConnection(connection)) return requestAgentResync(ctx.pool, connection);
           await reconcileArgoCdConnection(ctx, connection, options);
         },
       };
@@ -529,7 +540,9 @@ async function activeConnection(
 ): Promise<Connection | null> {
   if (!job.tenantId || !job.connectionId) return null;
   const c = await getConnection(ctx.pool, job.tenantId, job.connectionId);
-  return c && c.source === CONNECTOR_SOURCE && c.status === "active" ? c : null;
+  return c && c.source === CONNECTOR_SOURCE && c.status === "active" && !isAgentConnection(c)
+    ? c
+    : null;
 }
 
 function captureFor(
