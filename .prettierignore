@@ -4,6 +4,9 @@ pnpm-lock.yaml
 LICENSE
 DCO
 NOTICE
+**/.terraform
+**/*.tfstate*
+**/*.tfplan
 .claude
 docs/research/prototypes/*.html
 # Helm templates are not plain YAML

@@ -1,0 +1,48 @@
+name: Example projects
+
+on:
+  pull_request:
+    paths: ["examples/**", ".github/workflows/examples.yml"]
+  push:
+    branches: [main]
+    paths: ["examples/**", ".github/workflows/examples.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  local:
+    name: Local example deployments
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh examples/check.sh
+      - name: Run the standalone container on a read-only filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t afe-demo:ci examples/demo
+          trap 'docker rm -f afe-demo-ci' EXIT
+          docker run -d --name afe-demo-ci --read-only --tmpfs /tmp \
+            --cap-drop ALL -p 127.0.0.1:8093:8080 afe-demo:ci
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8093/ | grep 'Version 1'
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.0
+          terraform_wrapper: false
+      - name: Apply, change and destroy the local Terraform sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd examples/demo
+          trap 'terraform -chdir=terraform destroy -auto-approve' EXIT
+          terraform -chdir=terraform fmt -check
+          terraform -chdir=terraform init -input=false
+          terraform -chdir=terraform validate
+          terraform -chdir=terraform apply -auto-approve -input=false
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8092/ | grep 'Version 1'
+          sed -i 's/Version 1/Version 2/' site/index.html
+          terraform -chdir=terraform apply -auto-approve -input=false
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8092/ | grep 'Version 2'
+      - name: Render Kustomize manifests
+        run: kubectl kustomize examples/demo > /tmp/afe-demo.yaml
