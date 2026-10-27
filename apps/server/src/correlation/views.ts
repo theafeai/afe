@@ -83,11 +83,7 @@ export interface PlacementSummary {
   gaps: GapFlagView[];
 }
 
-export function placementSummary(
-  snap: Snapshot,
-  p: Placement,
-  current: boolean,
-): PlacementSummary {
+export function placementSummary(snap: Snapshot, p: Placement, current: boolean): PlacementSummary {
   const event = snap.graph.events.get(p.eventId)!;
   const evidence = p.evidenceEventIds.flatMap((id) => snap.graph.events.get(id) ?? []);
   return {

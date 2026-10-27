@@ -244,10 +244,16 @@ export function buildJourney(
       truncated = true;
       break;
     }
-    steps.set(e.id, { eventId: e.id, stage: stageOf(e, repository), confidence: "certain", via: [] });
+    steps.set(e.id, {
+      eventId: e.id,
+      stage: stageOf(e, repository),
+      confidence: "certain",
+      via: [],
+    });
     queue.push(e.id);
     const others = (e.correlation.commitShas ?? []).filter((s) => s !== commitSha);
-    if (e.action === "pull_request.merged") for (const s of others) continueAs(s, "merged_as", e.id);
+    if (e.action === "pull_request.merged")
+      for (const s of others) continueAs(s, "merged_as", e.id);
     else if (isChangeEvent(e) && typeof e.data?.headCommit === "string")
       continueAs(e.data.headCommit, "included_in", e.id);
   }
@@ -265,7 +271,8 @@ export function buildJourney(
       if (l.from !== curId) continue; // forward in time only
       const next = byId.get(l.to)!;
       if (belongsToOtherChange(next, repository, commitSha)) {
-        for (const sha of next.correlation.commitShas ?? []) continueAs(sha, "later_commit", next.id);
+        for (const sha of next.correlation.commitShas ?? [])
+          continueAs(sha, "later_commit", next.id);
         continue;
       }
       const placed = graph.placements.get(next.id)?.placement;
@@ -332,9 +339,7 @@ export function buildJourney(
   const stepList = [...steps.values()].sort((a, b) =>
     byTime(byId.get(a.eventId)!, byId.get(b.eventId)!),
   );
-  const continuesAs = [...continues.values()].sort((a, b) =>
-    a.commitSha < b.commitSha ? -1 : 1,
-  );
+  const continuesAs = [...continues.values()].sort((a, b) => (a.commitSha < b.commitSha ? -1 : 1));
   const journey: Journey = {
     id: `${repository}@${commitSha}`,
     repository,
@@ -379,7 +384,9 @@ export function buildJourneys(
     if (!repo || !sha) continue;
     if (!roots.has(`${repo}@${sha}`)) roots.set(`${repo}@${sha}`, repo);
   }
-  return [...roots].flatMap(([id, repo]) => buildJourney(graph, repo, id.slice(repo.length + 1)) ?? []);
+  return [...roots].flatMap(
+    ([id, repo]) => buildJourney(graph, repo, id.slice(repo.length + 1)) ?? [],
+  );
 }
 
 /**

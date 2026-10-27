@@ -128,13 +128,20 @@ export function registerCorrelationRoutes(
   service: CorrelationService,
   options: CorrelationRouteOptions = {},
 ) {
-  const query = (req: FastifyRequest) => (req.query ?? {}) as Record<string, unknown>;
+  /** Query parameters; unknown ones are rejected (a typo never silently changes a query). */
+  const query = (req: FastifyRequest, allowed: readonly string[]) => {
+    const q = (req.query ?? {}) as Record<string, unknown>;
+    for (const k of Object.keys(q))
+      if (!allowed.includes(k))
+        throw new BadRequest(`unknown parameter ${JSON.stringify(k.slice(0, 64))}`);
+    return q;
+  };
 
   // --- Environment matrix -------------------------------------------------
   app.get("/api/environments/state", async (req, reply) => {
     try {
       const tenantId = requestTenant(req);
-      const q = query(req);
+      const q = query(req, ["service", "environment", "source", "targets"]);
       const serviceFilter = single(q, "service");
       const envFilter = single(q, "environment");
       const sourceFilter = single(q, "source");
@@ -155,7 +162,10 @@ export function registerCorrelationRoutes(
       );
       const resolved = await resolveTargets(ctx, tenantId, snap, states);
 
-      const cells = new Map<string, { service: string | null; env: string | null; states: EnvironmentState[] }>();
+      const cells = new Map<
+        string,
+        { service: string | null; env: string | null; states: EnvironmentState[] }
+      >();
       for (const s of states) {
         const r = resolved.get(s.key);
         const sid = r?.service?.id ?? null;
@@ -236,14 +246,17 @@ export function registerCorrelationRoutes(
       try {
         const tenantId = requestTenant(req);
         const { service: sid, environment: eid } = req.params;
-        const q = query(req);
+        const q = query(req, ["limit", "cursor", "target"]);
         const limit = intParam(q, "limit", 50, 200);
         const targetFilter = single(q, "target");
         const cursorRaw = single(q, "cursor");
         const dims = await dimensions(ctx, tenantId);
         const svc = sid === UNMAPPED ? null : dims.services.find((s) => s.id === sid);
         const env = eid === UNMAPPED ? null : dims.environments.find((e) => e.id === eid);
-        if ((sid !== UNMAPPED && (!SLUG.test(sid) || !svc)) || (eid !== UNMAPPED && (!SLUG.test(eid) || !env)))
+        if (
+          (sid !== UNMAPPED && (!SLUG.test(sid) || !svc)) ||
+          (eid !== UNMAPPED && (!SLUG.test(eid) || !env))
+        )
           throw new NotFound();
         const scope = `${sid}/${eid}/${targetFilter ?? ""}`;
         const cursor = cursorRaw ? decodeCursor(cursorRaw, scope) : null;
@@ -274,7 +287,9 @@ export function registerCorrelationRoutes(
         const last = page.at(-1);
         const hasMore = start >= 0 && start + limit < items.length;
         return {
-          service: svc ? { ...svc, unmapped: false } : { id: UNMAPPED, name: "Unmapped", unmapped: true },
+          service: svc
+            ? { ...svc, unmapped: false }
+            : { id: UNMAPPED, name: "Unmapped", unmapped: true },
           environment: env
             ? { ...env, unmapped: false }
             : { id: UNMAPPED, name: "Unmapped", unmapped: true },
@@ -309,7 +324,7 @@ export function registerCorrelationRoutes(
   app.get("/api/journeys", async (req, reply) => {
     try {
       const tenantId = requestTenant(req);
-      const q = query(req);
+      const q = query(req, ["repository", "commit", "include", "maxSteps"]);
       const repoRaw = single(q, "repository");
       const commitRaw = single(q, "commit")?.toLowerCase();
       if (!repoRaw || repoRaw.length > 300) throw new BadRequest("repository is required");
@@ -332,7 +347,9 @@ export function registerCorrelationRoutes(
         const inRepo = matches.filter((s) =>
           snap.graph.commitIndex
             .get(s)!
-            .some((id) => snap.graph.events.get(id)!.correlation.repositories?.includes(repository)),
+            .some((id) =>
+              snap.graph.events.get(id)!.correlation.repositories?.includes(repository),
+            ),
         );
         if (inRepo.length > 1)
           return reply.code(400).send({
@@ -433,7 +450,7 @@ export function registerCorrelationRoutes(
     try {
       const tenantId = requestTenant(req);
       if (!UUID.test(req.params.id)) throw new NotFound();
-      const limit = intParam(query(req), "limit", 50, 200);
+      const limit = intParam(query(req, ["limit"]), "limit", 50, 200);
       const stored = await getEvent(ctx.pool, tenantId, req.params.id);
       if (!stored) throw new NotFound();
       const snap = await service.snapshot(tenantId);
@@ -464,7 +481,11 @@ export function registerCorrelationRoutes(
         conflicts: snap.graph.conflicts.filter((c) => c.events.includes(id)),
         placement: placed
           ? {
-              target: { key: placed.state.key, source: placed.state.source, label: placed.state.label },
+              target: {
+                key: placed.state.key,
+                source: placed.state.source,
+                label: placed.state.label,
+              },
               current: placed.state.current.eventId === id,
               ...placementSummary(snap, placed.placement, placed.state.current.eventId === id),
             }

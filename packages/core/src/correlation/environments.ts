@@ -29,7 +29,6 @@
  */
 import {
   actorName,
-  byTime,
   sortedByTime,
   commitPrefixFromTag,
   confidenceRank,
@@ -209,7 +208,8 @@ export function deriveEnvironmentStates(
     a.events.push(e);
     const repo = repositoriesOf(e)[0];
     for (const sha of e.correlation.commitShas ?? [])
-      if (!a.commits.has(sha)) a.commits.set(sha, { ...(repo ? { repository: repo } : {}), eventId: e.id });
+      if (!a.commits.has(sha))
+        a.commits.set(sha, { ...(repo ? { repository: repo } : {}), eventId: e.id });
   }
   const byDigest = new Map<string, Artifact[]>();
   const byTag = new Map<string, Artifact[]>();
@@ -484,10 +484,7 @@ function summarise(
     (img) => new Set(img.builds.filter((b) => b.commitSha).map((b) => b.commitSha)).size > 1,
   );
   if (ambiguous) return { status: "ambiguous", confidence: "weak" };
-  const weakest = p.commits.reduce<Confidence>(
-    (c, x) => minConfidence(c, x.confidence),
-    "certain",
-  );
+  const weakest = p.commits.reduce<Confidence>((c, x) => minConfidence(c, x.confidence), "certain");
   return { status: "attributed", confidence: weakest };
 }
 

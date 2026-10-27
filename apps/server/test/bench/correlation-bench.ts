@@ -8,7 +8,6 @@
  * WARNING: resets the schema of TEST_DATABASE_URL (like the tests do).
  */
 import type { FastifyBaseLogger } from "fastify";
-import type pg from "pg";
 import {
   buildCorrelationGraph,
   buildJourney,
@@ -49,7 +48,12 @@ async function main() {
       maxWindowMs: 30 * 86_400_000,
     };
     const noop = () => {};
-    const log = { info: noop, warn: noop, error: noop, debug: noop } as unknown as FastifyBaseLogger;
+    const log = {
+      info: noop,
+      warn: noop,
+      error: noop,
+      debug: noop,
+    } as unknown as FastifyBaseLogger;
     const svc = new CorrelationService(pool, retention, log, { now: () => end, minRecomputeMs: 0 });
 
     const h0 = heapMB();
@@ -150,7 +154,11 @@ async function main() {
           `INSERT INTO bench_event_links SELECT 'default', r.f, r.t, r.c, r.e
              FROM jsonb_to_recordset($1::jsonb) AS r(f uuid, t uuid, c text, e jsonb)
            ON CONFLICT (tenant_id, from_id, to_id) DO UPDATE SET evidence = EXCLUDED.evidence`,
-          [JSON.stringify(mine.map((l) => ({ f: l.from, t: l.to, c: l.confidence, e: l.evidence })))],
+          [
+            JSON.stringify(
+              mine.map((l) => ({ f: l.from, t: l.to, c: l.confidence, e: l.evidence })),
+            ),
+          ],
         );
       }
       perEvent.push(performance.now() - s);
@@ -184,17 +192,18 @@ async function main() {
         tableMB: Math.round(Number(size[0]!.bytes) / 1e5) / 10,
         incrementalPerEventMedianMs: Math.round(median(perEvent) * 10) / 10,
         incrementalPerEventP95Ms:
-          Math.round([...perEvent].sort((a, b) => a - b)[Math.floor(perEvent.length * 0.95)]! * 10) /
-          10,
+          Math.round(
+            [...perEvent].sort((a, b) => a - b)[Math.floor(perEvent.length * 0.95)]! * 10,
+          ) / 10,
         readPlacementLinksMs,
       },
     };
-    console.log(JSON.stringify(row));
+    process.stdout.write(`${JSON.stringify(row)}\n`);
     out.push(row);
     svc.invalidate();
     await pool.end();
   }
-  console.log(JSON.stringify(out, null, 2));
+  process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
 }
 
 await main();

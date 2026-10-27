@@ -61,7 +61,10 @@ function appliesTo(g: GapSpan, e: Pick<CorrelationEvent, "source" | "connectionI
 /** Index of gaps per connection/source for fast checks. */
 export class GapIndex {
   readonly gaps: readonly GapSpan[];
-  constructor(gaps: GapSpan[], readonly now: string) {
+  constructor(
+    gaps: GapSpan[],
+    readonly now: string,
+  ) {
     this.gaps = gaps;
   }
 

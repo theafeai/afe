@@ -14,7 +14,6 @@
  * docs/correlation.md.
  */
 import {
-  byTime,
   sortedByTime,
   commitPrefixFromTag,
   digestsOf,

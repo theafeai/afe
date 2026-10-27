@@ -6,14 +6,14 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
-import { observationGapClosed, observationGapOpened, type CanonicalEventInputLike } from "@afe/core";
+import {
+  observationGapClosed,
+  observationGapOpened,
+  type CanonicalEventInputLike,
+} from "@afe/core";
 import { ingestEvent } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
-import {
-  C,
-  DG,
-  syntheticInputs,
-} from "../../../docs/research/prototypes/synthetic-dataset.ts";
+import { C, DG, syntheticInputs } from "../../../docs/research/prototypes/synthetic-dataset.ts";
 import { buildAfe, type AfeApp } from "../src/index.ts";
 import { createMappingModule } from "../src/mapping/index.ts";
 import { createCorrelationModule, type JourneyContainmentHook } from "../src/correlation/index.ts";
@@ -46,7 +46,10 @@ describe("correlation API (AFE-20)", () => {
     afe.app.inject({
       method: method as "GET",
       url,
-      headers: { ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+      headers: {
+        ...headers,
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      },
       ...(body !== undefined ? { payload: JSON.stringify(body) } : {}),
     });
   const get = (url: string, h = V) => call("GET", url, h);
@@ -77,7 +80,11 @@ describe("correlation API (AFE-20)", () => {
       reason: "connection_error" as const,
     };
     await ingestEvent(pool, "default", observationGapOpened(gh));
-    await ingestEvent(pool, "default", observationGapClosed({ ...gh, endedAt: new Date(t + 60_000) }));
+    await ingestEvent(
+      pool,
+      "default",
+      observationGapClosed({ ...gh, endedAt: new Date(t + 60_000) }),
+    );
     await ingestEvent(
       pool,
       "default",
@@ -111,9 +118,9 @@ describe("correlation API (AFE-20)", () => {
       { field: "vercel.project", match: "exact", pattern: "web", targetId: "web" },
       { field: "github.repository", match: "exact", pattern: "acme/web", targetId: "web" },
     ])
-      expect((await call("POST", "/api/mapping/rules", A, { kind: "service", ...r })).statusCode).toBe(
-        201,
-      );
+      expect(
+        (await call("POST", "/api/mapping/rules", A, { kind: "service", ...r })).statusCode,
+      ).toBe(201);
   });
   afterAll(async () => {
     await afe.app.close();
@@ -125,7 +132,11 @@ describe("correlation API (AFE-20)", () => {
       const res = await get("/api/environments/state");
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.services.map((s: { id: string }) => s.id)).toEqual(["shop-api", "web", "_unmapped"]);
+      expect(body.services.map((s: { id: string }) => s.id)).toEqual([
+        "shop-api",
+        "web",
+        "_unmapped",
+      ]);
       expect(body.environments.map((e: { id: string }) => e.id).slice(0, 3)).toEqual([
         "production",
         "staging",
@@ -156,7 +167,11 @@ describe("correlation API (AFE-20)", () => {
 
       // (c) Manual ArgoCD sync with an overridden image: unknown, config revision known.
       const prod = cells["shop-api/production"];
-      expect(prod.live).toMatchObject({ kind: "manual", commits: [], configRevision: { commitSha: C.C2 } });
+      expect(prod.live).toMatchObject({
+        kind: "manual",
+        commits: [],
+        configRevision: { commitSha: C.C2 },
+      });
       expect(prod.status).toBe("unknown");
       expect(prod.targets[0].history.byKind).toMatchObject({ manual: 1 });
 
@@ -178,16 +193,29 @@ describe("correlation API (AFE-20)", () => {
         "vercel:web:production",
       ]);
       expect(web.consistent).toBe(false);
-      expect(web.targets.find((t: { source: string }) => t.source === "vercel").history.placements).toBe(7);
+      expect(
+        web.targets.find((t: { source: string }) => t.source === "vercel").history.placements,
+      ).toBe(7);
     });
 
     it("flags cells whose evidence falls inside a gap, and open gaps after the placement", async () => {
       const body = (await get("/api/environments/state")).json();
       const cell = (k: string) =>
-        body.cells.find((c: { service: string; environment: string }) => `${c.service}/${c.environment}` === k);
+        body.cells.find(
+          (c: { service: string; environment: string }) => `${c.service}/${c.environment}` === k,
+        );
       const workerStaging = cell("_unmapped/staging");
-      expect(workerStaging.gap).toMatchObject({ flagged: true, evidenceInGap: true, possiblyStale: true });
-      expect(workerStaging.live.gaps.map((g: { gapId: string; relation: string }) => [g.gapId, g.relation])).toEqual(
+      expect(workerStaging.gap).toMatchObject({
+        flagged: true,
+        evidenceInGap: true,
+        possiblyStale: true,
+      });
+      expect(
+        workerStaging.live.gaps.map((g: { gapId: string; relation: string }) => [
+          g.gapId,
+          g.relation,
+        ]),
+      ).toEqual(
         expect.arrayContaining([
           ["gap-gh", "evidence_in_gap"],
           ["gap-argo", "after_placement"],
@@ -198,18 +226,27 @@ describe("correlation API (AFE-20)", () => {
       const gaps = (source: string) =>
         web.targets.find((t: { source: string }) => t.source === source).current.gaps;
       expect(gaps("vercel")).toEqual([]);
-      expect(gaps("github").map((g: { relation: string }) => g.relation)).toEqual(["after_placement"]);
+      expect(gaps("github").map((g: { relation: string }) => g.relation)).toEqual([
+        "after_placement",
+      ]);
     });
 
     it("filters by service, environment and source; bounds targets per cell", async () => {
       const one = (await get("/api/environments/state?service=web&environment=production")).json();
       expect(one.cells).toHaveLength(1);
       const vercelOnly = (await get("/api/environments/state?service=web&source=vercel")).json();
-      expect(vercelOnly.cells.every((c: { targets: { source: string }[] }) => c.targets.every((t) => t.source === "vercel"))).toBe(true);
-      const capped = (await get("/api/environments/state?service=web&environment=production&targets=1")).json();
+      expect(
+        vercelOnly.cells.every((c: { targets: { source: string }[] }) =>
+          c.targets.every((t) => t.source === "vercel"),
+        ),
+      ).toBe(true);
+      const capped = (
+        await get("/api/environments/state?service=web&environment=production&targets=1")
+      ).json();
       expect(capped.cells[0]).toMatchObject({ targetsOmitted: 1 });
       expect((await get("/api/environments/state?service=nope")).statusCode).toBe(400);
       expect((await get("/api/environments/state?targets=0")).statusCode).toBe(400);
+      expect((await get("/api/environments/state?enviroment=production")).statusCode).toBe(400);
       expect((await get("/api/environments/state?service=a&service=b")).statusCode).toBe(400);
     });
   });
@@ -223,32 +260,51 @@ describe("correlation API (AFE-20)", () => {
       const all = [...first.items];
       let cursor = first.nextCursor;
       while (cursor) {
-        const page = (await get(`/api/environments/web/production/history?limit=3&cursor=${cursor}`)).json();
+        const page = (
+          await get(`/api/environments/web/production/history?limit=3&cursor=${cursor}`)
+        ).json();
         all.push(...page.items);
         cursor = page.nextCursor;
       }
       expect(all).toHaveLength(8);
       expect(new Set(all.map((i) => i.placement.eventId)).size).toBe(8);
       const kinds = all.map((i) => i.placement.kind);
-      expect(kinds).toEqual(expect.arrayContaining(["rollback", "promotion", "redeploy", "manual", "deploy"]));
+      expect(kinds).toEqual(
+        expect.arrayContaining(["rollback", "promotion", "redeploy", "manual", "deploy"]),
+      );
       const rollback = all.find((i) => i.placement.kind === "rollback");
-      expect(rollback.placement.commits[0]).toMatchObject({ commitSha: C.M1, confidence: "certain" });
-      expect(rollback.causes.some((c: { evidence: { kind: string }[] }) => c.evidence.some((e) => e.kind === "same_deployment"))).toBe(true);
+      expect(rollback.placement.commits[0]).toMatchObject({
+        commitSha: C.M1,
+        confidence: "certain",
+      });
+      expect(
+        rollback.causes.some((c: { evidence: { kind: string }[] }) =>
+          c.evidence.some((e) => e.kind === "same_deployment"),
+        ),
+      ).toBe(true);
       expect(all.at(-1).change).toBe("first");
     });
 
     it("shows the manual override step of the GitOps production history", async () => {
       const h = (await get("/api/environments/shop-api/production/history")).json();
-      expect(h.items.map((i: { placement: { kind: string } }) => i.placement.kind)).toEqual(["manual", "deploy"]);
+      expect(h.items.map((i: { placement: { kind: string } }) => i.placement.kind)).toEqual([
+        "manual",
+        "deploy",
+      ]);
       expect(h.items[0].change).toBe("new_content");
-      expect(h.items[1].placement.commits[0]).toMatchObject({ commitSha: C.A, confidence: "strong" });
+      expect(h.items[1].placement.commits[0]).toMatchObject({
+        commitSha: C.A,
+        confidence: "strong",
+      });
       expect(h.items[1].causes.length).toBeGreaterThan(0);
     });
 
     it("answers the unmapped bucket, 404 for unknown ids and 400 for a foreign cursor", async () => {
       const u = await get("/api/environments/_unmapped/production/history");
       expect(u.statusCode).toBe(200);
-      expect(u.json().targets.map((t: { key: string }) => t.key)).toEqual(["argocd:argocd/worker-production"]);
+      expect(u.json().targets.map((t: { key: string }) => t.key)).toEqual([
+        "argocd:argocd/worker-production",
+      ]);
       expect((await get("/api/environments/nope/production/history")).statusCode).toBe(404);
       expect((await get("/api/environments/web/NOPE/history")).statusCode).toBe(404);
       const c = (await get("/api/environments/web/production/history?limit=1")).json().nextCursor;
@@ -265,22 +321,42 @@ describe("correlation API (AFE-20)", () => {
       expect(j.stages.map((s: { stage: string }) => s.stage)).toEqual(
         expect.arrayContaining(["change", "ci", "artifact", "config", "deploy"]),
       );
-      expect(j.environments.map((e: { target: { key: string }; confidence: string; service: string; environment: string }) => [e.target.key, e.confidence, e.service, e.environment])).toEqual([
+      expect(
+        j.environments.map(
+          (e: {
+            target: { key: string };
+            confidence: string;
+            service: string;
+            environment: string;
+          }) => [e.target.key, e.confidence, e.service, e.environment],
+        ),
+      ).toEqual([
         ["argocd:argocd/shop-api-staging", "probable", "shop-api", "staging"],
         ["argocd:argocd/shop-api-production", "strong", "shop-api", "production"],
       ]);
       // The manual sync of the same config revision running another image is excluded.
-      const [manualSync] = await idOf("source = 'argocd' AND action = 'argocd.sync.succeeded' AND trigger ->> 'type' = 'manual' AND target ->> 'application' = 'shop-api-production'");
+      const [manualSync] = await idOf(
+        "source = 'argocd' AND action = 'argocd.sync.succeeded' AND trigger ->> 'type' = 'manual' AND target ->> 'application' = 'shop-api-production'",
+      );
       expect(j.excluded.map((x: { eventId: string }) => x.eventId)).toContain(manualSync);
-      for (const e of j.edges) expect(["certain", "strong", "probable", "weak"]).toContain(e.confidence);
-      expect(j.steps.every((s: { event: { url: string } }) => s.event.url.startsWith("/api/events/"))).toBe(true);
+      for (const e of j.edges)
+        expect(["certain", "strong", "probable", "weak"]).toContain(e.confidence);
+      expect(
+        j.steps.every((s: { event: { url: string } }) => s.event.url.startsWith("/api/events/")),
+      ).toBe(true);
     });
 
     it("says where a PR head commit continues, accepts short SHAs and a repository URL", async () => {
-      const j = (await get(`/api/journeys?repository=https://github.com/acme/web&commit=${C.P1.slice(0, 10)}`)).json().journey;
+      const j = (
+        await get(
+          `/api/journeys?repository=https://github.com/acme/web&commit=${C.P1.slice(0, 10)}`,
+        )
+      ).json().journey;
       expect(j.commitSha).toBe(C.P1);
       expect(j.continuesAs.map((c: { commitSha: string }) => c.commitSha)).toContain(C.M1);
-      expect(j.environments.some((e: { environment: string }) => e.environment === "preview")).toBe(true);
+      expect(j.environments.some((e: { environment: string }) => e.environment === "preview")).toBe(
+        true,
+      );
     });
 
     it("enriches journeys with commit containment on request", async () => {
@@ -288,10 +364,15 @@ describe("correlation API (AFE-20)", () => {
       const plain = (await get(`/api/journeys?repository=acme/shop&commit=${C.A}`)).json().journey;
       expect(plain.containment).toBeNull();
       expect(containmentCalls).toHaveLength(0);
-      const j = (await get(`/api/journeys?repository=acme/shop&commit=${C.A}&include=containment`)).json().journey;
+      const j = (
+        await get(`/api/journeys?repository=acme/shop&commit=${C.A}&include=containment`)
+      ).json().journey;
       expect(containmentCalls).toEqual([{ commit: C.A, live: C.B }]);
       const via = j.environments.find((e: { via: string }) => e.via === "containment");
-      expect(via).toMatchObject({ current: true, target: { key: "argocd:argocd/shop-api-staging" } });
+      expect(via).toMatchObject({
+        current: true,
+        target: { key: "argocd:argocd/shop-api-staging" },
+      });
       expect(j.containment[0]).toMatchObject({ liveCommitSha: C.B, contained: true });
     });
 
@@ -299,9 +380,13 @@ describe("correlation API (AFE-20)", () => {
       expect((await get("/api/journeys?repository=acme/shop")).statusCode).toBe(400);
       expect((await get("/api/journeys?commit=abcdef0")).statusCode).toBe(400);
       expect((await get("/api/journeys?repository=acme/shop&commit=xyz")).statusCode).toBe(400);
-      expect((await get(`/api/journeys?repository=acme/shop&commit=${C.A}&include=nope`)).statusCode).toBe(400);
+      expect(
+        (await get(`/api/journeys?repository=acme/shop&commit=${C.A}&include=nope`)).statusCode,
+      ).toBe(400);
       expect((await get(`/api/journeys?repository=acme/other&commit=${C.A}`)).statusCode).toBe(404);
-      expect((await get(`/api/journeys?repository=acme/shop&commit=${"0".repeat(40)}`)).statusCode).toBe(404);
+      expect(
+        (await get(`/api/journeys?repository=acme/shop&commit=${"0".repeat(40)}`)).statusCode,
+      ).toBe(404);
     });
   });
 
@@ -311,8 +396,15 @@ describe("correlation API (AFE-20)", () => {
       const body = (await get(`/api/events/${rollback}/links`)).json();
       expect(body.inWindow).toBe(true);
       expect(body.links[0].confidence).toBe("certain");
-      expect(body.links.some((l: { evidence: { kind: string }[] }) => l.evidence.some((e) => e.kind === "same_deployment"))).toBe(true);
-      expect(body.placement).toMatchObject({ kind: "rollback", target: { key: "vercel:web:production" } });
+      expect(
+        body.links.some((l: { evidence: { kind: string }[] }) =>
+          l.evidence.some((e) => e.kind === "same_deployment"),
+        ),
+      ).toBe(true);
+      expect(body.placement).toMatchObject({
+        kind: "rollback",
+        target: { key: "vercel:web:production" },
+      });
       const limited = (await get(`/api/events/${rollback}/links?limit=1`)).json();
       expect(limited.links).toHaveLength(1);
       expect(limited.total).toBe(body.total);
@@ -344,7 +436,9 @@ describe("correlation API (AFE-20)", () => {
       expect(state.cells).toEqual([]);
       expect(state.services.map((s: { id: string }) => s.id)).toEqual([]);
       expect((await get("/api/environments/web/production/history", B)).statusCode).toBe(404);
-      expect((await get(`/api/journeys?repository=acme/shop&commit=${C.A}`, B)).statusCode).toBe(404);
+      expect((await get(`/api/journeys?repository=acme/shop&commit=${C.A}`, B)).statusCode).toBe(
+        404,
+      );
       const [rollback] = await idOf("action = 'deployment.rolled_back'");
       expect((await get(`/api/events/${rollback}/links`, B)).statusCode).toBe(404);
       expect((await get("/api/events/not-a-uuid/links")).statusCode).toBe(404);
@@ -356,7 +450,8 @@ describe("correlation API (AFE-20)", () => {
       const before = (await get("/api/environments/state")).json().window;
       const sync: CanonicalEventInputLike = {
         ...syntheticInputs.findLast(
-          (e) => e.action === "argocd.sync.succeeded" && e.target.application === "shop-api-staging",
+          (e) =>
+            e.action === "argocd.sync.succeeded" && e.target.application === "shop-api-staging",
         )!,
         sourceEventId: "afe20:new-sync",
         occurredAt: "2026-10-26T12:00:00Z",
@@ -367,8 +462,15 @@ describe("correlation API (AFE-20)", () => {
       delete (sync as { id?: string }).id;
       await ingestEvent(pool, "default", sync);
       // Outside the 30-day window: never loaded.
-      await ingestEvent(pool, "default", { ...sync, sourceEventId: "afe20:old", occurredAt: "2026-08-01T00:00:00Z", observedAt: "2026-08-01T00:00:01Z" });
-      const after = (await get("/api/environments/state?service=shop-api&environment=staging")).json();
+      await ingestEvent(pool, "default", {
+        ...sync,
+        sourceEventId: "afe20:old",
+        occurredAt: "2026-08-01T00:00:00Z",
+        observedAt: "2026-08-01T00:00:01Z",
+      });
+      const after = (
+        await get("/api/environments/state?service=shop-api&environment=staging")
+      ).json();
       expect(after.window.asOfSeq).toBe(before.asOfSeq + 2);
       expect(after.window.events).toBe(before.events + 1);
       expect(after.cells[0].live).toMatchObject({ actor: "carol", kind: "manual" });

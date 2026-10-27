@@ -17,7 +17,8 @@ export { CorrelationService, type CorrelationServiceOptions, type Snapshot } fro
 export type { CorrelationRouteOptions, JourneyContainmentHook } from "./routes.ts";
 export { UNMAPPED } from "./views.ts";
 
-export interface CorrelationModuleOptions extends CorrelationServiceOptions, CorrelationRouteOptions {}
+export interface CorrelationModuleOptions
+  extends CorrelationServiceOptions, CorrelationRouteOptions {}
 
 export interface CorrelationModule extends ConnectorModule {
   service(ctx: ServerContext): CorrelationService;

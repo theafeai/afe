@@ -116,7 +116,8 @@ export function generateWorkload(options: WorkloadOptions = {}): Workload {
       const toMain = kind === "vercel" ? rnd() < 0.5 : true;
       const ref = toMain ? "refs/heads/main" : `refs/heads/feature-${p % 7}`;
       const actor = dev(p + r);
-      if (sampleCommits.length < 20 && p === 3) sampleCommits.push({ repository: repo, commitSha: sha });
+      if (sampleCommits.length < 20 && p === 3)
+        sampleCommits.push({ repository: repo, commitSha: sha });
       emit(t0, {
         source: "github",
         connectionId: CONNECTIONS.github,
@@ -371,7 +372,10 @@ export function generateWorkload(options: WorkloadOptions = {}): Workload {
               target: { ...vt, environment: "production" },
               trigger: { type: "rollback" },
               outcome: "succeeded",
-              correlation: { deploymentIds: [`vercel:${prevProd.dpl}`], environments: ["production"] },
+              correlation: {
+                deploymentIds: [`vercel:${prevProd.dpl}`],
+                environments: ["production"],
+              },
               data: {},
             });
           } else if (roll < 0.08) {
