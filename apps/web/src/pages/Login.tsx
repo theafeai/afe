@@ -43,7 +43,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
       } else if (next) {
         navigate(next, { replace: true });
       } else if (window.location.pathname === "/login") {
-        navigate("/events", { replace: true });
+        navigate("/", { replace: true });
       }
     } catch (err) {
       setError(
