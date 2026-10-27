@@ -1,4 +1,5 @@
 import PgBoss from "pg-boss";
+import pg from "pg";
 
 /** A background job handler. Throwing marks the job failed; it is retried. */
 export interface JobDefinition<T extends object = object> {
@@ -27,7 +28,7 @@ export class PgBossJobRunner implements JobQueue {
   private readonly boss: PgBoss;
   private started = false;
 
-  constructor(connectionString: string) {
+  constructor(private readonly connectionString: string) {
     this.boss = new PgBoss({ connectionString, schema: "pgboss" });
   }
 
@@ -40,19 +41,29 @@ export class PgBossJobRunner implements JobQueue {
 
   /** Creates queues and schedules; with `work`, also consumes them. */
   async register(definitions: JobDefinition[], { work }: { work: boolean }): Promise<void> {
-    await this.start();
-    for (const def of definitions) {
-      await this.boss.createQueue(def.name, {
-        name: def.name,
-        retryLimit: def.retryLimit ?? 5,
-        retryBackoff: true,
-      });
-      if (def.schedule) await this.boss.schedule(def.name, def.schedule, def.scheduleData ?? {});
-      if (work) {
-        await this.boss.work<object>(def.name, async (jobs) => {
-          for (const job of jobs) await def.handler(job.data);
+    // Server and worker start together in compose. Serialize pg-boss schema
+    // initialization and queue DDL across processes, including a fresh database.
+    const bootstrap = new pg.Client({ connectionString: this.connectionString });
+    await bootstrap.connect();
+    try {
+      await bootstrap.query("SELECT pg_advisory_lock($1)", [7_212_027]);
+      await this.start();
+      for (const def of definitions) {
+        await this.boss.createQueue(def.name, {
+          name: def.name,
+          retryLimit: def.retryLimit ?? 5,
+          retryBackoff: true,
         });
+        if (def.schedule) await this.boss.schedule(def.name, def.schedule, def.scheduleData ?? {});
+        if (work) {
+          await this.boss.work<object>(def.name, async (jobs) => {
+            for (const job of jobs) await def.handler(job.data);
+          });
+        }
       }
+    } finally {
+      await bootstrap.query("SELECT pg_advisory_unlock($1)", [7_212_027]).catch(() => {});
+      await bootstrap.end();
     }
   }
 
