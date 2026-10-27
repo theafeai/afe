@@ -1,0 +1,62 @@
+name: GitHub Pages Afe acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Public standalone demo repository (owner/repo)
+        required: true
+      connection_id:
+        description: Existing Afe GitHub connection ID
+        required: true
+      version_1_run:
+        description: Successful Version 1 Pages workflow run ID
+        required: true
+      version_2_run:
+        description: Successful Version 2 Pages workflow run ID
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check account configuration
+        env:
+          AFE_DEMO_URL: ${{ vars.AFE_DEMO_URL }}
+          AFE_ADMIN_TOKEN: ${{ secrets.AFE_DEMO_ADMIN_TOKEN }}
+        run: |
+          test -n "$AFE_DEMO_URL" || { echo 'Set the AFE_DEMO_URL repository variable to the HTTPS test Afe origin'; exit 1; }
+          test -n "$AFE_ADMIN_TOKEN" || { echo 'Set the AFE_DEMO_ADMIN_TOKEN repository secret for the dedicated test instance'; exit 1; }
+      - name: Prepare browser capture
+        run: |
+          npm install --prefix "$RUNNER_TEMP/afe-preview" --no-package-lock --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/afe-preview/node_modules/.bin/playwright" install --with-deps chromium
+          cp examples/ci/github-capture.mjs "$RUNNER_TEMP/afe-preview/github-capture.mjs"
+      - name: Compare real GitHub deployments with Afe
+        env:
+          AFE_DEMO_URL: ${{ vars.AFE_DEMO_URL }}
+          AFE_ADMIN_TOKEN: ${{ secrets.AFE_DEMO_ADMIN_TOKEN }}
+          AFE_CAPTURE_SCRIPT: ${{ runner.temp }}/afe-preview/github-capture.mjs
+          DEMO_REPOSITORY: ${{ inputs.repository }}
+          DEMO_CONNECTION: ${{ inputs.connection_id }}
+          VERSION_1_RUN: ${{ inputs.version_1_run }}
+          VERSION_2_RUN: ${{ inputs.version_2_run }}
+        run: |
+          python3 examples/ci/github-afe.py --repository "$DEMO_REPOSITORY" \
+            --connection-id "$DEMO_CONNECTION" --run-ids "$VERSION_1_RUN" "$VERSION_2_RUN"
+      - name: Upload verified event evidence and UI recording
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-afe-evidence
+          path: github-evidence/
+          retention-days: 14
+          if-no-files-found: error

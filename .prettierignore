@@ -8,6 +8,7 @@ NOTICE
 **/*.tfstate*
 **/*.tfplan
 argocd-evidence/
+github-evidence/
 .claude
 docs/research/prototypes/*.html
 # Helm templates are not plain YAML

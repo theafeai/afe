@@ -8,5 +8,6 @@ coverage
 .DS_Store
 secrets/
 argocd-evidence/
+github-evidence/
 __pycache__/
 *.pyc

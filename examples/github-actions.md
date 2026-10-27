@@ -3,6 +3,9 @@
 First [copy and publish the demo](README.md). Use an empty public test repository
 and a GitHub account/org where you can enable Actions and Pages.
 
+For a local Afe instance without a public tunnel, follow the exact
+[local polling setup](local-github.md) first.
+
 ## Connect Afe
 
 1. Configure Afe's HTTPS public URL as described in the shared guide.
@@ -52,6 +55,55 @@ available. Pages runs in `github-pages`, not an environment called `production`.
 For a repeatable failure, temporarily change the workflow's check from
 `test -s site/index.html` to `test -s site/missing.html` on a new PR. The check
 must fail and main must not deploy. Close/revert that test change afterward.
+
+## Record repeatable acceptance evidence
+
+After both deployments complete, retain their run IDs from the URLs
+`https://github.com/OWNER/REPO/actions/runs/RUN_ID` and the GitHub connection ID
+from Afe's connection details URL. Use a dedicated test Afe instance.
+
+The verifier checks the real public GitHub API and Afe. It requires both
+workflow runs to succeed on main, Version 1 and Version 2 in their respective
+source commits, successful Pages deployment statuses linked to those runs,
+and matching successful workflow/deployment events in Afe. It compares the
+connection, repository, commit, run, deployment and status IDs. It never
+creates events or treats a successful workflow alone as a deployment.
+
+From the Afe checkout, with Python 3 installed:
+
+```sh
+export AFE_DEMO_URL=https://YOUR-TEST-AFE-HOST
+# Set AFE_ADMIN_TOKEN privately through your secret manager/environment.
+python3 examples/ci/github-afe.py --repository YOUR-ACCOUNT/afe-demo \
+  --connection-id YOUR-AFE-CONNECTION-ID --run-ids VERSION-1-RUN-ID VERSION-2-RUN-ID
+```
+
+The Afe origin must be reachable from the machine running this command.
+HTTPS is required except for HTTP on loopback during local testing.
+The script waits up to ten minutes for observation and writes only whitelisted
+source/event metadata to the gitignored `github-evidence/` directory. API
+errors, missing evidence and timeouts fail the command; they do not count as
+acceptance. Public GitHub API calls use the anonymous rate limit.
+
+For cloud execution and browser evidence, the Afe repository includes the
+manual **GitHub Pages Afe acceptance** workflow. Once that workflow is on the
+default branch:
+
+1. Set repository variable `AFE_DEMO_URL` to the dedicated test Afe HTTPS origin.
+2. Set repository secret `AFE_DEMO_ADMIN_TOKEN` to that instance's admin token.
+   Keep this out of workflow inputs, source files and issue comments.
+3. Open Actions → GitHub Pages Afe acceptance → Run workflow. Supply the demo
+   repository, Afe connection ID and the two successful Pages run IDs.
+4. Download the `github-afe-evidence` artifact. Open `results.json`, the event
+   screenshots and `recordings/github-events.webm`.
+
+This recording shows Afe's verified event history and connection. Open the
+Pages URL during each deployment to verify the live version separately; a
+later recording cannot show the site's previous live state. The workflow
+does not publish or delete the demo, configure Pages, register an App or
+install it. Those account steps above remain prerequisites. The workflow
+and browser capture must be exercised against the actual test accounts before
+claiming hosted acceptance; preparing them does not complete that check.
 
 ## Troubleshooting and cleanup
 

@@ -1,0 +1,16 @@
+# Add to the base Compose file when configuring the local polling-only demo.
+services:
+  afe-server:
+    secrets:
+      - github_app_private_key
+      - github_webhook_secret
+  afe-worker:
+    secrets:
+      - github_app_private_key
+      - github_webhook_secret
+
+secrets:
+  github_app_private_key:
+    file: ./secrets/github_app_private_key
+  github_webhook_secret:
+    file: ./secrets/github_webhook_secret
