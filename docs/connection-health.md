@@ -161,7 +161,10 @@ Durations accept `ms`, `s`, `m`, `h`, `d` suffixes.
   and is unauthenticated, like the rest of the API until the `AuthProvider`
   issue lands.
 - Gap history is reconstructed from events by a per-connection scan; AFE-14's
-  query API may replace it.
+  query API may replace it. It covers the event retention window only
+  (`AFE_EVENT_RETENTION_DAYS`, ADR 0008): a gap whose `opened` event was purged
+  still shows from its `closed` event (which carries the whole gap), and the
+  current state is in `connection_health`, which retention does not touch.
 - A connector's own pollers must call `reportSuccess`/`reportFailure`;
   connections without probe hooks are never probed (their state stays
   `unknown` until a connector reports).
