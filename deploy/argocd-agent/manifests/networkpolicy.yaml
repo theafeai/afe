@@ -1,0 +1,48 @@
+# Egress only to DNS, the Kubernetes API server and Afe; no ingress except
+# the kubelet's health probes (which most CNIs do not filter).
+#
+# EDIT BEFORE APPLYING: NetworkPolicy cannot select the API server or an
+# external host by name, so put their addresses here:
+#   - API server: `kubectl get endpoints kubernetes -n default` (the endpoint
+#     IPs and port, often 6443; managed clusters may use 443).
+#   - Afe: the IP range Afe's hostname resolves to (or your egress proxy).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: afe-argocd-agent
+  namespace: afe-argocd-agent
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: afe-argocd-agent
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API server (replace with your endpoint IPs)
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # Afe (replace with Afe's address range)
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.0/24
+      ports:
+        - protocol: TCP
+          port: 443

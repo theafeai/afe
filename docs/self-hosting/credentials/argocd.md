@@ -7,9 +7,9 @@ References: [User management](https://argo-cd.readthedocs.io/en/stable/operator-
 [RBAC configuration](https://argo-cd.readthedocs.io/en/stable/operator-manual/rbac/),
 [`argocd account generate-token`](https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd_account_generate-token/).
 
-> How the server URL, token and CA bundle are entered into Afe, and whether an
-> in-cluster agent mode is offered, are **to be finalised when AFE-9 (ArgoCD
-> connector) lands**.
+> ArgoCD instances Afe cannot reach can use the **in-cluster agent** instead:
+> no ArgoCD account or token at all, only a Kubernetes ServiceAccount and an
+> agent secret. See [In-cluster agent secret](#in-cluster-agent-secret) below.
 
 ## 1. Create a local account with API-key capability only
 
@@ -95,3 +95,38 @@ Network notes:
   `argocd account delete-token --account afe <id>`.
 - **Revoke**: delete the tokens, or set `accounts.afe.enabled: "false"`. Afe
   marks the connection unhealthy and records an observation gap.
+
+## In-cluster agent secret
+
+With the in-cluster agent ([docs/connectors/argocd.md](../../connectors/argocd.md#in-cluster-agent))
+Afe needs no ArgoCD token. The agent reads Applications with a Kubernetes
+ServiceAccount (get/list/watch `applications.argoproj.io`, get/list `events`;
+nothing else, no Secrets) and authenticates to Afe with a per-agent secret.
+
+- **Create**: `POST /api/connections/argocd/agents` (admin) returns `agentId`
+  and `secret` once. Afe keeps it encrypted (credential kind
+  `argocd_agent_secret`, role `agent_secret`).
+- **Store** it only in a Kubernetes Secret, never in Helm values or a
+  ConfigMap:
+
+  ```sh
+  kubectl create namespace afe-argocd-agent
+  kubectl -n afe-argocd-agent create secret generic afe-argocd-agent \
+    --from-literal=secret="$AGENT_SECRET"
+  ```
+
+  The agent reads it from the mounted file (`AFE_AGENT_SECRET_FILE`). The
+  secret is only used to compute an HMAC; it is never sent to Afe or logged.
+
+- **Rotate** without downtime: `POST /api/connections/argocd/agents/<id>/rotate-secret`
+  with `{"graceSeconds": 3600}` returns the new secret and keeps the old one
+  valid for the grace period. Update the Kubernetes Secret
+  (`kubectl -n afe-argocd-agent create secret generic afe-argocd-agent --from-literal=secret=... --dry-run=client -o yaml | kubectl apply -f -`);
+  the agent re-reads the file on every request (Secret volume updates reach
+  the pod within about a minute), so no restart is needed. Without
+  `graceSeconds` the old secret stops working immediately.
+- **Revoke**: `DELETE /api/connections/argocd/<id>` revokes the secret and
+  disconnects the agent; its requests are then rejected with 401. Remove the
+  Deployment and the RBAC objects from the cluster.
+- **Clock**: requests are signed with a timestamp and rejected when more than
+  5 minutes away from Afe's clock; keep the nodes' time synchronised (NTP).

@@ -57,3 +57,5 @@ export {
   type CreateClientOptions,
 } from "./connect.ts";
 export * from "./capture/index.ts";
+// In-cluster agent wire protocol (AFE-28).
+export * from "./agent-protocol.ts";
