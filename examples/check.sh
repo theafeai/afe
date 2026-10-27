@@ -8,6 +8,11 @@ if sh "$examples_dir/create-demo.sh" "$scratch/demo" 2>/dev/null; then
   echo "Copy helper must refuse an existing destination" >&2
   exit 1
 fi
+ln -s "$scratch/missing" "$scratch/link"
+if sh "$examples_dir/create-demo.sh" "$scratch/link" 2>/dev/null; then
+  echo "Copy helper must refuse a dangling symlink destination" >&2
+  exit 1
+fi
 python3 - "$scratch/demo" <<'PY'
 import functools
 import http.server

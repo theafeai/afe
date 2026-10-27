@@ -7,7 +7,7 @@ if [ "$#" -ne 1 ]; then
 fi
 source_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/demo" && pwd)
 destination=$1
-if [ -e "$destination" ]; then
+if [ -e "$destination" ] || [ -L "$destination" ]; then
   echo "Destination already exists; choose a new directory." >&2
   exit 1
 fi
@@ -17,8 +17,8 @@ import shutil
 import sys
 
 source = pathlib.Path(sys.argv[1]).resolve()
-destination = pathlib.Path(sys.argv[2]).resolve()
-if destination.is_relative_to(source):
+destination = pathlib.Path(sys.argv[2]).absolute()
+if destination.resolve().is_relative_to(source):
     sys.exit('Choose a destination outside the sample source directory.')
 # copytree creates the destination exclusively, also protecting concurrent runs.
 # Copy sources and the provider lockfile, never local state or credentials.
