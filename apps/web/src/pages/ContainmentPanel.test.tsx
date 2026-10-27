@@ -24,7 +24,7 @@ function event(correlation: CanonicalEvent["correlation"]): CanonicalEvent {
     connectionId: "c-gh",
     action: "pull_request.merged",
     actor: { type: "user", login: "alice" },
-    target: { type: "pull_request", id: "acme/web#42", repository: "acme/web" },
+    target: { type: "repository", id: "acme/web", repository: "acme/web" },
     trigger: { type: "manual" },
     outcome: "succeeded",
     occurredAt: "2026-10-20T10:00:00.000Z",
