@@ -13,8 +13,12 @@ import {
   listCredentials,
 } from "@afe/db";
 import { TEST_CA_PEM, startFakeArgoCd, type FakeArgoCd } from "@afe/connector-argocd/testing";
-import { buildAfe, loadConfig, type ServerContext } from "../src/index.ts";
-import { createArgoCdModule } from "../src/connectors/argocd.ts";
+import { buildAfe, InlineJobQueue, loadConfig, type ServerContext } from "../src/index.ts";
+import {
+  ARGOCD_RECONCILE_JOB,
+  ARGOCD_WATCH_JOB,
+  createArgoCdModule,
+} from "../src/connectors/argocd.ts";
 import { trustedTestAuth } from "./helpers/auth.ts";
 
 const TOKEN = "afe-readonly-token-SECRET";
@@ -26,6 +30,7 @@ describe("ArgoCD connector module", () => {
   let app: FastifyInstance;
   let ctx: ServerContext;
   const logs: string[] = [];
+  const jobs = new InlineJobQueue();
   const module = createArgoCdModule({ retries: 0 });
 
   async function build(allowPrivate: boolean) {
@@ -33,6 +38,7 @@ describe("ArgoCD connector module", () => {
     return buildAfe({
       authProvider: trustedTestAuth(),
       pool,
+      jobs,
       logLevel: "debug",
       logStream: new Writable({
         write(chunk, _e, cb) {
@@ -90,6 +96,15 @@ describe("ArgoCD connector module", () => {
     });
     expect(body.connection.caCertificates[0].subject).toContain("Afe Test ArgoCD CA");
     connectionId = body.connection.id;
+    // A newly connected instance must be observed before the next cron tick.
+    const expectedJob = {
+      data: { tenantId: DEFAULT_TENANT_ID, connectionId },
+      options: { singletonKey: `${DEFAULT_TENANT_ID}:${connectionId}` },
+    };
+    expect(jobs.sent).toEqual([
+      { name: ARGOCD_RECONCILE_JOB, ...expectedJob },
+      { name: ARGOCD_WATCH_JOB, ...expectedJob },
+    ]);
 
     const conn = await getConnection(pool, DEFAULT_TENANT_ID, connectionId);
     expect(JSON.stringify(conn!.config)).not.toContain("SECRET");

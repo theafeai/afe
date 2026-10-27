@@ -211,6 +211,11 @@ server), namespace (destination namespace)}`.
 
 ### Jobs and health
 
+Connecting or reconnecting a pull-mode instance immediately queues a
+reconciliation and watch, so observation starts without waiting for the next
+five-minute scheduled fan-out. Jobs contain only the tenant/connection IDs;
+the worker reads the current encrypted credential when it runs.
+
 - `argocd.reconcile` (cron `*/5 * * * *`): without data it fans out one job
   per active connection (singleton per connection) and queues `argocd.watch`;
   with `{tenantId, connectionId}` it reconciles that connection.

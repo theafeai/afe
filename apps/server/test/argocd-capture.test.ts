@@ -114,6 +114,9 @@ describe("ArgoCD capture jobs (database)", () => {
     });
     expect(res.statusCode).toBe(201);
     connection = (await getConnection(pool, DEFAULT_TENANT_ID, res.json().connection.id))!;
+    // Connect now queues observation immediately (covered by argocd.test.ts).
+    // This suite drives each capture/scheduler job explicitly below.
+    jobs.sent.length = 0;
     start = Date.now() + 1000;
   });
   afterAll(async () => {
