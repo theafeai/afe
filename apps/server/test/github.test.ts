@@ -580,7 +580,10 @@ describe("GitHub connector module", () => {
   });
 
   describe("installer verification and tenant binding (AFE-27)", () => {
-    const verifyInstaller = { clientId: "Iv1.test", clientSecret: new Secret("OAUTH-CLIENT-SECRET") };
+    const verifyInstaller = {
+      clientId: "Iv1.test",
+      clientSecret: new Secret("OAUTH-CLIENT-SECRET"),
+    };
 
     async function startInstall(headers: Record<string, string> = {}) {
       const res = await afe.app.inject({
@@ -626,7 +629,9 @@ describe("GitHub connector module", () => {
 
       // The user token was used for /user/installations only and then revoked.
       const userCalls = api.requests.filter((r) => r.url.includes("/user/installations"));
-      expect(userCalls.map((r) => r.headers.authorization)).toContain("Bearer ghu_OWNER_USER_TOKEN");
+      expect(userCalls.map((r) => r.headers.authorization)).toContain(
+        "Bearer ghu_OWNER_USER_TOKEN",
+      );
       expect(api.requests.filter((r) => r.method === "DELETE")).toHaveLength(2);
       const logs = logLines.join("");
       expect(logs).not.toContain("ghu_");
@@ -652,7 +657,9 @@ describe("GitHub connector module", () => {
 
     it("an install flow started by one tenant cannot be completed by another", async () => {
       await afe.app.close();
-      await pool.query("INSERT INTO tenants (id, name) VALUES ('other', 'Other') ON CONFLICT DO NOTHING");
+      await pool.query(
+        "INSERT INTO tenants (id, name) VALUES ('other', 'Other') ON CONFLICT DO NOTHING",
+      );
       await start(
         { adoptInstallationsInto: null },
         tokenMapAuth({

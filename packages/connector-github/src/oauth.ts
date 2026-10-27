@@ -15,7 +15,7 @@
  * - https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token
  */
 import { Secret } from "@afe/core/security";
-import { GitHubApiError, GitHubHttp, nextPageUrl, type FetchLike } from "./http.ts";
+import { GitHubApiError, nextPageUrl, type FetchLike, type GitHubHttp } from "./http.ts";
 
 export const GITHUB_WEB_URL = "https://github.com";
 

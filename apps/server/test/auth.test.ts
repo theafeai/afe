@@ -86,7 +86,7 @@ describe("API authentication (AFE-27)", () => {
     await rm(webDir, { recursive: true, force: true });
   });
 
-  const fill = (url: string, id = randomUUID()) => url.replace(/:[A-Za-z]+/g, id);
+  const fill = (url: string, id: string = randomUUID()) => url.replace(/:[A-Za-z]+/g, id);
   const apiRoutes = () => afe.routes.filter((r) => r.url.startsWith("/api/"));
   const call = (method: string, url: string, headers: Record<string, string> = {}) =>
     afe.app.inject({
@@ -141,7 +141,7 @@ describe("API authentication (AFE-27)", () => {
     });
 
     it("rejects wrong, malformed and cookie-smuggled credentials", async () => {
-      for (const headers of [
+      for (const headers of <Record<string, string>[]>[
         bearer("nope"),
         bearer(`${ADMIN_TOKEN}x`),
         bearer(ADMIN_TOKEN.slice(0, -1)),
@@ -181,9 +181,7 @@ describe("API authentication (AFE-27)", () => {
     it("the admin token reaches every /api route", async () => {
       for (const r of apiRoutes().filter((r) => r.access !== "public")) {
         const res = await call(r.method, fill(r.url), bearer(ADMIN_TOKEN));
-        expect([401, 403], `${r.method} ${r.url}: ${res.statusCode}`).not.toContain(
-          res.statusCode,
-        );
+        expect([401, 403], `${r.method} ${r.url}: ${res.statusCode}`).not.toContain(res.statusCode);
       }
     });
 
@@ -271,8 +269,7 @@ describe("API authentication (AFE-27)", () => {
       // A token from another session does not work either.
       const other = (await login()).json().csrfToken as string;
       expect(
-        (await call("POST", "/api/connections/argocd", { cookie, "x-afe-csrf": other }))
-          .statusCode,
+        (await call("POST", "/api/connections/argocd", { cookie, "x-afe-csrf": other })).statusCode,
       ).toBe(403);
       // With the header the request reaches the handler (which validates the body).
       const ok = await call("POST", "/api/connections/argocd", { cookie, "x-afe-csrf": csrfToken });
@@ -320,9 +317,9 @@ describe("API authentication (AFE-27)", () => {
         `${v}.${payload}`,
         "garbage",
       ]) {
-        expect((await call("GET", "/api/events", { cookie: `afe_session=${forged}` })).statusCode).toBe(
-          401,
-        );
+        expect(
+          (await call("GET", "/api/events", { cookie: `afe_session=${forged}` })).statusCode,
+        ).toBe(401);
       }
       const cookie = cookiesOf(res);
       expect((await call("GET", "/api/events", { cookie })).statusCode).toBe(200);
@@ -350,7 +347,11 @@ describe("API authentication (AFE-27)", () => {
     it("rotating the token ends existing sessions", async () => {
       const cookie = cookiesOf(await login());
       const rotated = await build({ AFE_ADMIN_TOKEN: `${ADMIN_TOKEN}-rotated` });
-      const res = await rotated.app.inject({ method: "GET", url: "/api/events", headers: { cookie } });
+      const res = await rotated.app.inject({
+        method: "GET",
+        url: "/api/events",
+        headers: { cookie },
+      });
       expect(res.statusCode).toBe(401);
       // Even with a fixed AFE_SESSION_SECRET, the old token's principal is no longer active.
       const secret = "s".repeat(40);
@@ -363,8 +364,14 @@ describe("API authentication (AFE-27)", () => {
         payload: JSON.stringify({ token: ADMIN_TOKEN }),
       });
       const c = cookiesOf(sa);
-      expect((await a.app.inject({ method: "GET", url: "/api/events", headers: { cookie: c } })).statusCode).toBe(200);
-      expect((await b.app.inject({ method: "GET", url: "/api/events", headers: { cookie: c } })).statusCode).toBe(401);
+      expect(
+        (await a.app.inject({ method: "GET", url: "/api/events", headers: { cookie: c } }))
+          .statusCode,
+      ).toBe(200);
+      expect(
+        (await b.app.inject({ method: "GET", url: "/api/events", headers: { cookie: c } }))
+          .statusCode,
+      ).toBe(401);
       await Promise.all([rotated.app.close(), a.app.close(), b.app.close()]);
     });
   });
@@ -376,7 +383,9 @@ describe("API authentication (AFE-27)", () => {
     const B = bearer("tenant-b-token");
 
     beforeAll(async () => {
-      await pool.query("INSERT INTO tenants (id, name) VALUES ('other', 'Other') ON CONFLICT DO NOTHING");
+      await pool.query(
+        "INSERT INTO tenants (id, name) VALUES ('other', 'Other') ON CONFLICT DO NOTHING",
+      );
       const ev = await ingestEvent(pool, "default", event(1));
       ids.event = ev.event.id;
       ids.argocd = (
@@ -434,7 +443,9 @@ describe("API authentication (AFE-27)", () => {
         method: method as "GET",
         url,
         headers: {
-          ...(["POST", "PUT", "DELETE"].includes(method) ? { "content-type": "application/json" } : {}),
+          ...(["POST", "PUT", "DELETE"].includes(method)
+            ? { "content-type": "application/json" }
+            : {}),
           ...headers,
         },
         ...(["POST", "PUT"].includes(method) ? { payload: '{"projects":"all"}' } : {}),
@@ -542,7 +553,14 @@ describe("startup safety", () => {
     for (const h of ["127.0.0.1", "127.1.2.3", "localhost", "::1", "[::1]", "::ffff:127.0.0.1"]) {
       expect(isLoopbackHost(h), h).toBe(true);
     }
-    for (const h of ["0.0.0.0", "::", "10.0.0.1", "192.168.1.1", "example.com", "::ffff:10.0.0.1"]) {
+    for (const h of [
+      "0.0.0.0",
+      "::",
+      "10.0.0.1",
+      "192.168.1.1",
+      "example.com",
+      "::ffff:10.0.0.1",
+    ]) {
       expect(isLoopbackHost(h), h).toBe(false);
     }
   });
