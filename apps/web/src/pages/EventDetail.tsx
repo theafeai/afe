@@ -13,6 +13,7 @@ import {
 } from "../components.tsx";
 import { formatBytes, formatDateTime, formatDuration, humanize } from "../format.ts";
 import { Link } from "../router.tsx";
+import { ContainmentPanel, containmentSubject } from "./ContainmentPanel.tsx";
 
 function actorText(a: ActorRef | undefined) {
   if (!a) return null;
@@ -63,6 +64,7 @@ export function EventDetailPage({ id }: { id: string }) {
   const correlation = Object.entries(e.correlation ?? {}).filter(
     ([, v]) => Array.isArray(v) && v.length > 0,
   ) as [keyof Correlation, string[]][];
+  const subject = containmentSubject(e);
 
   return (
     <div className="page">
@@ -236,6 +238,8 @@ export function EventDetailPage({ id }: { id: string }) {
           />
         )}
       </section>
+
+      {subject && <ContainmentPanel repository={subject.repository} commit={subject.commit} />}
 
       <section className="card">
         <h2>Event data</h2>

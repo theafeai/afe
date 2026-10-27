@@ -19,8 +19,9 @@ export const REQUIRED_PERMISSIONS = {
  * Read permissions that enable optional features. Never required: a
  * connection without them stays `active` and the feature is simply off
  * (listed in `PermissionCheck.optionalMissing`).
- * - contents: `push`, `create`, `delete`, `release` webhooks (ref.pushed...).
- *   Afe still never downloads file contents. Not requested by default.
+ * - contents: `push`, `create`, `delete`, `release` webhooks (ref.pushed...)
+ *   and commit containment (`GET /repos/{o}/{r}/compare/{base}...{head}`,
+ *   AFE-22). Afe still never downloads file contents. Not requested by default.
  * - pull_requests: `pull_request` webhooks (pull_request.merged). Not
  *   requested by default.
  * - packages: `registry_package` webhooks (artifact.published, AFE-21).

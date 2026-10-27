@@ -186,7 +186,7 @@ timeline as the event log with a "highlight journey" filter.
 | Manual ArgoCD parameter/image override                  | Sync carries a correct config revision but runs an untracked image               | Capture `spec.source.kustomize.images` / Helm parameters on `argocd.application.updated`; show "drift from Git" (follow-up 9).   |
 | Mutable tags (`:1.4`, `:latest`)                        | Ambiguous attribution; digest unknown at the Argo side                           | Read running pod `imageID` digests via the ArgoCD resource tree; recommend digest pinning.                                       |
 | Deploys without Git metadata (`vercel deploy` from CLI) | Only a weak time guess                                                           | Show as "untracked deploy"; capture Vercel `source: cli` and `meta.gitDirty` when present.                                       |
-| Commit containment (ancestry)                           | P1's content went live inside merge M1, but P1's journey stops at "merged as M1" | "continues as" links today; GitHub compare API for "is X included in what is live" (follow-up 10).                               |
+| Commit containment (ancestry)                           | P1's content went live inside merge M1, but P1's journey stops at "merged as M1" | "continues as" links today; GitHub compare API for "is X included in what is live" (follow-up 10, done: AFE-22).                 |
 | Environment names differ per tool                       | `production`, `Production – web`, Argo app names                                 | Environment/service mapping config (follow-up 8).                                                                                |
 | Helm chart sources                                      | Argo revision is a chart version, not a commit                                   | Add chart name+version as a key when needed (out of scope for v1).                                                               |
 | Multi-source ArgoCD apps                                | `status.sync.revisions[]` and several repos                                      | Connector must emit every revision with its repository.                                                                          |
@@ -338,9 +338,12 @@ recomputed from scratch.
 9. **Drift and untracked deploy detection.** Flag placements whose content
    does not trace to Git (manual image overrides, CLI deploys without Git
    metadata, unknown images) as findings/alerts, with evidence.
-10. **Commit containment.** Use the GitHub compare API to answer "is commit X
+10. **(Done, AFE-22) Commit containment.** Use the GitHub compare API to answer "is commit X
     included in what is live in env Y", so PR head commits and older commits
-    show where their content went.
+    show where their content went. Implemented as `compareCommits` in
+    `@afe/connector-github`, `ContainmentService` and `GET /api/containment`
+    in the server, and the "Where is this commit live?" panel on the event
+    detail page; see [docs/containment.md](../containment.md).
 11. **UI: commit journey drill-down.** Stage-column journey with confidence on
     edges, "where it went", excluded steps and "continues as", linked from the
     matrix and the timeline.
