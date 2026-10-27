@@ -186,9 +186,10 @@ connection. Each placement lists `gaps` with a `relation`:
 - `evidence_in_gap`: the placement or an event its attribution relies on
   happened while its connection was not observed (it was recovered later;
   related events may still be missing);
-- `after_placement` (current placements only): the target's connection had a
-  gap after the placement went live, so a later placement may have been
-  missed ("possibly stale").
+- `after_placement` (current placements only): the target's connection is
+  not being observed right now (an open gap), so a later placement may have
+  been missed ("possibly stale"). Closed gaps do not count: recovery runs a
+  backfill over the gap window, so anything missed was re-observed.
 
 Cells summarise these as `gap.flagged`, `gap.evidenceInGap` and
 `gap.possiblyStale`.

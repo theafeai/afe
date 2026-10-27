@@ -20,9 +20,11 @@ export interface GapSpan {
  * - `evidence_in_gap`: an event the placement or its attribution relies on
  *   happened while its connection was not observed (it was recovered later,
  *   so related events may still be missing).
- * - `after_placement`: the placement's connection had a gap after the
- *   placement went live: a later placement may have been missed, so "what is
- *   live" may be stale.
+ * - `after_placement`: the placement's connection is not being observed now
+ *   (an open gap that started after the placement went live): a later
+ *   placement may have been missed, so "what is live" may be stale. Closed
+ *   gaps do not count: recovery runs a backfill over the gap window, which
+ *   re-observes anything missed (see docs/connection-health.md).
  */
 export type GapRelation = "evidence_in_gap" | "after_placement";
 
@@ -76,11 +78,9 @@ export class GapIndex {
     );
   }
 
-  /** Gaps of the event's connection that overlap (event time, now]. */
+  /** Open gaps of the event's connection: it is not observed now, so later changes may be missing. */
   after(e: Pick<CorrelationEvent, "source" | "connectionId" | "occurredAt">): GapSpan[] {
-    return this.gaps.filter(
-      (g) => appliesTo(g, e) && (g.endedAt === null || g.endedAt > e.occurredAt),
-    );
+    return this.gaps.filter((g) => appliesTo(g, e) && g.endedAt === null);
   }
 
   /**

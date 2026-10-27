@@ -250,9 +250,15 @@ describe("observation gaps", () => {
       { occurredAt: "2026-10-20T10:30:00.000Z", connectionId: "c2" },
     );
     expect(idx.flags(inside, [], false).map((f) => f.relation)).toEqual(["evidence_in_gap"]);
-    expect(idx.flags(before, [], true).map((f) => f.relation)).toEqual(["after_placement"]);
-    expect(idx.flags(before, [], false)).toEqual([]);
+    // The gap is closed (and was backfilled), so it no longer makes the placement stale.
+    expect(idx.flags(before, [], true)).toEqual([]);
     expect(idx.flags(otherConn, [], true)).toEqual([]);
+
+    // While a gap is open, what is live may be stale.
+    const open = new GapIndex([{ ...base, endedAt: null }], "2026-10-27T00:00:00.000Z");
+    expect(open.flags(before, [], true).map((f) => f.relation)).toEqual(["after_placement"]);
+    expect(open.flags(before, [], false)).toEqual([]);
+    expect(open.flags(otherConn, [], true)).toEqual([]);
   });
 });
 

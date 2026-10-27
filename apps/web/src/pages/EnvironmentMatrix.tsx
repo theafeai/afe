@@ -347,8 +347,8 @@ function Legend() {
           <dd>
             <span className="badge gap-badge">evidence in a gap</span> something this relies on
             happened while its tool was not observed;{" "}
-            <span className="badge gap-badge">possibly stale</span> the tool was not observed after
-            this went live, so a later deployment may be missing.
+            <span className="badge gap-badge">possibly stale</span> the tool cannot be observed
+            right now, so a later deployment may be missing.
           </dd>
         </div>
       </dl>

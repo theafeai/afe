@@ -221,14 +221,13 @@ describe("correlation API (AFE-20)", () => {
           ["gap-argo", "after_placement"],
         ]),
       );
-      // Vercel was never blind; GitHub's mirror target may have missed a later deployment.
+      // Vercel was never blind, and GitHub's gap is closed (backfilled): not stale.
       const web = cell("web/production");
       const gaps = (source: string) =>
         web.targets.find((t: { source: string }) => t.source === source).current.gaps;
       expect(gaps("vercel")).toEqual([]);
-      expect(gaps("github").map((g: { relation: string }) => g.relation)).toEqual([
-        "after_placement",
-      ]);
+      expect(gaps("github")).toEqual([]);
+      expect(web.gap.possiblyStale).toBe(false);
     });
 
     it("filters by service, environment and source; bounds targets per cell", async () => {
