@@ -10,6 +10,7 @@ import {
   GitHubRateLimitError,
   REQUIRED_PERMISSIONS,
   SUBSCRIBED_EVENTS,
+  OPTIONAL_SUBSCRIBED_EVENTS,
   applyRepositoryChange,
   buildAppManifest,
   checkPermissions,
@@ -222,6 +223,7 @@ describe("permissions", () => {
       missing: [],
       writable: [],
       extra: [],
+      optionalMissing: ["attestations", "contents", "packages", "pull_requests"],
     });
   });
 
@@ -232,6 +234,7 @@ describe("permissions", () => {
       missing: ["deployments", "environments"],
       writable: ["actions"],
       extra: ["contents"],
+      optionalMissing: ["attestations", "packages", "pull_requests"],
     });
     expect(describePermissionProblems(check)).toBe(
       "write access granted (Afe needs read only): actions; missing read permission: deployments, environments",
@@ -257,7 +260,7 @@ describe("manifest and connection config", () => {
   it("requests only read permissions", () => {
     const m = buildAppManifest({ publicUrl: "https://x" });
     expect(new Set(Object.values(m.default_permissions))).toEqual(new Set(["read"]));
-    expect(m.default_events).toEqual([...SUBSCRIBED_EVENTS]);
+    expect(m.default_events).toEqual([...SUBSCRIBED_EVENTS, ...OPTIONAL_SUBSCRIBED_EVENTS]);
     expect(m.public).toBe(false);
   });
 
