@@ -350,7 +350,18 @@ export async function probeAgentConnection(
   return { ok: true };
 }
 
-/** Backfill of an agent connection: ask the agent for a full snapshot in its next heartbeat. */
-export async function requestAgentResync(db: Db, connection: Connection): Promise<void> {
+/**
+ * Backfill of an agent connection after a gap `[from, to]`: ask the agent for
+ * a full snapshot in its next heartbeat, unless one completed at or after the
+ * end of the gap (the snapshot that closed it already reconciled everything).
+ */
+export async function requestAgentResync(
+  db: Db,
+  connection: Connection,
+  to?: Date,
+): Promise<void> {
+  const row = await getAgentRow(db, connection.tenantId, connection.id);
+  if (!row) return;
+  if (to && row.lastSnapshotCompletedAt && row.lastSnapshotCompletedAt >= to) return;
   await updateAgentRow(db, connection.tenantId, connection.id, { resyncRequested: true });
 }

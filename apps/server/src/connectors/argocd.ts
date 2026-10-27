@@ -524,9 +524,9 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
          * `revisionHistoryLimit` (default 10) successful syncs; failed syncs
          * other than the latest operation are not recoverable.
          */
-        async backfill(connection, _from, _to) {
+        async backfill(connection, _from, to) {
           // Agent connections (AFE-28): ask the agent for a full snapshot instead.
-          if (isAgentConnection(connection)) return requestAgentResync(ctx.pool, connection);
+          if (isAgentConnection(connection)) return requestAgentResync(ctx.pool, connection, to);
           await reconcileArgoCdConnection(ctx, connection, options);
         },
       };
