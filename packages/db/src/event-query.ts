@@ -1,7 +1,7 @@
 /**
- * Audit query layer (AFE-14): filtered, keyset-paginated reads of the
- * append-only `events` table, raw payload access, chain head lookups and
- * consistent export snapshots. Every function is tenant-scoped (rules R5).
+ * Event query layer (AFE-14): filtered, keyset-paginated reads of the
+ * `events` table and raw payload access. Every function is tenant-scoped
+ * (rules R5).
  *
  * Filter semantics are defined once in `@afe/core` (`EventFilter`,
  * `eventMatchesFilter`); the SQL here must select exactly the same events.
@@ -11,15 +11,10 @@ import {
   canonicalJson,
   expandRefs,
   filterFingerprint,
-  GENESIS_HASH,
   repositoryFilterKey,
-  sha256Hex,
   type CanonicalEvent,
-  type ChainHead,
   type EventFilter,
-  type ExportRecord,
 } from "@afe/core";
-import type pg from "pg";
 import { EVENT_COLUMNS, rowToEvent, type EventRow, type Queryable } from "./event-store.ts";
 
 export type EventOrder = "desc" | "asc";
@@ -175,27 +170,27 @@ export interface QueryEventsPage {
   events: CanonicalEvent[];
   nextCursor: string | null;
   /**
-   * The chain seq the traversal is pinned to: events appended after the first
-   * page (seq > snapshotSeq) never appear in later pages, so pages are stable
-   * under concurrent inserts.
+   * The seq the traversal is pinned to: events stored after the first page
+   * (seq > snapshotSeq) never appear in later pages, so pages are stable
+   * under concurrent inserts. (Events purged by retention meanwhile simply
+   * do not appear.)
    */
   snapshotSeq: number;
 }
 
-export async function getChainHead(db: Queryable, tenantId: string): Promise<ChainHead> {
-  const { rows } = await db.query<{ seq: string; hash: string }>(
-    "SELECT seq, hash FROM event_chain_heads WHERE tenant_id = $1",
+/** The tenant's highest allocated seq (0 when it has never stored an event). */
+export async function getLatestSeq(db: Queryable, tenantId: string): Promise<number> {
+  const { rows } = await db.query<{ last_seq: string }>(
+    "SELECT last_seq FROM event_sequences WHERE tenant_id = $1",
     [tenantId],
   );
-  return rows[0]
-    ? { seq: Number(rows[0].seq), hash: rows[0].hash }
-    : { seq: 0, hash: GENESIS_HASH };
+  return rows[0] ? Number(rows[0].last_seq) : 0;
 }
 
 /**
  * Filtered keyset pagination over (occurredAt, seq). The cursor is opaque
  * base64url JSON bound to the filter and order (a cursor from another query
- * is rejected) and pinned to the chain snapshot of the first page. Tampering
+ * is rejected) and pinned to the seq snapshot of the first page. Tampering
  * with a cursor cannot widen access: the tenant and filter always come from
  * the request.
  */
@@ -209,7 +204,7 @@ export async function queryEvents(
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 1000);
   const fingerprint = filterFingerprint(filter, { order });
   const cursor = options.cursor ? decodeCursor(options.cursor, fingerprint) : null;
-  const snapshotSeq = cursor ? cursor.h : (await getChainHead(db, tenantId)).seq;
+  const snapshotSeq = cursor ? cursor.h : await getLatestSeq(db, tenantId);
 
   const params: unknown[] = [tenantId];
   const where = ["e.tenant_id = $1", ...eventFilterSql(filter, params)];
@@ -240,27 +235,13 @@ export async function queryEvents(
   };
 }
 
-export async function getEventBySeq(
-  db: Queryable,
-  tenantId: string,
-  seq: number,
-): Promise<CanonicalEvent | null> {
-  const { rows } = await db.query<EventRow>(
-    `SELECT ${EVENT_COLUMNS} FROM events e WHERE e.tenant_id = $1 AND e.seq = $2`,
-    [tenantId, seq],
-  );
-  return rows[0] ? rowToEvent(rows[0]) : null;
-}
-
 export interface StoredRawPayload {
   id: string;
   source: string;
   contentType: string;
   sizeBytes: number;
-  /** sha256 recorded when stored. */
+  /** sha256 of the body, recorded when stored. */
   sha256: string;
-  /** sha256 of the bytes as read now. */
-  actualSha256: string;
   receivedAt: string;
   body: Buffer;
 }
@@ -291,88 +272,7 @@ export async function getRawPayload(
     contentType: r.content_type,
     sizeBytes: r.size_bytes,
     sha256: r.sha256,
-    actualSha256: sha256Hex(r.body),
     receivedAt: r.received_at.toISOString(),
     body: r.body,
   };
-}
-
-export interface EventExportSnapshot {
-  /** The chain head in the same snapshot as `records`. */
-  chainHead: ChainHead;
-  /** Matching events in ascending seq order. Iterate once; the snapshot closes when done. */
-  records: AsyncGenerator<ExportRecord>;
-  /** Releases the snapshot early (idempotent). */
-  close(): Promise<void>;
-}
-
-/**
- * Opens a REPEATABLE READ, read-only snapshot and streams the events matching
- * `filter` in seq order, together with the chain head of that same snapshot,
- * so the export's proof is consistent however many events are appended
- * meanwhile.
- */
-export async function openEventExport(
-  pool: pg.Pool,
-  tenantId: string,
-  filter: EventFilter,
-  options: { includeRawPayloads?: boolean; batchSize?: number } = {},
-): Promise<EventExportSnapshot> {
-  const batchSize = options.batchSize ?? 500;
-  const client = await pool.connect();
-  let closed = false;
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    await client.query("ROLLBACK").catch(() => {});
-    client.release();
-  };
-  let chainHead: ChainHead;
-  try {
-    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    chainHead = await getChainHead(client, tenantId);
-  } catch (err) {
-    await close();
-    throw err;
-  }
-
-  async function* records(): AsyncGenerator<ExportRecord> {
-    try {
-      let after = 0;
-      for (;;) {
-        const params: unknown[] = [tenantId];
-        const where = ["e.tenant_id = $1", ...eventFilterSql(filter, params)];
-        params.push(after, chainHead.seq, batchSize);
-        const n = params.length;
-        const { rows } = await client.query<
-          EventRow & { raw_body: Buffer | null; raw_content_type: string | null }
-        >(
-          `SELECT ${EVENT_COLUMNS},
-                  ${options.includeRawPayloads ? "r.body" : "NULL::bytea"} AS raw_body,
-                  r.content_type AS raw_content_type
-             FROM events e
-             LEFT JOIN raw_payloads r ON r.tenant_id = e.tenant_id AND r.id = e.raw_payload_id
-            WHERE ${where.join(" AND ")} AND e.seq > $${n - 2} AND e.seq <= $${n - 1}
-            ORDER BY e.seq LIMIT $${n}`,
-          params,
-        );
-        for (const row of rows) {
-          const event = rowToEvent(row);
-          yield {
-            event,
-            rawPayload:
-              row.raw_body && row.raw_content_type
-                ? { contentType: row.raw_content_type, body: new Uint8Array(row.raw_body) }
-                : null,
-          };
-          after = event.seq;
-        }
-        if (rows.length < batchSize) break;
-      }
-    } finally {
-      await close();
-    }
-  }
-
-  return { chainHead, records: records(), close };
 }

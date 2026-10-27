@@ -2,6 +2,9 @@
  * Canonical JSON serialisation following RFC 8785 (JSON Canonicalization
  * Scheme, "JCS"): https://www.rfc-editor.org/rfc/rfc8785
  *
+ * Used for stable keys and fingerprints (query cursor fingerprints,
+ * correlation containment values, ArgoCD state digests).
+ *
  * - Object members are sorted by their names compared as UTF-16 code units.
  * - Numbers use the ECMAScript `Number.prototype.toString` form (what
  *   `JSON.stringify` emits for finite numbers), which is what JCS mandates.
@@ -10,7 +13,7 @@
  *
  * Deviations / restrictions (all reject rather than silently change data):
  * - `undefined` object members are omitted (as `JSON.stringify` does) so that
- *   optional TypeScript fields hash the same whether absent or `undefined`.
+ *   optional TypeScript fields serialise the same whether absent or `undefined`.
  * - `undefined` in arrays, non-finite numbers, bigint, functions, symbols,
  *   lone UTF-16 surrogates and non-plain objects (Date, Map, class
  *   instances...) throw a `CanonicalJsonError`.

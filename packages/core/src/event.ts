@@ -1,12 +1,12 @@
 /**
  * The canonical event model. Every connector maps what it observes in a source
- * tool into this one shape; it is what the append-only audit log stores and
- * hashes. Field reference: docs/event-model.md. Design: ADR 0003.
+ * tool into this one shape; it is what the event store keeps (for the
+ * retention window, ADR 0008). Field reference: docs/event-model.md.
+ * Design: ADR 0003.
  *
  * Stability: this is schema version 1 (`EVENT_SCHEMA_VERSION`). Adding a new
  * *optional* field or a new enum value is additive. Changing the meaning or
- * shape of an existing field requires a new schema version, because stored
- * events are hashed in the shape they were recorded with.
+ * shape of an existing field requires a new schema version.
  */
 import { z } from "zod";
 import { ACTION_PATTERN, ACTIONS, type EventAction } from "./actions.ts";
@@ -127,7 +127,7 @@ const optStr = (max: number) => str(max).nullish();
 /**
  * Timestamp: ISO 8601 string with offset, or a Date. Normalised to UTC with
  * millisecond precision (`toISOString()`), so it round-trips through
- * PostgreSQL `timestamptz` and hashes identically.
+ * PostgreSQL `timestamptz` and compares identically.
  */
 export const timestampSchema = z
   .union([z.iso.datetime({ offset: true }), z.date()])
@@ -246,7 +246,7 @@ const deploymentHost = z
 
 /**
  * Structured keys used to correlate events across tools (AFE-15). Each list
- * is normalised: de-duplicated and sorted (so it hashes stably), and
+ * is normalised: de-duplicated and sorted (so equal inputs store identically), and
  * case-insensitive keys are lower-cased. Containment queries
  * (`correlation @> '{"commitShas":["…"]}'`) are indexed.
  */
@@ -301,14 +301,14 @@ export const jsonObjectSchema: z.ZodType<JsonObject, JsonObject> = z.record(
   jsonValueSchema,
 );
 
-/** Raw evidence as received from the source, stored verbatim in `raw_payloads`. */
+/** Raw payload as received from the source, stored verbatim in `raw_payloads`. */
 export const rawPayloadInputSchema = z.strictObject({
   contentType: str(255),
   /** Exact bytes (or text) received. Use `jsonRawPayload()` for an already-parsed object. */
   body: z.union([z.string(), z.instanceof(Uint8Array)]),
 });
 
-/** Reference from a stored event to its raw payload; the sha256 is covered by the event hash. */
+/** Reference from a stored event to its raw payload (sha256 of the stored bytes). */
 export const rawPayloadRefSchema = z.strictObject({
   id: z.uuid(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
@@ -491,16 +491,17 @@ export type RawPayloadRef = z.output<typeof rawPayloadRefSchema>;
 // Stored event
 // ---------------------------------------------------------------------------
 
-/**
- * An event as recorded in the audit log. Every field except `hash` is covered
- * by `hash` (see `hashEvent` in hash-chain.ts).
- */
+/** An event as stored. Events are immutable once written; retention purges them (ADR 0008). */
 export interface CanonicalEvent {
   schemaVersion: typeof EVENT_SCHEMA_VERSION;
   /** UUID assigned by Afe. */
   id: string;
   tenantId: string;
-  /** Position in the tenant's hash chain, 1-based and gap-free. */
+  /**
+   * Per-tenant ordering key: increases in the order events were stored
+   * (commit order). Not gap-free: purged events leave gaps, and numbers are
+   * never reused.
+   */
   seq: number;
   source: EventSource;
   sourceEventId: string;
@@ -512,23 +513,17 @@ export interface CanonicalEvent {
   outcome: Outcome;
   occurredAt: string;
   observedAt: string;
-  /** When Afe appended it to the log. */
+  /** When Afe stored it. */
   recordedAt: string;
   observation: Observation;
   correlation: Correlation;
   data: JsonObject;
   rawPayload: RawPayloadRef | null;
-  /** `hash` of the previous event in the tenant chain (GENESIS_HASH for seq 1). */
-  prevHash: string;
-  /** SHA-256 (hex) of the canonical JSON of every other field. */
-  hash: string;
 }
 
-const hex64 = z.string().regex(/^[0-9a-f]{64}$/);
-
 /**
- * Runtime schema for a stored event, e.g. when reading an export back in.
- * Structured fields are checked by the same schemas as input.
+ * Runtime schema for a stored event (e.g. events read back from another
+ * system). Structured fields are checked by the same schemas as input.
  */
 export const canonicalEventSchema = z.strictObject({
   schemaVersion: z.literal(EVENT_SCHEMA_VERSION),
@@ -550,8 +545,6 @@ export const canonicalEventSchema = z.strictObject({
   correlation: correlationSchema,
   data: jsonObjectSchema,
   rawPayload: rawPayloadRefSchema.nullable(),
-  prevHash: hex64,
-  hash: hex64,
 });
 
 // ---------------------------------------------------------------------------

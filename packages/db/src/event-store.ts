@@ -1,20 +1,21 @@
 /**
- * Event store: the only code that writes the append-only `events` and
- * `raw_payloads` tables (migration 0002). See ADR 0003 and docs/event-model.md.
+ * Event store: the only code that writes the `events` and `raw_payloads`
+ * tables (migrations 0002, 0021). Events are immutable once written; the only
+ * deletion is the retention purge (retention.ts). See ADR 0003, ADR 0008 and
+ * docs/event-model.md.
  */
 import {
-  buildChainedEvent,
-  ChainVerifier,
-  GENESIS_HASH,
+  buildStoredEvent,
+  isOutsideRetention,
   parseEventInput,
   rawPayloadBytes,
   sha256Hex,
   type CanonicalEvent,
   type CanonicalEventInputLike,
-  type ChainVerification,
   type EventSink,
   type IngestResult,
   type RawPayloadRef,
+  type RetentionPolicy,
 } from "@afe/core";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
@@ -26,7 +27,7 @@ export const EVENT_COLUMNS = `
   e.id, e.tenant_id, e.seq, e.schema_version, e.source, e.source_event_id, e.connection_id,
   e.action, e.actor, e.target, e.trigger, e.outcome, e.occurred_at, e.observed_at,
   e.recorded_at, e.observation, e.correlation, e.data, e.raw_payload_id,
-  e.raw_payload_sha256, e.prev_hash, e.hash`;
+  e.raw_payload_sha256`;
 
 export interface EventRow {
   id: string;
@@ -49,8 +50,6 @@ export interface EventRow {
   data: CanonicalEvent["data"];
   raw_payload_id: string | null;
   raw_payload_sha256: string | null;
-  prev_hash: string;
-  hash: string;
 }
 
 export function rowToEvent(r: EventRow): CanonicalEvent {
@@ -77,8 +76,6 @@ export function rowToEvent(r: EventRow): CanonicalEvent {
       r.raw_payload_id === null
         ? null
         : { id: r.raw_payload_id, sha256: r.raw_payload_sha256 as string },
-    prevHash: r.prev_hash,
-    hash: r.hash,
   };
 }
 
@@ -109,17 +106,27 @@ export async function findEventBySourceId(
   return rows[0] ? rowToEvent(rows[0]) : null;
 }
 
+export interface IngestOptions {
+  /** Events outside this policy's window are dropped (`status: "expired"`). Default: keep all. */
+  retention?: RetentionPolicy;
+  now?: () => Date;
+}
+
 /**
- * Validates and appends one event to the tenant's hash chain.
+ * Validates and stores one event.
  *
  * Idempotent on (tenantId, source, sourceEventId): if the event already exists
  * (e.g. it arrived by polling before the webhook, or vice versa) nothing is
- * written and the stored event is returned with `inserted: false`. The first
- * arrival wins: its observation method, observedAt and raw payload are kept.
+ * written and the stored event is returned with `status: "duplicate"`. The
+ * first arrival wins: its observation method, observedAt and raw payload are
+ * kept.
  *
- * Appends for one tenant are serialised by locking the tenant's row in
- * `event_chain_heads` (FOR UPDATE) for the duration of the transaction, so
- * concurrent ingestion always produces a gap-free, correctly linked chain.
+ * An event whose occurredAt is already before the tenant's retention cutoff
+ * is not stored (`status: "expired"`), so lookbacks and re-deliveries cannot
+ * bring back events the retention purge removed.
+ *
+ * `seq` comes from the tenant's `event_sequences` row, which stays locked
+ * until the transaction commits: a tenant's seq order is its commit order.
  * Different tenants do not block each other.
  *
  * Throws `EventValidationError` for invalid input.
@@ -128,33 +135,37 @@ export async function ingestEvent(
   pool: pg.Pool,
   tenantId: string,
   input: CanonicalEventInputLike,
+  options: IngestOptions = {},
 ): Promise<IngestResult> {
   const parsed = parseEventInput(input);
 
   // Fast path for duplicates: no lock needed.
   const existing = await findEventBySourceId(pool, tenantId, parsed.source, parsed.sourceEventId);
-  if (existing) return { inserted: false, event: existing };
+  if (existing) return { status: "duplicate", inserted: false, event: existing };
+
+  const now = options.now?.() ?? new Date();
+  const cutoff = options.retention ? await options.retention.cutoff(tenantId, now) : null;
+  if (isOutsideRetention(parsed.occurredAt, cutoff)) {
+    return { status: "expired", inserted: false, event: null };
+  }
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(
-      `INSERT INTO event_chain_heads (tenant_id, seq, hash) VALUES ($1, 0, $2)
-       ON CONFLICT (tenant_id) DO NOTHING`,
-      [tenantId, GENESIS_HASH],
-    );
-    const head = await client.query<{ seq: string; hash: string }>(
-      "SELECT seq, hash FROM event_chain_heads WHERE tenant_id = $1 FOR UPDATE",
+    const next = await client.query<{ last_seq: string }>(
+      `INSERT INTO event_sequences (tenant_id, last_seq) VALUES ($1, 1)
+       ON CONFLICT (tenant_id) DO UPDATE SET last_seq = event_sequences.last_seq + 1
+       RETURNING last_seq`,
       [tenantId],
     );
-    const { seq: headSeq, hash: headHash } = head.rows[0]!;
+    const seq = Number(next.rows[0]!.last_seq);
 
     // Re-check under the lock: a concurrent ingest of the same event may have
     // committed while we waited (READ COMMITTED sees it now).
     const dup = await findEventBySourceId(client, tenantId, parsed.source, parsed.sourceEventId);
     if (dup) {
-      await client.query("COMMIT");
-      return { inserted: false, event: dup };
+      await client.query("ROLLBACK");
+      return { status: "duplicate", inserted: false, event: dup };
     }
 
     let rawRef: RawPayloadRef | null = null;
@@ -176,20 +187,14 @@ export async function ingestEvent(
       );
     }
 
-    const event = buildChainedEvent({
-      tenantId,
-      seq: Number(headSeq) + 1,
-      prevHash: headHash,
-      input: parsed,
-      rawPayload: rawRef,
-    });
+    const event = buildStoredEvent({ tenantId, seq, input: parsed, rawPayload: rawRef });
 
     await client.query(
       `INSERT INTO events (
          id, tenant_id, seq, schema_version, source, source_event_id, connection_id, action,
          actor, target, trigger, outcome, occurred_at, observed_at, recorded_at, observation,
-         correlation, data, raw_payload_id, raw_payload_sha256, prev_hash, hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+         correlation, data, raw_payload_id, raw_payload_sha256)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [
         event.id,
         event.tenantId,
@@ -211,23 +216,17 @@ export async function ingestEvent(
         JSON.stringify(event.data),
         event.rawPayload?.id ?? null,
         event.rawPayload?.sha256 ?? null,
-        event.prevHash,
-        event.hash,
       ],
     );
-    await client.query(
-      "UPDATE event_chain_heads SET seq = $2, hash = $3, updated_at = now() WHERE tenant_id = $1",
-      [tenantId, event.seq, event.hash],
-    );
     await client.query("COMMIT");
-    return { inserted: true, event };
+    return { status: "inserted", inserted: true, event };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
-    // Defensive: should not happen under the head lock, but if a unique key
-    // race slips through, report the stored event as a duplicate.
+    // Defensive: should not happen under the sequence lock, but if a unique
+    // key race slips through, report the stored event as a duplicate.
     if ((err as { constraint?: string }).constraint === "events_source_event_key") {
       const stored = await findEventBySourceId(pool, tenantId, parsed.source, parsed.sourceEventId);
-      if (stored) return { inserted: false, event: stored };
+      if (stored) return { status: "duplicate", inserted: false, event: stored };
     }
     throw err;
   } finally {
@@ -235,9 +234,12 @@ export async function ingestEvent(
   }
 }
 
-/** The PostgreSQL `EventSink` that connectors are given. */
-export function createPgEventSink(pool: pg.Pool): EventSink {
-  return { ingest: (tenantId, input) => ingestEvent(pool, tenantId, input) };
+/**
+ * The PostgreSQL `EventSink` that connectors are given. With `retention`,
+ * events outside the window are dropped at ingestion.
+ */
+export function createPgEventSink(pool: pg.Pool, options: IngestOptions = {}): EventSink {
+  return { ingest: (tenantId, input) => ingestEvent(pool, tenantId, input, options) };
 }
 
 export interface ListEventsOptions {
@@ -249,7 +251,7 @@ export interface ListEventsOptions {
   cursor?: string | null;
   /** Page size, default 100, max 1000. */
   limit?: number;
-  /** Order by seq (log order). Default "asc". */
+  /** Order by seq (storage order). Default "asc". */
   order?: "asc" | "desc";
 }
 
@@ -260,7 +262,7 @@ export interface EventPage {
 }
 
 /**
- * Lists a tenant's events in log (seq) order, optionally filtered by
+ * Lists a tenant's events in storage (seq) order, optionally filtered by
  * occurredAt range, with keyset pagination. Deliberately minimal; the full
  * query API is AFE-14.
  */
@@ -311,93 +313,4 @@ function decodeCursor(cursor: string): number {
     // fall through
   }
   throw new Error("invalid cursor");
-}
-
-export interface VerifyTenantChainOptions {
-  /** Rows read per query. Default 1000. */
-  batchSize?: number;
-  /** Also recompute SHA-256 of every referenced raw payload. Default true. */
-  checkRawPayloads?: boolean;
-}
-
-/**
- * Verifies a tenant's whole audit log from the database: recomputes every
- * event hash, checks seq continuity and prevHash links, checks each raw
- * payload's bytes against the sha256 in its event, and compares the last event
- * with the stored chain head. Runs in one REPEATABLE READ snapshot so
- * concurrent appends do not cause false alarms. Returns the first break.
- */
-export async function verifyTenantChain(
-  pool: pg.Pool,
-  tenantId: string,
-  options: VerifyTenantChainOptions = {},
-): Promise<ChainVerification> {
-  const batchSize = options.batchSize ?? 1000;
-  const checkRaw = options.checkRawPayloads ?? true;
-  const verifier = new ChainVerifier({ tenantId });
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    let after = 0;
-    let index = 0;
-    for (;;) {
-      const { rows } = await client.query<EventRow & { raw_actual: string | null }>(
-        `SELECT ${EVENT_COLUMNS},
-                ${checkRaw ? "encode(sha256(r.body), 'hex')" : "NULL::text"} AS raw_actual
-           FROM events e
-           LEFT JOIN raw_payloads r ON r.tenant_id = e.tenant_id AND r.id = e.raw_payload_id
-          WHERE e.tenant_id = $1 AND e.seq > $2
-          ORDER BY e.seq LIMIT $3`,
-        [tenantId, after, batchSize],
-      );
-      for (const row of rows) {
-        const event = rowToEvent(row);
-        if (verifier.push(event)) return verifier.result();
-        if (checkRaw && event.rawPayload && row.raw_actual !== event.rawPayload.sha256) {
-          verifier.fail({
-            kind: "raw_payload_mismatch",
-            index,
-            seq: event.seq,
-            eventId: event.id,
-            expected: event.rawPayload.sha256,
-            actual: row.raw_actual,
-            message:
-              row.raw_actual === null
-                ? "raw payload is missing"
-                : "raw payload bytes do not match the hash recorded in the event",
-          });
-          return verifier.result();
-        }
-        index += 1;
-        after = event.seq;
-      }
-      if (rows.length < batchSize) break;
-    }
-
-    const result = verifier.result();
-    const head = await client.query<{ seq: string; hash: string }>(
-      "SELECT seq, hash FROM event_chain_heads WHERE tenant_id = $1",
-      [tenantId],
-    );
-    const h = head.rows[0];
-    const headSeq = h ? Number(h.seq) : 0;
-    const headHash = h ? h.hash : GENESIS_HASH;
-    if (headSeq !== result.lastSeq || headHash !== result.lastHash) {
-      verifier.fail({
-        kind: "head_mismatch",
-        seq: headSeq,
-        eventId: null,
-        expected: `${headSeq}:${headHash}`,
-        actual: `${result.lastSeq}:${result.lastHash}`,
-        message:
-          headSeq > result.lastSeq
-            ? `chain head is at seq ${headSeq} but the log ends at ${result.lastSeq}: events were removed from the end`
-            : "chain head does not match the last event",
-      });
-    }
-    return verifier.result();
-  } finally {
-    await client.query("ROLLBACK").catch(() => {});
-    client.release();
-  }
 }

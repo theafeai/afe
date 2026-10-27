@@ -5,7 +5,7 @@
  * logs and optionally POSTs JSON to a webhook; the hosted product can supply
  * email, Slack, PagerDuty... by passing its own `AlertSink`.
  *
- * Alerts are also recorded in the audit log as `connection.alert.opened` /
+ * Alerts are also recorded as `connection.alert.opened` /
  * `connection.alert.resolved` events (builders below).
  */
 import { ACTIONS } from "./actions.ts";

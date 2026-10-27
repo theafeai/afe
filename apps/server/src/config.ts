@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { retentionPolicyFromEnv } from "@afe/core";
 import { Secret } from "@afe/core/security";
 import { parseDuration } from "./health/config.ts";
 
@@ -40,6 +41,11 @@ export interface AfeConfig {
   webDir?: string;
   /** API authentication; absent tokens mean every /api request is rejected (see cli startup check). */
   auth?: AuthConfig;
+  /**
+   * AFE_EVENT_RETENTION_DAYS: how long events are kept, by occurredAt.
+   * Default 30, 1..60 (the open-source maximum, ADR 0008).
+   */
+  eventRetentionDays?: number;
 }
 
 /**
@@ -113,5 +119,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
     ...(vercel ? { vercel } : {}),
     ...(env.AFE_WEB_DIR ? { webDir: env.AFE_WEB_DIR } : {}),
     auth: loadAuthConfig(env),
+    // Throws (refuses to start) outside 1..60 days.
+    eventRetentionDays: retentionPolicyFromEnv(env).days,
   };
 }

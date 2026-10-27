@@ -1,5 +1,5 @@
 /**
- * Observation gaps are first-class audit events: a period during which Afe
+ * Observation gaps are first-class events: a period during which Afe
  * could not observe a source through a connection, so events may be missing.
  * They are recorded as `observation_gap.opened` / `observation_gap.closed`
  * events with source "afe" and the gap in `data.gap` (validated by

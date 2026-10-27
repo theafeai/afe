@@ -1,11 +1,15 @@
 /**
  * Ingestion contract between connectors (and Afe's own producers, such as
- * connection health) and the audit log. Connectors never write to the
+ * connection health) and the event store. Connectors never write to the
  * database directly; they map source data to `CanonicalEventInputLike` and
  * call `EventSink.ingest`. The PostgreSQL implementation is `createPgEventSink`
  * in `@afe/db`. Contract details: docs/event-model.md "Ingestion contract".
+ *
+ * `EventSink` is also the seam another build can wrap or replace (for example
+ * to copy events into a long-term store): pass it as `createAfe({ sink })`.
  */
 import { randomUUID } from "node:crypto";
+import { sha256Hex } from "./digest.ts";
 import {
   EVENT_SCHEMA_VERSION,
   parseEventInput,
@@ -14,25 +18,29 @@ import {
   type CanonicalEventInputLike,
   type RawPayloadRef,
 } from "./event.ts";
-import { GENESIS_HASH, hashEvent, sha256Hex } from "./hash-chain.ts";
+import { isOutsideRetention, type RetentionPolicy } from "./retention.ts";
 
-export interface IngestResult {
+export type IngestResult =
+  /** The event was stored. */
+  | { status: "inserted"; inserted: true; event: CanonicalEvent }
   /**
-   * true if the event was appended; false if an event with the same
-   * (tenantId, source, sourceEventId) already existed. Duplicates are not
-   * errors: the first stored version is kept unchanged and returned.
+   * An event with the same (tenantId, source, sourceEventId) already existed.
+   * Not an error: the first stored version is kept unchanged and returned.
    */
-  inserted: boolean;
-  /** The stored event (the existing one when `inserted` is false). */
-  event: CanonicalEvent;
-}
+  | { status: "duplicate"; inserted: false; event: CanonicalEvent }
+  /**
+   * The event's occurredAt is already outside the tenant's retention window,
+   * so it was not stored (and a re-delivery cannot resurrect a purged event).
+   */
+  | { status: "expired"; inserted: false; event: null };
 
 export interface EventSink {
   /**
-   * Validates, normalises and appends one event to the tenant's audit log.
+   * Validates, normalises and stores one event.
    *
    * - Idempotent on (tenantId, source, sourceEventId): safe to call again
    *   after a crash/retry, and safe for webhook and polling to both deliver.
+   * - Drops events that are outside the retention window (`status: "expired"`).
    * - Throws `EventValidationError` (from `@afe/core`) for invalid input:
    *   that is a connector bug and must not be retried.
    * - Other errors (database unavailable...) are transient: retry the job.
@@ -48,24 +56,18 @@ export function rawPayloadBytes(body: string | Uint8Array): Uint8Array {
 
 export interface BuildEventParams {
   tenantId: string;
-  /** seq of the new event (previous head seq + 1). */
+  /** Per-tenant ordering key assigned by the store. */
   seq: number;
-  /** hash of the previous event (GENESIS_HASH for seq 1). */
-  prevHash: string;
   input: CanonicalEventInput;
   rawPayload: RawPayloadRef | null;
   id?: string;
   recordedAt?: Date;
 }
 
-/**
- * Builds the stored form of a validated input at a given chain position and
- * computes its hash. Used by every EventSink implementation so that all of
- * them hash identically.
- */
-export function buildChainedEvent(p: BuildEventParams): CanonicalEvent {
+/** Builds the stored form of a validated input. Used by every EventSink implementation. */
+export function buildStoredEvent(p: BuildEventParams): CanonicalEvent {
   const { rawPayload: _raw, ...input } = p.input;
-  const event: Omit<CanonicalEvent, "hash"> = {
+  return {
     schemaVersion: EVENT_SCHEMA_VERSION,
     id: p.id ?? randomUUID(),
     tenantId: p.tenantId,
@@ -73,12 +75,10 @@ export function buildChainedEvent(p: BuildEventParams): CanonicalEvent {
     ...input,
     recordedAt: (p.recordedAt ?? new Date()).toISOString(),
     rawPayload: p.rawPayload,
-    prevHash: p.prevHash,
   };
-  return { ...event, hash: hashEvent(event) };
 }
 
-/** An EventSink that keeps events in memory, with a real hash chain; for tests. */
+/** An EventSink that keeps events in memory; for tests. */
 export interface MemoryEventSink extends EventSink {
   /** Events per tenant, in seq order. */
   events(tenantId: string): CanonicalEvent[];
@@ -86,37 +86,46 @@ export interface MemoryEventSink extends EventSink {
   readonly rawPayloads: Map<string, { contentType: string; body: Uint8Array }>;
 }
 
-export function createMemoryEventSink(): MemoryEventSink {
-  const chains = new Map<string, CanonicalEvent[]>();
+export interface MemoryEventSinkOptions {
+  /** Drop events outside this policy's window (default: keep everything). */
+  retention?: RetentionPolicy;
+  now?: () => Date;
+}
+
+export function createMemoryEventSink(options: MemoryEventSinkOptions = {}): MemoryEventSink {
+  const byTenant = new Map<string, CanonicalEvent[]>();
   const byKey = new Map<string, CanonicalEvent>();
   const rawPayloads = new Map<string, { contentType: string; body: Uint8Array }>();
+  const now = options.now ?? (() => new Date());
   return {
     rawPayloads,
-    events: (tenantId) => [...(chains.get(tenantId) ?? [])],
+    events: (tenantId) => [...(byTenant.get(tenantId) ?? [])],
     async ingest(tenantId, raw) {
       const input = parseEventInput(raw);
       const key = JSON.stringify([tenantId, input.source, input.sourceEventId]);
       const existing = byKey.get(key);
-      if (existing) return { inserted: false, event: existing };
-      const chain = chains.get(tenantId) ?? [];
-      const last = chain.at(-1);
+      if (existing) return { status: "duplicate", inserted: false, event: existing };
+      const cutoff = options.retention ? await options.retention.cutoff(tenantId, now()) : null;
+      if (isOutsideRetention(input.occurredAt, cutoff)) {
+        return { status: "expired", inserted: false, event: null };
+      }
+      const list = byTenant.get(tenantId) ?? [];
       let ref: RawPayloadRef | null = null;
       if (input.rawPayload) {
         const body = rawPayloadBytes(input.rawPayload.body);
         ref = { id: randomUUID(), sha256: sha256Hex(body) };
         rawPayloads.set(ref.id, { contentType: input.rawPayload.contentType, body });
       }
-      const event = buildChainedEvent({
+      const event = buildStoredEvent({
         tenantId,
-        seq: (last?.seq ?? 0) + 1,
-        prevHash: last?.hash ?? GENESIS_HASH,
+        seq: (list.at(-1)?.seq ?? 0) + 1,
         input,
         rawPayload: ref,
       });
-      chain.push(event);
-      chains.set(tenantId, chain);
+      list.push(event);
+      byTenant.set(tenantId, list);
       byKey.set(key, event);
-      return { inserted: true, event };
+      return { status: "inserted", inserted: true, event };
     },
   };
 }

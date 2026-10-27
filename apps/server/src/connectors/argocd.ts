@@ -513,7 +513,9 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
          * observation.method "reconciliation". ArgoCD has no time-range query,
          * so `from`/`to` are not needed: history keeps the last
          * `revisionHistoryLimit` (default 10) successful syncs; failed syncs
-         * other than the latest operation are not recoverable.
+         * other than the latest operation are not recoverable. History
+         * entries older than the retention window are dropped by the sink
+         * (ADR 0008), so nothing purged comes back.
          */
         async backfill(connection, _from, _to) {
           await reconcileArgoCdConnection(ctx, connection, options);
