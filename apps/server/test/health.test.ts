@@ -14,7 +14,11 @@ describe("GET /healthz", () => {
   });
 
   it("reports ok when the database is reachable", async () => {
-    const app = await createAfe({ authProvider: trustedTestAuth(), pool, logLevel: "silent" });
+    const app = await createAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "silent",
+    });
     const res = await app.inject({ method: "GET", url: "/healthz" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: "ok" });

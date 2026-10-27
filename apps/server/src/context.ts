@@ -10,6 +10,7 @@ import type {
 import type { KeyProvider } from "@afe/core/security";
 import type { AfeConfig } from "./config.ts";
 import type { JobDefinition, JobQueue } from "./jobs.ts";
+import type { AnchorService } from "./anchoring/service.ts";
 
 /** Shared services handed to every connector module and server feature. */
 export interface ServerContext {
@@ -35,6 +36,11 @@ export interface ServerContext {
   auth: AuthProvider;
   /** Maps the authenticated principal to its tenant (ADR 0002). */
   tenantResolver: TenantResolver;
+  /**
+   * Chain anchoring (AFE-29), set when the anchor module is registered. Used by
+   * `/api/audit/verify` (anchor status) and exports (embedded receipts).
+   */
+  anchors?: Pick<AnchorService, "status" | "receiptsForExport">;
 }
 
 /**

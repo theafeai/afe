@@ -214,3 +214,30 @@ has that hash at that position: `anchor: {seq, hash, found, matches}`, and
 `ok` is false if it does not. That is how an auditor confirms that an export's
 events are still part of an untampered chain. This reads the whole chain; it
 is meant for audits, not for frequent polling.
+
+When the anchor module is registered (default), the response also has
+`anchors` (AFE-29, [ADR 0007](decisions/0007-chain-anchoring.md)): every
+receipt from the anchor file (`AFE_ANCHOR_DIR`) and the database copy is
+re-checked (signature against the anchor key, TSA imprint) and compared with
+the live chain. `anchors.ok` false (a hash mismatch at an anchored seq, an
+anchor beyond the head, an invalid receipt) makes `ok` false, even when
+`verification.ok` is true: that is what a consistent rewrite of the chain
+looks like.
+
+```json
+"anchors": {
+  "configured": true, "ok": true, "total": 48, "matched": 48,
+  "externalSourceChecked": true,
+  "sources": [{ "name": "file", "receipts": 24 }, { "name": "database", "receipts": 48 }],
+  "latest": { "seq": 1234, "hash": "…", "createdAt": "…", "status": "match",
+              "signature": "valid_trusted", "timestamp": "imprint_ok", "ageSeconds": 812, "stale": false },
+  "errors": [], "warnings": [],
+  "lastRun": { "lastAttemptAt": "…", "lastSuccessAt": "…", "lastError": null, "lastErrorAt": null }
+}
+```
+
+Related: `GET /api/audit/anchors` (configured anchors, public key, the newest
+100 stored receipts) and `POST /api/audit/anchors/verify` with
+`{"text": "<anchor file contents>"}` or `{"receipts": [...]}`, optionally
+`"trustedPublicKeys": [...]`, which checks receipts you kept yourself against
+the live chain.

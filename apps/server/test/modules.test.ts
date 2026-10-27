@@ -49,7 +49,11 @@ describe("connector modules", () => {
   });
 
   it("rejects malformed JSON with 400", async () => {
-    const { app } = await buildAfe({ authProvider: trustedTestAuth(), pool, logLevel: "silent" });
+    const { app } = await buildAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "silent",
+    });
     app.post("/x", async () => ({}));
     const res = await app.inject({
       method: "POST",

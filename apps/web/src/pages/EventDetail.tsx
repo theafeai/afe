@@ -36,8 +36,11 @@ function actorText(a: ActorRef | undefined) {
   );
 }
 
-/** Correlation key list → API filter parameter, so each key links to related events. */
-const CORRELATION_PARAMS: Record<keyof Correlation, string> = {
+/**
+ * Correlation key list → API filter parameter, so each key links to related
+ * events. Keys without a filter parameter (yet) are shown without a link.
+ */
+const CORRELATION_PARAMS: Partial<Record<keyof Correlation, string>> = {
   commitShas: "commitSha",
   refs: "ref",
   repositories: "repository",
@@ -253,16 +256,23 @@ export function EventDetailPage({ id }: { id: string }) {
             items={correlation.map(([k, values]) => [
               humanize(k),
               <ul key={k} className="inline-list">
-                {values.map((v) => (
-                  <li key={v}>
-                    <Link
-                      to={`/events?${new URLSearchParams({ [CORRELATION_PARAMS[k]]: v }).toString()}`}
-                      title="Show related events"
-                    >
-                      <code>{v}</code>
-                    </Link>
-                  </li>
-                ))}
+                {values.map((v) => {
+                  const param = CORRELATION_PARAMS[k];
+                  return (
+                    <li key={v}>
+                      {param ? (
+                        <Link
+                          to={`/events?${new URLSearchParams({ [param]: v }).toString()}`}
+                          title="Show related events"
+                        >
+                          <code>{v}</code>
+                        </Link>
+                      ) : (
+                        <code>{v}</code>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>,
             ])}
           />

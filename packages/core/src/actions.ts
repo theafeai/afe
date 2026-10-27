@@ -62,6 +62,14 @@ export const ACTIONS = {
   REPOSITORY_DISPATCH_RECEIVED: "repository_dispatch.received",
   RELEASE_PUBLISHED: "release.published",
 
+  // --- Artifacts ---
+  /**
+   * A build artifact (container image) was published, e.g. GitHub
+   * `registry_package` `published`. Carries `imageRefs`/`imageDigests` and,
+   * from build provenance, the commit and run that produced it.
+   */
+  ARTIFACT_PUBLISHED: "artifact.published",
+
   // --- ArgoCD ---
   /** A sync operation started (operationState.phase Running). */
   ARGOCD_SYNC_STARTED: "argocd.sync.started",

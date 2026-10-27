@@ -153,6 +153,9 @@ content)`. Changing, removing or reordering any event breaks every later hash.
   as an integrity proof, and operators are advised to record heads periodically
   somewhere the DB operator cannot edit (a ticket, a signed commit, object
   storage with retention lock). The hosted service anchors heads automatically.
+  Afe publishes signed checkpoints itself when configured (AFE-29, ADR 0007:
+  append-only file, webhook, RFC 3161 TSA), and `/api/audit/verify` and
+  `afe verify-export --anchors` check the chain against them.
 - **Raw evidence.** Raw payloads are stored next to the canonical event, so a
   disputed event can be checked against what the source actually sent.
 

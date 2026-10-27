@@ -185,12 +185,13 @@ Per [research 0001](../research/0001-cross-tool-flow.md#what-the-connectors-must
   `environments` when the payload carries one;
 - deployments and statuses: `commitShas` = `sha`, `refs` = `ref` (unless it is a SHA),
   `environments`, `deploymentIds` = `github:<id>`, `runIds` from the linked run;
-  `data.correlationHints.deploymentUrls` = hosts of `environment_url`/`target_url`;
+  statuses: `deploymentUrls` = hosts of `environment_url`/`target_url`;
 - `push`: `commitShas` = `commits[].id` + `after`, `refs` = `ref`, `data.headCommit`;
 - `pull_request`: `commitShas` = `head.sha` (+ `merge_commit_sha` when merged),
   `refs` = base (and head, same repository only), `pullRequests`;
-- `push` and `pull_request`: `data.correlationHints.mentionedCommitShas` = full SHAs
-  found in commit messages / the PR body. The text itself is never put in the event.
+- `push` and `pull_request`: `upstreamCommitShas` = full SHAs found in commit
+  messages / the PR body. The text itself is never put in the event. (Before AFE-18
+  these keys were written to `data.correlationHints`.)
 
 `refs` are fully qualified where GitHub says what they are (`push.ref`, PR base/head,
 `repository_dispatch.branch`). `workflow_run.head_branch` and `deployment.ref` can be a

@@ -293,11 +293,14 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
               matches: actual === anchorHash,
             };
           }
+          // Chain anchors outside the database (AFE-29); null when the module is not registered.
+          const anchors = ctx.anchors ? await ctx.anchors.status(tenantId) : null;
           return {
-            ok: result.ok && (anchor === null || anchor.matches),
+            ok: result.ok && (anchor === null || anchor.matches) && (anchors?.ok ?? true),
             verification: result,
             head,
             anchor,
+            anchors,
           };
         } catch (err) {
           return sendError(reply, err);
@@ -340,6 +343,10 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
           includeRawPayloads: includeRaw,
         });
         const exportId = randomUUID();
+        // Anchor the exported head and embed the newest receipts (AFE-29).
+        const anchors = ctx.anchors
+          ? await ctx.anchors.receiptsForExport(tenantId, snapshot.chainHead)
+          : [];
         const createdAt = new Date();
         let result;
         try {
@@ -351,6 +358,7 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
             exportId,
             createdAt,
             includeRawPayloads: includeRaw,
+            ...(anchors.length > 0 ? { anchors } : {}),
             records: snapshot.records,
           });
         } catch (err) {

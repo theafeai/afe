@@ -4,6 +4,7 @@
  * `afe export-keygen`: generates an Ed25519 key for AFE_EXPORT_SIGNING_KEY.
  */
 import { readFile } from "node:fs/promises";
+import { parseAnchorReceipts, type AnchorReceipt } from "@afe/core/anchoring";
 import {
   generateExportSigningKey,
   verifyExport,
@@ -12,7 +13,8 @@ import {
 } from "@afe/core/export";
 
 export const VERIFY_EXPORT_USAGE = `usage: afe verify-export <file> [--manifest <file>] [--public-key <key|file>]...
-                         [--require-signature] [--tenant <id>] [--expect-head <seq>:<hash>] [--json]`;
+                         [--require-signature] [--tenant <id>] [--expect-head <seq>:<hash>]
+                         [--anchors <file>]... [--anchor-public-key <key|file>]... [--require-anchor] [--json]`;
 
 export interface CliIo {
   readFile(path: string): Promise<Uint8Array>;
@@ -36,6 +38,8 @@ export async function runVerifyExport(argv: string[], io: CliIo = nodeIo): Promi
   let manifestPath: string | undefined;
   let json = false;
   const options: VerifyExportOptions = { trustedPublicKeys: [] };
+  const anchorFiles: string[] = [];
+  const anchorKeys: string[] = [];
   try {
     for (let i = 0; i < argv.length; i++) {
       const a = argv[i]!;
@@ -52,7 +56,10 @@ export async function runVerifyExport(argv: string[], io: CliIo = nodeIo): Promi
         const m = /^(\d+):([0-9a-f]{64})$/.exec(next());
         if (!m) throw new Error("--expect-head must be <seq>:<64 hex hash>");
         options.expectedHead = { seq: Number(m[1]), hash: m[2]! };
-      } else if (a === "--json") json = true;
+      } else if (a === "--anchors") anchorFiles.push(next());
+      else if (a === "--anchor-public-key") anchorKeys.push(await keyArg(next(), io));
+      else if (a === "--require-anchor") options.requireAnchor = true;
+      else if (a === "--json") json = true;
       else if (a.startsWith("--")) throw new Error(`unknown option ${a}`);
       else if (file === undefined) file = a;
       else throw new Error("only one file can be verified at a time");
@@ -61,6 +68,21 @@ export async function runVerifyExport(argv: string[], io: CliIo = nodeIo): Promi
   } catch (err) {
     io.out(`${(err as Error).message}\n${VERIFY_EXPORT_USAGE}\n`);
     return 2;
+  }
+  if (anchorKeys.length > 0) options.anchorPublicKeys = anchorKeys;
+  if (anchorFiles.length > 0) {
+    const receipts: AnchorReceipt[] = [];
+    for (const f of anchorFiles) {
+      try {
+        const parsed = parseAnchorReceipts(new TextDecoder().decode(await io.readFile(f)));
+        if (parsed.issues.length > 0) throw new Error(parsed.issues[0]!.message);
+        receipts.push(...parsed.receipts);
+      } catch (err) {
+        io.out(`--anchors ${f}: ${(err as Error).message}\n`);
+        return 2;
+      }
+    }
+    options.anchors = receipts;
   }
   if (manifestPath) options.manifest = new TextDecoder().decode(await io.readFile(manifestPath));
   const report = verifyExport(await io.readFile(file), options);
@@ -91,7 +113,21 @@ export function formatReport(file: string, r: ExportVerificationReport): string 
     `  chain links verified:   ${p.linksVerified}`,
     `  head event included:    ${mark(p.headIncluded)}`,
     `  complete chain proven:  ${mark(p.completeChain)}`,
+    `  anchored:               ${mark(p.anchored)}`,
   );
+  if (r.anchors) {
+    lines.push(`  anchors: ${r.anchors.matched} of ${r.anchors.total} confirmed`);
+    for (const x of r.anchors.results) {
+      if (x.status === "other_tenant") continue;
+      const ts =
+        x.timestamp === "absent"
+          ? ""
+          : `, timestamp ${x.timestamp}${x.timestampGenTime ? ` at ${x.timestampGenTime}` : ""}`;
+      lines.push(
+        `    seq ${x.seq} (${x.createdAt}, ${x.source ?? x.kind}): ${x.status}, signature ${x.signature}${ts}`,
+      );
+    }
+  }
   for (const e of r.errors) {
     lines.push(`  ERROR ${e.code}${e.seq !== undefined ? ` (seq ${e.seq})` : ""}: ${e.message}`);
   }

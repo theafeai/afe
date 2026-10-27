@@ -524,7 +524,11 @@ describe("startup safety", () => {
     expect(() => cfg({ AFE_SESSION_TTL: "10s" })).toThrow(/AFE_SESSION_TTL/);
     const pool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
     await expect(
-      buildAfe({ pool, logLevel: "silent", config: cfg({ AFE_ADMIN_TOKEN: "too-short" }) }),
+      buildAfe({
+        pool,
+        logLevel: "silent",
+        config: cfg({ AFE_ADMIN_TOKEN: "too-short" }),
+      }),
     ).rejects.toThrow(/at least 32 characters/);
     await expect(
       buildAfe({
@@ -537,7 +541,11 @@ describe("startup safety", () => {
 
   it("without any token configured, every /api request is rejected", async () => {
     const pool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
-    const { app } = await buildAfe({ pool, logLevel: "silent", config: cfg({}) });
+    const { app } = await buildAfe({
+      pool,
+      logLevel: "silent",
+      config: cfg({}),
+    });
     expect((await app.inject({ method: "GET", url: "/api/session" })).statusCode).toBe(401);
     const login = await app.inject({
       method: "POST",

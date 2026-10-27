@@ -140,7 +140,11 @@ describe("web UI (AFE_WEB_DIR)", () => {
   });
 
   it("serves no UI when AFE_WEB_DIR is unset", async () => {
-    const app = await createAfe({ authProvider: trustedTestAuth(), pool, logLevel: "silent" });
+    const app = await createAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "silent",
+    });
     expect((await app.inject({ method: "GET", url: "/" })).statusCode).toBe(404);
     await app.close();
   });

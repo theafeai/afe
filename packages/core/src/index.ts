@@ -16,3 +16,5 @@ export * from "./tenant.ts";
 // Authentication extension point (AFE-27, ADR 0006).
 export * from "./auth.ts";
 export * from "./export/index.ts";
+// Chain anchoring: signed checkpoints outside the database (AFE-29).
+export * from "./anchoring/index.ts";
