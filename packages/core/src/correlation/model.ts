@@ -59,7 +59,7 @@ export const EVIDENCE_CONFIDENCE = {
   same_commit: "strong",
   /** Same image digest (`correlation.imageDigests`). */
   same_image_digest: "strong",
-  /** Same deployment URL (proposed key; e.g. GitHub deployment_status.target_url = Vercel url). */
+  /** Same deployment URL host (`correlation.deploymentUrls`; e.g. GitHub deployment_status.target_url = Vercel url). */
   same_deployment_url: "strong",
   /** Same image reference (name:tag) and only one build produced that tag. */
   same_image_tag: "probable",
@@ -140,30 +140,41 @@ export function isBuildEvent(e: CorrelationEvent): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Hints: proposed correlation keys not (yet) in the schema
+// Hints: cross-tool reference keys (new correlation keys + legacy data hints)
 // ---------------------------------------------------------------------------
 
 /**
- * Keys the research recommends adding to `correlation` (see the doc). Until
- * then the prototype reads them from `data.correlationHints`, so the
- * synthetic dataset still validates against today's schema.
+ * Reference keys used for cross-tool links. AFE-18 added `upstreamCommitShas`
+ * and `deploymentUrls` to `correlation`; events recorded before that carried
+ * them in `data.correlationHints` (`mentionedCommitShas`, `deploymentUrls`).
+ * Stored events are immutable, so both are read: the correlation keys first,
+ * then the legacy hints, merged and de-duplicated.
  */
 export interface CorrelationHints {
-  /** Full commit SHAs mentioned by a commit message / PR (e.g. a GitOps bump). Proposed `upstreamCommitShas`. */
-  mentionedCommitShas: string[];
-  /** Image digests written by a config change. Proposed: part of `imageDigests` on the push event. */
+  /** Full commit SHAs a change refers to in another repository (`correlation.upstreamCommitShas`). */
+  upstreamCommitShas: string[];
+  /**
+   * Image digests written by a config change. No correlation key yet (would be
+   * part of `imageDigests` on the push event); read from legacy hints only.
+   */
   mentionedImageDigests: string[];
-  /** Deployment URL hosts, lower case. Proposed `deploymentUrls`. */
+  /** Deployment URL hosts, lower case (`correlation.deploymentUrls`). */
   deploymentUrls: string[];
 }
 
 export function hintsOf(e: CorrelationEvent): CorrelationHints {
   const h = asObject(e.data?.correlationHints);
   return {
-    mentionedCommitShas: strings(h?.mentionedCommitShas).map((s) => s.toLowerCase()),
-    mentionedImageDigests: strings(h?.mentionedImageDigests).map((s) => s.toLowerCase()),
-    deploymentUrls: strings(h?.deploymentUrls).map((s) => s.toLowerCase()),
+    upstreamCommitShas: merge(e.correlation.upstreamCommitShas, strings(h?.mentionedCommitShas)),
+    mentionedImageDigests: merge(strings(h?.mentionedImageDigests)),
+    deploymentUrls: merge(e.correlation.deploymentUrls, strings(h?.deploymentUrls)),
   };
+}
+
+function merge(...lists: (readonly string[] | undefined)[]): string[] {
+  const out = new Set<string>();
+  for (const l of lists) for (const s of l ?? []) out.add(s.toLowerCase());
+  return [...out];
 }
 
 function asObject(v: JsonValue | undefined): JsonObject | undefined {

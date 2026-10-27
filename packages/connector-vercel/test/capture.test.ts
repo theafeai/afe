@@ -195,6 +195,7 @@ describe("vercel event capture", () => {
         repositories: ["github.com/acme/web"],
         environments: ["production"],
         deploymentIds: ["vercel:dpl_git"],
+        deploymentUrls: ["dpl-git.vercel.app"],
       },
       occurredAt: new Date(T0 + 3 * MIN).toISOString(),
     });
@@ -202,8 +203,8 @@ describe("vercel event capture", () => {
       triggerKind: "git_push",
       aliasAssigned: true,
       target: "production",
-      correlationHints: { deploymentUrls: ["dpl-git.vercel.app"] },
     });
+    expect(git.data.correlationHints).toBeUndefined();
     expect(JSON.stringify(git.data)).not.toContain("secret plans");
     expect(byKey("deployment:dpl_git:created")).toMatchObject({
       action: "deployment.created",

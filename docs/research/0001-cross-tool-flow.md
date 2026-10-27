@@ -198,16 +198,18 @@ Rules for all connectors: set every key you know on every event (not only
 "main" events); repositories via `repositoryKey()`; full SHAs only; keep
 commit message text out of the event (R8): extract identifiers only.
 
-### Schema additions (core, follow-up 1)
+### Schema additions (core, follow-up 1) — done (AFE-18)
 
-Additive changes to `correlationSchema` (no schema version bump):
+Additive changes to `correlationSchema` (no schema version bump), implemented
+in AFE-18; connectors now write the new keys and the prototype reads them,
+falling back to `data.correlationHints` for events stored earlier:
 
 - `upstreamCommitShas: string[]`: full SHAs a change refers to in _another_
   repository (GitOps bump commit messages, PR bodies, Renovate/Argo Image
-  Updater commit trailers). Prototype reads `data.correlationHints.mentionedCommitShas`.
+  Updater commit trailers). Legacy location: `data.correlationHints.mentionedCommitShas`.
 - `deploymentUrls: string[]`: lower-case hosts of deployment URLs (Vercel
   `url`, GitHub `deployment_status.target_url` / `environment_url`). Prototype
-  reads `data.correlationHints.deploymentUrls`.
+  reads them (and the legacy `data.correlationHints.deploymentUrls`).
 - `imageRefs` documented to allow the digest-pinned form
   `registry/repo:tag@sha256:<hex>` so a digest stays paired with its image
   when an event has several images (today `imageRefs` and `imageDigests` are
@@ -300,7 +302,7 @@ recomputed from scratch.
 
 ## Proposed follow-up issues
 
-1. **Core: correlation keys for cross-tool linking.** Add `upstreamCommitShas`
+1. **(Done, AFE-18) Core: correlation keys for cross-tool linking.** Add `upstreamCommitShas`
    and `deploymentUrls` to `correlationSchema`, document the digest-pinned
    `imageRefs` form, add `artifact.published` to `ACTIONS`. Additive; update
    docs/event-model.md.

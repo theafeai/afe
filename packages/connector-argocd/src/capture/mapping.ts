@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import {
   ACTIONS,
   canonicalJson,
+  IMAGE_REF_PATTERN,
   jsonRawPayload,
   repositoryKey,
   sourceEventId,
@@ -166,7 +167,9 @@ function imageKeys(images: readonly string[] | undefined): { refs: string[]; dig
   const refs: string[] = [];
   const digests: string[] = [];
   for (const img of images ?? []) {
-    if (!img || img.length > 1024) continue;
+    // Kept whole, digest-pinned form included ("repo:tag@sha256:…"); refs the
+    // correlation schema would reject are skipped rather than failing the event.
+    if (!img || img.length > 1024 || !IMAGE_REF_PATTERN.test(img)) continue;
     refs.push(img);
     const d = DIGEST_RE.exec(img)?.[1];
     if (d) digests.push(d.toLowerCase());

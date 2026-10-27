@@ -214,9 +214,9 @@ the stored previous deployment. Limitation: the same from→to change repeated
   Vercel's is null), `state` (as observed), `triggerKind`, `vercelSource`,
   `creator`, `deployHook`, `git` (provider, sha, branch, repo, author login and
   name, PR, `dirty` from `meta.gitDirty`), `aliasAssigned` (on `succeeded` and
-  alias events; `false` for READY builds that did not get the domains), and
-  `correlationHints.deploymentUrls` (lower-case host; the proposed
-  `deploymentUrls` key is not in `correlationSchema` yet).
+  alias events; `false` for READY builds that did not get the domains). The
+  deployment URL's lower-case host is in `correlation.deploymentUrls` (AFE-18;
+  events recorded earlier have it in `data.correlationHints.deploymentUrls`).
 - Commit messages are not copied into events (the raw payload keeps them).
 - Raw payload: the API object for polls. For webhooks,
   `{ webhook: {id, type, createdAt, payload}, deployment }`, re-serialised
