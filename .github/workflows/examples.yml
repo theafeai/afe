@@ -86,6 +86,10 @@ jobs:
         run: |
           kubectl create namespace argocd
           kubectl apply --server-side -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml
+          # Use the same official Redis release from Docker Hub rather than
+          # depending on availability of the upstream ECR mirror in CI.
+          kubectl -n argocd set image deployment/argocd-redis redis=redis:8.2.3-alpine
+          kubectl -n argocd rollout status deployment/argocd-redis --timeout=180s
           kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s
           kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=300s
           kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
@@ -135,5 +139,6 @@ jobs:
         if: failure()
         run: |
           kubectl get pods -A
+          kubectl -n argocd get events --sort-by=.lastTimestamp || true
           kubectl -n argocd get application afe-demo -o yaml || true
           kubectl -n afe-demo get events --sort-by=.lastTimestamp || true
