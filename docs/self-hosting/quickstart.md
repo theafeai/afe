@@ -23,7 +23,7 @@ curl -fsSL  https://raw.githubusercontent.com/theafeai/afe/$VERSION/.env.example
 
 (Or `git clone https://github.com/theafeai/afe` and work in the checkout.)
 
-## 2. Generate the encryption key (1 min)
+## 2. Generate the encryption key and admin token (1 min)
 
 Afe encrypts every stored credential (GitHub App private key, tokens, webhook
 secrets) with this key. Docker Compose mounts it into the containers as a secret
@@ -38,6 +38,16 @@ chmod 644 secrets/afe_encryption_key   # readable by the container user; the 700
 **Back this key up now**, somewhere other than where your database backups go
 (a password manager is fine). Without it, stored credentials cannot be
 decrypted; see [secrets](secrets.md).
+
+The API and web UI require a login. Generate the admin token (keep it in your
+password manager; you sign in to the UI with it):
+
+```sh
+openssl rand -hex 32 > secrets/afe_admin_token
+chmod 644 secrets/afe_admin_token
+```
+
+Afe refuses to start without it (see [authentication](configuration.md#authentication)).
 
 ## 3. Configure (1 min)
 
@@ -59,7 +69,13 @@ curl -s http://127.0.0.1:8080/healthz      # {"status":"ok"}
 ```
 
 This starts PostgreSQL, `afe-server` and `afe-worker`. Database migrations run
-automatically on start. Open <http://127.0.0.1:8080/> for the web UI.
+automatically on start. Open <http://127.0.0.1:8080/> for the web UI and sign
+in with the admin token (`cat secrets/afe_admin_token`). API clients send it as
+a bearer token:
+
+```sh
+curl -s -H "Authorization: Bearer $(cat secrets/afe_admin_token)" http://127.0.0.1:8080/api/events
+```
 
 The port is bound to `127.0.0.1` only. The UI and API are not meant to be on the
 internet; from another machine use an SSH tunnel

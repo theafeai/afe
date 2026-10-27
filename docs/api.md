@@ -6,11 +6,43 @@ HTTP API for asking the audit log questions and taking evidence out of it
 (filter semantics), `packages/core/src/export/` (export and verifier). Export
 format and verification: [export-verification.md](export-verification.md).
 
-> **No authentication yet.** The `AuthProvider` extension point (ADR 0002) is
-> not implemented. Until it is, do not expose `/api/*` beyond a trusted
-> network (bind to localhost or put it behind an authenticating proxy). The
-> tenant is chosen by the `TenantResolver` (OSS default: always `default`),
-> never by a request parameter.
+## Authentication
+
+Every `/api/*` route requires authentication ([ADR 0006](decisions/0006-api-authentication.md));
+webhooks (`/webhooks/*`, signature-verified), `/healthz` and the static UI are
+public. The tenant is always the authenticated principal's (OSS: `default`),
+never a request parameter.
+
+- **API clients:** `Authorization: Bearer <token>` with `AFE_ADMIN_TOKEN`
+  (full access) or `AFE_VIEWER_TOKEN` (read-only).
+
+  ```sh
+  curl -H "Authorization: Bearer $AFE_ADMIN_TOKEN" http://127.0.0.1:8080/api/events
+  ```
+
+- **Web UI:** `POST /api/session` with `{"token": "..."}` sets an HttpOnly
+  session cookie (`afe_session`, `Path=/api`, `SameSite=Lax`, `Secure` with an
+  https `AFE_PUBLIC_URL`, default lifetime 12 h) and a readable `afe_csrf`
+  cookie. Mutating requests made with the session cookie must send
+  `X-Afe-CSRF: <afe_csrf value>`. `GET /api/session` returns the principal,
+  `DELETE /api/session` logs out.
+- Mutating requests with an `Origin` header must come from Afe's own origin.
+
+| Endpoint                                                                             | Role   | Purpose                                    |
+| ------------------------------------------------------------------------------------ | ------ | ------------------------------------------ |
+| `POST /api/session`, `DELETE /api/session`                                           | public | Log in with a token / log out              |
+| `GET /api/session`                                                                   | viewer | Who am I                                   |
+| `GET` events, deployments, export, audit, connections, health                        | viewer | Read                                       |
+| `POST /api/audit/anchors/verify`                                                     | viewer | Check supplied anchor receipts (read-only) |
+| Create/test/disconnect connections, Vercel project selection (incl. listing)         | admin  | Change connections                         |
+| GitHub install, setup callback, App manifest flow; Vercel install and OAuth callback | admin  | Install flows                              |
+| `GET /api/export/public-key`                                                         | admin  | Export signing key                         |
+
+Errors: `401 {"error":"unauthorized"}` without valid credentials (a browser
+navigation is redirected to `/login?next=...` instead), `403
+{"error":"forbidden"}` for a missing role or a cross-origin request, `403
+{"error":"csrf_failed"}` for a missing/wrong CSRF token. Another tenant's
+resources answer `404`.
 
 ## Endpoints
 

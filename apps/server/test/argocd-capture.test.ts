@@ -23,6 +23,7 @@ import {
   type ArgoCdModuleOptions,
 } from "../src/connectors/argocd.ts";
 import { createPgCaptureStateStore } from "../src/connectors/argocd-state.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const TOKEN = "afe-capture-token-SECRET";
 const SHA1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -86,6 +87,7 @@ describe("ArgoCD capture jobs (database)", () => {
     fake.apply(old.snapshot(), { emit: false });
     jobs = new InlineJobQueue();
     const built = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "debug",
       logStream: new Writable({

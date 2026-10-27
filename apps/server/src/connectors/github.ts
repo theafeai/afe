@@ -37,6 +37,9 @@ import {
   GITHUB_WEBHOOK_JOB,
   GitHubApiError,
   GitHubAppClient,
+  GitHubOAuthError,
+  verifyInstaller as verifyGitHubInstaller,
+  type InstallerVerificationConfig,
   GitHubPayloadError,
   GitHubHttp,
   GitHubNetworkError,
@@ -92,7 +95,9 @@ import {
   storeCredential,
   upsertConnection,
 } from "@afe/db";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
+import { readSecretEnv } from "../config.ts";
 import { parseDuration } from "../health/config.ts";
 
 type Db = pg.Pool | pg.PoolClient;
@@ -110,8 +115,8 @@ export interface GitHubModuleOptions {
   /** Public base URL of this instance (AFE_PUBLIC_URL); needed for the manifest flow. */
   publicUrl?: string;
   /**
-   * Tenant of an authenticated install/manifest request. Until the
-   * AuthProvider/TenantResolver land, the default is the built-in tenant.
+   * Tenant of an authenticated install/manifest request. Default: the
+   * authenticated principal's (`requestTenant`, ADR 0006).
    */
   resolveTenant?: (req: FastifyRequest) => string | Promise<string>;
   /**
@@ -122,6 +127,15 @@ export interface GitHubModuleOptions {
    * AFE_GITHUB_ADOPT_INSTALLATIONS=false.
    */
   adoptInstallationsInto?: string | null;
+  /**
+   * Hosted: before connecting an installation from the setup callback, check
+   * via OAuth that the user coming back can access it (`GET
+   * /user/installations`). Needs the App's OAuth client id and secret and
+   * "Request user authorization (OAuth) during installation" enabled on the
+   * App. Default: from AFE_GITHUB_VERIFY_INSTALLER=true with
+   * AFE_GITHUB_APP_CLIENT_ID and AFE_GITHUB_APP_CLIENT_SECRET(_FILE); else off.
+   */
+  verifyInstaller?: InstallerVerificationConfig | null;
   /** Allow the App Manifest flow while no App is configured. Default true. */
   manifestFlow?: boolean;
   /** Tenant that owns a manifest-registered App's credentials. Default DEFAULT_TENANT_ID. */
@@ -249,6 +263,28 @@ export class GitHubRuntime {
     }
     const env = this.options.env ?? process.env;
     return env.AFE_GITHUB_ADOPT_INSTALLATIONS === "false" ? null : DEFAULT_TENANT_ID;
+  }
+
+  #installer: InstallerVerificationConfig | null | undefined;
+
+  /** Installer verification settings, or null when it is off. Throws on incomplete settings. */
+  get installerVerification(): InstallerVerificationConfig | null {
+    if (this.#installer !== undefined) return this.#installer;
+    if (this.options.verifyInstaller !== undefined) {
+      return (this.#installer = this.options.verifyInstaller);
+    }
+    const env = this.options.env ?? process.env;
+    const flag = env.AFE_GITHUB_VERIFY_INSTALLER;
+    if (flag === undefined || flag === "" || flag === "false") return (this.#installer = null);
+    if (flag !== "true") throw new Error("AFE_GITHUB_VERIFY_INSTALLER must be true or false");
+    const clientId = env.AFE_GITHUB_APP_CLIENT_ID?.trim();
+    const clientSecret = readSecretEnv(env, "AFE_GITHUB_APP_CLIENT_SECRET")?.trim();
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        "AFE_GITHUB_VERIFY_INSTALLER=true needs AFE_GITHUB_APP_CLIENT_ID and AFE_GITHUB_APP_CLIENT_SECRET (or _FILE)",
+      );
+    }
+    return (this.#installer = { clientId, clientSecret: new Secret(clientSecret) });
   }
 
   get publicUrl(): string | null {
@@ -675,13 +711,17 @@ function flowCookie(rt: GitHubRuntime, req: FastifyRequest, value: string, maxAg
   ].join("; ");
 }
 
+function tenantOfRequest(rt: GitHubRuntime, req: FastifyRequest): string | Promise<string> {
+  return rt.options.resolveTenant ? rt.options.resolveTenant(req) : requestTenant(req);
+}
+
 async function startFlow(
   rt: GitHubRuntime,
   req: FastifyRequest,
   reply: FastifyReply,
   purpose: StatePurpose,
 ): Promise<string> {
-  const tenantId = await (rt.options.resolveTenant?.(req) ?? DEFAULT_TENANT_ID);
+  const tenantId = await tenantOfRequest(rt, req);
   const nonce = newNonce();
   const state = signState(await rt.stateKey(), { purpose, tenantId, nonce }, rt.clock());
   reply.header("set-cookie", flowCookie(rt, req, nonce, 15 * 60));
@@ -930,13 +970,20 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
   const app = await rt.app();
   if (!app) throw new HttpError(503, "GitHub App is not configured");
 
+  // The callback needs an authenticated admin session (ADR 0006), and the
+  // flow must have been started by the same tenant.
+  const callerTenant = await tenantOfRequest(rt, req);
   let tenantId: string;
   let flowStartedAt: number | null = null;
   if (q.state !== undefined) {
     const state = await checkFlow(rt, req, q.state, "install");
+    if (state.tenantId !== callerTenant) {
+      req.log.warn("github install flow completed by another tenant");
+      throw new HttpError(400, "invalid or expired state");
+    }
     tenantId = state.tenantId;
     flowStartedAt = state.exp - 15 * 60_000;
-  } else if (rt.adoptTenant) {
+  } else if (rt.adoptTenant && rt.adoptTenant === callerTenant) {
     tenantId = rt.adoptTenant;
   } else {
     throw new HttpError(400, "invalid or expired state");
@@ -966,6 +1013,7 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
   if (String(installation.app_id) !== app.config.appId) {
     throw new HttpError(400, "unknown installation");
   }
+  await checkInstaller(rt, req, q.code, String(installation.id));
 
   const claimed = await resolveConnectionBySourceIdentity(
     ctx.pool,
@@ -1046,6 +1094,46 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
       permissionCheck: config.permissionCheck,
     },
   });
+}
+
+/**
+ * Hosted (opt-in): the user coming back from GitHub must have access to the
+ * installation, proven with the OAuth `code` GitHub adds to the setup redirect
+ * (AFE-27). Without it, anyone who completes an install flow could claim a
+ * guessed installation id.
+ */
+async function checkInstaller(
+  rt: GitHubRuntime,
+  req: FastifyRequest,
+  code: string | undefined,
+  installationId: string,
+): Promise<void> {
+  const config = rt.installerVerification;
+  if (!config) return;
+  if (!code || !/^[A-Za-z0-9_-]{1,128}$/.test(code)) {
+    req.log.warn({ installationId }, "github setup without OAuth code; installer not verified");
+    throw new HttpError(
+      403,
+      "installer could not be verified: enable 'Request user authorization (OAuth) during installation' on the GitHub App",
+    );
+  }
+  let ok: boolean;
+  try {
+    ok = await verifyGitHubInstaller(config, code, installationId, {
+      http: rt.manifestHttp,
+      ...(rt.options.http?.fetch ? { fetch: rt.options.http.fetch } : {}),
+    });
+  } catch (err) {
+    if (err instanceof GitHubOAuthError) {
+      req.log.warn({ installationId, reason: err.message }, "github installer verification failed");
+      throw new HttpError(403, "installer could not be verified");
+    }
+    throw err;
+  }
+  if (!ok) {
+    req.log.warn({ installationId }, "github installer has no access to the installation");
+    throw new HttpError(403, "you do not have access to this installation");
+  }
 }
 
 async function handleManifest(rt: GitHubRuntime, req: FastifyRequest, reply: FastifyReply) {
@@ -1838,6 +1926,7 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
     routes(app, ctx) {
       // Fail fast on a partly configured environment.
       const rt = runtime(ctx);
+      void rt.installerVerification;
       const wrap =
         (fn: (rt: GitHubRuntime, req: FastifyRequest, reply: FastifyReply) => Promise<unknown>) =>
         async (req: FastifyRequest, reply: FastifyReply) => {

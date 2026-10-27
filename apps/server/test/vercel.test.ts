@@ -9,6 +9,7 @@ import { getConnection, getConnectionCredentialIds, getCredentialMetadata } from
 import { FakeVercelApi } from "@afe/connector-vercel/testing";
 import { buildAfe, InlineJobQueue, type AfeConfig, type ServerContext } from "../src/index.ts";
 import { createVercelModule, vercelReader } from "../src/connectors/vercel.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const NOW = 1_800_000_000_000;
 const TEAM = { id: "team_acme", slug: "acme", name: "Acme" };
@@ -74,6 +75,7 @@ describe("vercel connector module", () => {
       },
     };
     const built = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       keys,
       jobs,
@@ -441,6 +443,7 @@ describe("vercel connector module", () => {
 
   it("returns 404 for integration routes when the integration is not configured", async () => {
     const built = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       keys,
       logLevel: "silent",

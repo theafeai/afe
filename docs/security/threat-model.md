@@ -107,35 +107,41 @@ detectably (see "Tamper evidence" below).
 
 ### TB5 – UI and API (browser → Afe)
 
-Authenticated through the `AuthProvider` extension point. Never returns secret
+Authenticated through the `AuthProvider` extension point
+([ADR 0006](../decisions/0006-api-authentication.md)): bearer tokens for API
+clients, a signed HttpOnly session cookie with a session-bound CSRF token for
+the UI, admin/viewer roles per route, fail-closed route policy (every `/api`
+route requires authentication unless explicitly public). The server refuses to
+start without an admin token unless bound to loopback. Never returns secret
 values (credentials are write-only through the API; only metadata is readable).
 In the hosted service every request is bound to exactly one tenant by the
 `TenantResolver` before any data access.
 
 ## STRIDE analysis
 
-| #   | Threat                                                                      | Boundary | Mitigation                                                                                                                                                                                    |
-| --- | --------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | **Spoofing** a webhook to inject fake deployment events                     | TB1      | HMAC-SHA256 (GitHub `X-Hub-Signature-256`) / HMAC-SHA1 (Vercel `x-vercel-signature`) over the raw body, constant-time compare; unsigned or unverifiable deliveries are rejected 401.          |
-| S2  | Spoofing the ArgoCD agent                                                   | TB3      | Per-agent credential and signed requests; agent bound to one tenant and connection.                                                                                                           |
-| S3  | Spoofing an upstream API via DNS/MITM                                       | TB2      | TLS verification always on; custom CA instead of disabling verification; no redirects to other hosts.                                                                                         |
-| S4  | Spoofing a user/tenant in the UI/API                                        | TB5      | `AuthProvider` + `TenantResolver`; tenant derived from the authenticated session, never from a request parameter.                                                                             |
-| T1  | **Tampering** with stored events (update/delete)                            | TB4      | Append-only `events` with triggers rejecting UPDATE/DELETE/TRUNCATE; per-tenant hash chain; exported chain heads (below).                                                                     |
-| T2  | Tampering with stored credentials (swap ciphertext between tenants or rows) | TB4      | AES-256-GCM with AAD = (tenant id, credential id) at both envelope layers; swapped or modified ciphertext fails to decrypt.                                                                   |
-| T3  | Tampering with a webhook body in transit                                    | TB1      | Signature covers the exact raw bytes; body is never re-serialised before verification.                                                                                                        |
-| R1  | **Repudiation**: a deployer claims "that was not me"/"that never happened"  | all      | Raw source payloads retained with the event; actor recorded as reported by the source; hash chain and integrity proof on export.                                                              |
-| R2  | Missed events treated as "nothing happened"                                 | TB1/TB2  | Reconciliation polling; outages and sequence gaps recorded as observation gaps, not silence.                                                                                                  |
-| I1  | **Information disclosure**: credentials in logs, errors, API responses      | all      | `Secret` wrapper, pino `redact` paths, `redactDeep`, write-only credential API, errors never include secret values.                                                                           |
-| I2  | Credentials from a DB dump/backup                                           | TB4      | Envelope encryption; keys outside the DB (env/file or KMS).                                                                                                                                   |
-| I3  | SSRF via user-supplied URL (cloud metadata, internal services)              | TB2      | `validateOutboundUrl` (https only, no userinfo, resolved addresses checked) and `createSafeLookup` at connect time; link-local/metadata always blocked; private ranges opt-in self-host only. |
-| I4  | Cross-tenant data access (hosted)                                           | TB4/TB5  | `tenant_id` on every customer table, in every key and every query; see tenant isolation rules.                                                                                                |
-| I5  | Storing more customer data than needed (source code, secret values)         | TB2      | Data minimisation, see [`data-inventory.md`](data-inventory.md).                                                                                                                              |
-| D1  | **Denial of service** by webhook floods or huge bodies                      | TB1      | Body size limit, signature check before parsing, cheap enqueue, rate limiting at the edge; Postgres queue absorbs bursts.                                                                     |
-| D2  | Slow or hostile upstream APIs stalling workers                              | TB2      | Timeouts on every outbound call, bounded retries with backoff, response size limits.                                                                                                          |
-| D3  | Replay flood of a valid captured delivery                                   | TB1      | `webhook_deliveries` dedup returns early; no reprocessing.                                                                                                                                    |
-| E1  | **Elevation of privilege** via over-scoped connector tokens                 | TB2      | Read-only scopes only (see rules); Afe never needs write access; documented per connector.                                                                                                    |
-| E2  | Afe DB role dropping append-only triggers                                   | TB4      | Production runs the app with a non-owner role; migrations run separately with the owner role.                                                                                                 |
-| E3  | Malicious dependency                                                        | build    | Lockfile, Dependabot, minimal dependencies, CI with read-only token.                                                                                                                          |
+| #   | Threat                                                                          | Boundary | Mitigation                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1  | **Spoofing** a webhook to inject fake deployment events                         | TB1      | HMAC-SHA256 (GitHub `X-Hub-Signature-256`) / HMAC-SHA1 (Vercel `x-vercel-signature`) over the raw body, constant-time compare; unsigned or unverifiable deliveries are rejected 401.            |
+| S2  | Spoofing the ArgoCD agent                                                       | TB3      | Per-agent credential and signed requests; agent bound to one tenant and connection.                                                                                                             |
+| S3  | Spoofing an upstream API via DNS/MITM                                           | TB2      | TLS verification always on; custom CA instead of disabling verification; no redirects to other hosts.                                                                                           |
+| S4  | Spoofing a user/tenant in the UI/API                                            | TB5      | `AuthProvider` + `TenantResolver`; tenant derived from the authenticated session, never from a request parameter. Constant-time token compare; HMAC-signed sessions; CSRF token + Origin check. |
+| S5  | Claiming someone else's GitHub App installation via an edited `installation_id` | TB5      | Signed, browser-bound install state; admin session of the starting tenant required at the callback; hosted: OAuth installer verification (`GET /user/installations`, ADR 0006).                 |
+| T1  | **Tampering** with stored events (update/delete)                                | TB4      | Append-only `events` with triggers rejecting UPDATE/DELETE/TRUNCATE; per-tenant hash chain; exported chain heads (below).                                                                       |
+| T2  | Tampering with stored credentials (swap ciphertext between tenants or rows)     | TB4      | AES-256-GCM with AAD = (tenant id, credential id) at both envelope layers; swapped or modified ciphertext fails to decrypt.                                                                     |
+| T3  | Tampering with a webhook body in transit                                        | TB1      | Signature covers the exact raw bytes; body is never re-serialised before verification.                                                                                                          |
+| R1  | **Repudiation**: a deployer claims "that was not me"/"that never happened"      | all      | Raw source payloads retained with the event; actor recorded as reported by the source; hash chain and integrity proof on export.                                                                |
+| R2  | Missed events treated as "nothing happened"                                     | TB1/TB2  | Reconciliation polling; outages and sequence gaps recorded as observation gaps, not silence.                                                                                                    |
+| I1  | **Information disclosure**: credentials in logs, errors, API responses          | all      | `Secret` wrapper, pino `redact` paths, `redactDeep`, write-only credential API, errors never include secret values.                                                                             |
+| I2  | Credentials from a DB dump/backup                                               | TB4      | Envelope encryption; keys outside the DB (env/file or KMS).                                                                                                                                     |
+| I3  | SSRF via user-supplied URL (cloud metadata, internal services)                  | TB2      | `validateOutboundUrl` (https only, no userinfo, resolved addresses checked) and `createSafeLookup` at connect time; link-local/metadata always blocked; private ranges opt-in self-host only.   |
+| I4  | Cross-tenant data access (hosted)                                               | TB4/TB5  | `tenant_id` on every customer table, in every key and every query; see tenant isolation rules.                                                                                                  |
+| I5  | Storing more customer data than needed (source code, secret values)             | TB2      | Data minimisation, see [`data-inventory.md`](data-inventory.md).                                                                                                                                |
+| D1  | **Denial of service** by webhook floods or huge bodies                          | TB1      | Body size limit, signature check before parsing, cheap enqueue, rate limiting at the edge; Postgres queue absorbs bursts.                                                                       |
+| D2  | Slow or hostile upstream APIs stalling workers                                  | TB2      | Timeouts on every outbound call, bounded retries with backoff, response size limits.                                                                                                            |
+| D3  | Replay flood of a valid captured delivery                                       | TB1      | `webhook_deliveries` dedup returns early; no reprocessing.                                                                                                                                      |
+| E1  | **Elevation of privilege** via over-scoped connector tokens                     | TB2      | Read-only scopes only (see rules); Afe never needs write access; documented per connector.                                                                                                      |
+| E2  | Afe DB role dropping append-only triggers                                       | TB4      | Production runs the app with a non-owner role; migrations run separately with the owner role.                                                                                                   |
+| E3  | Malicious dependency                                                            | build    | Lockfile, Dependabot, minimal dependencies, CI with read-only token.                                                                                                                            |
 
 ## Tamper evidence of the audit log
 
@@ -173,6 +179,10 @@ insider can still destroy the database; Afe makes that visible, not impossible.
 - Self-hosters who enable `AFE_ALLOW_PRIVATE_NETWORK_TARGETS` accept that Afe
   users with connection-management rights can make Afe call internal
   addresses (still https-only unless also opted in, and never link-local).
+- Web UI sessions are stateless: a stolen session cookie is valid until it
+  expires (default 12 h); revoke all by rotating `AFE_SESSION_SECRET` or the
+  token. Self-host GitHub installer verification is off by default (see
+  ADR 0006).
 - Vercel signs with HMAC-SHA1; this is the provider's choice. HMAC-SHA1 remains
   secure as a MAC; we accept it.
 

@@ -832,3 +832,10 @@ fieldset {
     top: 2.9rem;
   }
 }
+
+.site-header .session {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}

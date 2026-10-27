@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
 import { createTestPool } from "@afe/db/testing";
 import { buildAfe, InlineJobQueue, type ConnectorModule } from "../src/index.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 describe("connector modules", () => {
   let pool: pg.Pool;
@@ -26,6 +27,7 @@ describe("connector modules", () => {
       jobs: () => [{ name: "test.webhook", handler: async (d) => void handled.push(d) }],
     };
     const { app, jobDefinitions } = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       jobs,
@@ -47,7 +49,11 @@ describe("connector modules", () => {
   });
 
   it("rejects malformed JSON with 400", async () => {
-    const { app } = await buildAfe({ pool, logLevel: "silent" });
+    const { app } = await buildAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "silent",
+    });
     app.post("/x", async () => ({}));
     const res = await app.inject({
       method: "POST",

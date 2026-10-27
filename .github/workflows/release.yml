@@ -49,6 +49,8 @@ jobs:
           mkdir -p secrets && chmod 700 secrets
           openssl rand -base64 32 > secrets/afe_encryption_key
           chmod 644 secrets/afe_encryption_key
+          openssl rand -hex 32 > secrets/afe_admin_token
+          chmod 644 secrets/afe_admin_token
           cp .env.example .env
           sed -i -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" \
             -e "s/^AFE_VERSION=.*/AFE_VERSION=ci/" -e "s|^# AFE_IMAGE=.*|AFE_IMAGE=afe|" .env
@@ -57,6 +59,8 @@ jobs:
         run: |
           curl -fsS http://127.0.0.1:8080/healthz
           curl -fsS -o /dev/null http://127.0.0.1:8080/
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/events)" = 401
+          curl -fsS -o /dev/null -H "Authorization: Bearer $(cat secrets/afe_admin_token)" http://127.0.0.1:8080/api/events
           docker compose exec -T afe-server afe reencrypt-credentials
           test "$(docker inspect --format '{{.State.Health.Status}}' afe-afe-server-1)" = healthy
       - name: Logs on failure

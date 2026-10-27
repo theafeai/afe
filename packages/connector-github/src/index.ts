@@ -14,3 +14,4 @@ export * from "./event-ids.ts";
 export * from "./raw-payload.ts";
 export * from "./mapping.ts";
 export * from "./reconcile.ts";
+export * from "./oauth.ts";

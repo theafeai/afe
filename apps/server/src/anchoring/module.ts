@@ -9,7 +9,6 @@ import {
   createFileChainAnchor,
   createTsaChainAnchor,
   createWebhookChainAnchor,
-  DEFAULT_TENANT_ID,
   normaliseExportPublicKey,
   parseAnchorReceipts,
   type ChainAnchor,
@@ -17,6 +16,7 @@ import {
 } from "@afe/core";
 import { validateOutboundUrl, type OutboundUrlPolicy } from "@afe/core/security";
 import { listAnchorReceipts } from "@afe/db";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import type { JobDefinition } from "../jobs.ts";
 import { loadAnchorConfig, type AnchorConfig } from "./config.ts";
@@ -33,7 +33,7 @@ export interface AnchorModuleOptions {
   anchors?: ChainAnchor[];
   /** Replaces the Ed25519 signer from AFE_ANCHOR_SIGNING_KEY / AFE_EXPORT_SIGNING_KEY (e.g. KMS). */
   signer?: CheckpointSigner | null;
-  /** Tenant of API requests. Defaults to the single built-in tenant (OSS). */
+  /** Tenant of API requests. Default: the authenticated principal's (`requestTenant`). */
   resolveTenant?: (req: FastifyRequest) => string | Promise<string>;
   now?: () => Date;
 }
@@ -118,7 +118,7 @@ export function createAnchorModule(options: AnchorModuleOptions = {}): AnchorMod
         if (c.tsaUrl) await validateOutboundUrl(c.tsaUrl, policy);
       }
       const tenantOf = (req: FastifyRequest) =>
-        options.resolveTenant ? options.resolveTenant(req) : DEFAULT_TENANT_ID;
+        options.resolveTenant ? options.resolveTenant(req) : requestTenant(req);
 
       app.get("/api/audit/anchors", async (req) => {
         const tenantId = await tenantOf(req);
@@ -133,29 +133,34 @@ export function createAnchorModule(options: AnchorModuleOptions = {}): AnchorMod
 
       // Auditor-supplied receipts (JSON array, a single receipt, or the anchor
       // file's JSON Lines as {"text": "..."}) checked against the live chain.
-      app.post("/api/audit/anchors/verify", async (req, reply) => {
-        const tenantId = await tenantOf(req);
-        const body = (req.body ?? {}) as {
-          receipts?: unknown;
-          text?: unknown;
-          trustedPublicKeys?: unknown;
-        };
-        let parsed;
-        try {
-          const text =
-            typeof body.text === "string" ? body.text : JSON.stringify(body.receipts ?? []);
-          parsed = parseAnchorReceipts(text);
-          const keys = Array.isArray(body.trustedPublicKeys)
-            ? body.trustedPublicKeys.map((k) => normaliseExportPublicKey(String(k)))
-            : undefined;
-          if (parsed.receipts.length > MAX_SUPPLIED) throw new Error("too many receipts");
-          const report = await s.verifySupplied(tenantId, parsed.receipts, keys);
-          const errors = [...parsed.issues, ...report.errors];
-          return { ...report, ok: errors.length === 0, errors };
-        } catch (err) {
-          return reply.code(400).send({ error: "bad_request", message: (err as Error).message });
-        }
-      });
+      // Read-only (checks receipts, stores nothing): open to viewers such as auditors (ADR 0006).
+      app.post(
+        "/api/audit/anchors/verify",
+        { config: { access: "viewer" } },
+        async (req, reply) => {
+          const tenantId = await tenantOf(req);
+          const body = (req.body ?? {}) as {
+            receipts?: unknown;
+            text?: unknown;
+            trustedPublicKeys?: unknown;
+          };
+          let parsed;
+          try {
+            const text =
+              typeof body.text === "string" ? body.text : JSON.stringify(body.receipts ?? []);
+            parsed = parseAnchorReceipts(text);
+            const keys = Array.isArray(body.trustedPublicKeys)
+              ? body.trustedPublicKeys.map((k) => normaliseExportPublicKey(String(k)))
+              : undefined;
+            if (parsed.receipts.length > MAX_SUPPLIED) throw new Error("too many receipts");
+            const report = await s.verifySupplied(tenantId, parsed.receipts, keys);
+            const errors = [...parsed.issues, ...report.errors];
+            return { ...report, ok: errors.length === 0, errors };
+          } catch (err) {
+            return reply.code(400).send({ error: "bad_request", message: (err as Error).message });
+          }
+        },
+      );
     },
     jobs(ctx): JobDefinition[] {
       const s = service(ctx);

@@ -116,7 +116,9 @@ the hosted service can rely on these rules without changes:
    it in the `WHERE` clause of every statement, including updates and deletes.
    No query reads across tenants except explicit operator maintenance
    functions, which are named as such.
-3. The tenant id comes from the authenticated context (`TenantResolver`), or for
+3. The tenant id comes from the authenticated context (`TenantResolver` applied
+   to the `AuthProvider` principal; route handlers use `requestTenant(req)`,
+   ADR 0006), or for
    webhooks from the verified installation/connection lookup, never from an
    unauthenticated request field.
 4. Connector state (cursors, installation ids, connection config) is keyed by
@@ -183,3 +185,10 @@ Every integration ships tests (with recorded fixtures or local fakes, never real
 services) for: valid signature accepted; invalid/missing/duplicated signature
 rejected; replayed delivery not reprocessed; wrong-tenant access returns
 nothing; no secrets in captured logs; only read-only HTTP methods used.
+
+API routes need no per-route auth test: `apps/server/test/auth.test.ts`
+enumerates every registered `/api` route and checks 401 without credentials,
+403 for the viewer on admin routes and 404 for another tenant's `:id`. A new
+route whose `:id` is not a connection or event id must be added to that test's
+id mapping. Routes are authenticated by default; `config: { access: "public" }`
+needs a security review.
