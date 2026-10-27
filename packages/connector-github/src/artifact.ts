@@ -28,6 +28,7 @@
  */
 import { createHash } from "node:crypto";
 import {
+  ACTIONS,
   repositoryKey,
   type CanonicalEventInputLike,
   type JsonObject,
@@ -40,8 +41,8 @@ import { GitHubApiError } from "./http.ts";
 /** The registry Afe records images for. Outbound requests never go anywhere else. */
 export const IMAGE_REGISTRY = "ghcr.io";
 
-/** Action of the follow-up event (see `artifactProvenanceEvent`). Not yet in core `ACTIONS`. */
-export const ARTIFACT_PROVENANCE_RESOLVED = "artifact.provenance_resolved";
+/** Action of the follow-up event (see `artifactProvenanceEvent`). */
+export const ARTIFACT_PROVENANCE_RESOLVED = ACTIONS.ARTIFACT_PROVENANCE_RESOLVED;
 
 export const SLSA_PROVENANCE_V1 = "https://slsa.dev/provenance/v1";
 const IN_TOTO_PAYLOAD_TYPE = "application/vnd.in-toto+json";

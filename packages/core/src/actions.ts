@@ -69,6 +69,8 @@ export const ACTIONS = {
    * from build provenance, the commit and run that produced it.
    */
   ARTIFACT_PUBLISHED: "artifact.published",
+  /** Build provenance (commit, run) for a published artifact was found after the fact. */
+  ARTIFACT_PROVENANCE_RESOLVED: "artifact.provenance_resolved",
 
   // --- ArgoCD ---
   /** A sync operation started (operationState.phase Running). */
