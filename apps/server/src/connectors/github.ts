@@ -45,7 +45,12 @@ import {
   GitHubNetworkError,
   GitHubRateLimitError,
   applyRepositoryChange,
+  artifactProvenanceEvent,
   assertRsaPrivateKey,
+  isPackageEvent,
+  lookupProvenance,
+  needRepository,
+  packagePublication,
   reconcileIntervalMs,
   reconcileRepository,
   spreadStart,
@@ -73,6 +78,8 @@ import {
   type GitHubInstallation,
   type GitHubUser,
   type GitHubWebhookJob,
+  type ArtifactRef,
+  type ProvenanceLookup,
   type InstallationEventPayload,
   type InstallationRepositoriesEventPayload,
   type ConditionalPage,
@@ -149,6 +156,8 @@ export interface GitHubModuleOptions {
   processWebhook?: (job: GitHubWebhookJob, runtime: GitHubRuntime) => Promise<unknown>;
   /** Reconciliation settings (AFE-8), on top of the environment (AFE_GITHUB_RECONCILE_*). */
   reconcile?: Partial<GitHubReconcileConfig>;
+  /** Artifact provenance lookups (AFE-21), on top of the environment. */
+  artifacts?: Partial<GitHubArtifactConfig>;
   clock?: () => number;
 }
 
@@ -202,6 +211,31 @@ export function loadGitHubReconcileConfig(
   };
 }
 
+/**
+ * Build provenance lookups for `artifact.published` (AFE-21,
+ * docs/connectors/github.md "Artifacts").
+ */
+export interface GitHubArtifactConfig {
+  /** Look up attestations at all. AFE_GITHUB_ARTIFACT_PROVENANCE=false disables. Default true. */
+  provenance: boolean;
+  /** Inline lookup while processing the webhook (before ingesting). Default 5 s. */
+  lookupTimeoutMs: number;
+  /** Lookup in a follow-up job. Default 15 s. */
+  followUpTimeoutMs: number;
+  /**
+   * Delays of the follow-up lookups after an inline lookup found nothing or
+   * failed (one job each, in order); `[]` disables follow-ups. Default 1m, 5m, 30m.
+   */
+  retryDelaysMs: number[];
+}
+
+export const DEFAULT_GITHUB_ARTIFACT_CONFIG: GitHubArtifactConfig = {
+  provenance: true,
+  lookupTimeoutMs: 5_000,
+  followUpTimeoutMs: 15_000,
+  retryDelaysMs: [60_000, 5 * 60_000, 30 * 60_000],
+};
+
 /** GitHub caps webhook payloads at 25 MB. */
 const WEBHOOK_BODY_LIMIT = 25 * 1024 * 1024;
 const FLOW_COOKIE = "afe_github_flow";
@@ -250,6 +284,18 @@ export class GitHubRuntime {
     return (this.#reconcile ??= {
       ...loadGitHubReconcileConfig(this.options.env ?? process.env),
       ...this.options.reconcile,
+    });
+  }
+
+  #artifacts: GitHubArtifactConfig | undefined;
+
+  /** Artifact provenance settings: defaults, environment, then `options.artifacts`. */
+  get artifactConfig(): GitHubArtifactConfig {
+    const env = this.options.env ?? process.env;
+    return (this.#artifacts ??= {
+      ...DEFAULT_GITHUB_ARTIFACT_CONFIG,
+      provenance: env.AFE_GITHUB_ARTIFACT_PROVENANCE !== "false",
+      ...this.options.artifacts,
     });
   }
 
@@ -1289,6 +1335,19 @@ export async function processGitHubWebhook(
   }
 
   try {
+    // Container packages (AFE-21): optional `packages` permission; build
+    // provenance is looked up (bounded) before mapping, never blocking it.
+    let artifact: { ref: ArtifactRef; lookup: ProvenanceLookup } | null = null;
+    if (isPackageEvent(job.event)) {
+      if (!permissionGranted(connection, "packages")) {
+        log.info("github.webhook: packages permission not granted, artifact capture disabled");
+        return done({
+          status: "ignored",
+          reason: "packages permission not granted (artifact capture disabled)",
+        });
+      }
+      artifact = await inlineArtifactProvenance(rt, connection, job);
+    }
     const result = mapWebhookDelivery({
       event: job.event,
       payload: job.payload,
@@ -1296,6 +1355,7 @@ export async function processGitHubWebhook(
       deliveryId: job.deliveryId,
       receivedAt,
       connectionId: connection.id,
+      ...(artifact ? { provenance: artifact.lookup } : {}),
     });
     if (result.status === "ignored") {
       log.debug({ reason: result.reason }, "github.webhook: delivery not recorded");
@@ -1310,6 +1370,8 @@ export async function processGitHubWebhook(
       { action: job.action, inserted, duplicates: result.events.length - inserted },
       "github.webhook: delivery ingested",
     );
+    if (artifact)
+      await scheduleProvenanceFollowUp(rt, connection, artifact.ref, artifact.lookup, 0);
     return done({ status: "ingested", inserted, duplicates: result.events.length - inserted });
   } catch (err) {
     if (err instanceof GitHubPayloadError) {
@@ -1328,6 +1390,157 @@ export async function processGitHubWebhook(
 }
 
 // ---------------------------------------------------------------------------
+// Artifact provenance (AFE-21)
+// ---------------------------------------------------------------------------
+
+/** Payload of `github.artifact-provenance`. No credentials. */
+export interface GitHubArtifactProvenanceJob {
+  tenantId: string;
+  connectionId: string;
+  artifact: ArtifactRef;
+  /** 1-based number of this follow-up lookup. */
+  attempt: number;
+}
+
+/** Reads the image of a package delivery and looks up its provenance; null if it is not one Afe records. */
+async function inlineArtifactProvenance(
+  rt: GitHubRuntime,
+  connection: Connection,
+  job: GitHubWebhookJob,
+): Promise<{ ref: ArtifactRef; lookup: ProvenanceLookup } | null> {
+  const p = job.payload as Record<string, unknown>;
+  if (p.repository == null) return null;
+  const pub = packagePublication(job.event, p);
+  if ("ignored" in pub) return null;
+  const repo = needRepository(p.repository);
+  const ref: ArtifactRef = {
+    image: pub.image,
+    digest: pub.digest,
+    tags: pub.tags,
+    packageVersionId: pub.versionId,
+    repository: { id: repo.id, fullName: repo.full_name },
+  };
+  return {
+    ref,
+    lookup: await provenanceLookup(rt, connection, ref, rt.artifactConfig.lookupTimeoutMs),
+  };
+}
+
+/** One attestation lookup for an artifact, gated on config and the `attestations` permission. Never throws. */
+async function provenanceLookup(
+  rt: GitHubRuntime,
+  connection: Connection,
+  ref: ArtifactRef,
+  timeoutMs: number,
+): Promise<ProvenanceLookup> {
+  if (!rt.artifactConfig.provenance) {
+    return { status: "not_attempted", detail: "provenance lookups disabled" };
+  }
+  if (!permissionGranted(connection, "attestations")) {
+    return { status: "not_attempted", detail: "attestations permission not granted" };
+  }
+  const [owner, name] = ref.repository.fullName.split("/");
+  if (!owner || !name) return { status: "not_attempted", detail: "invalid repository name" };
+  try {
+    const client = await rt.installationClient(connection);
+    return await lookupProvenance(client, owner, name, ref.digest, { timeoutMs });
+  } catch (err) {
+    return {
+      status: "failed",
+      detail: `attestation lookup failed: ${err instanceof Error ? err.name : "error"}`,
+    };
+  }
+}
+
+/**
+ * After an artifact was ingested without attested provenance (not found yet,
+ * or the lookup failed), enqueue the next follow-up lookup, if any is left.
+ * The attestation step of a workflow usually runs after the image push, so
+ * the first lookup often finds nothing.
+ */
+async function scheduleProvenanceFollowUp(
+  rt: GitHubRuntime,
+  connection: Connection,
+  ref: ArtifactRef,
+  lookup: ProvenanceLookup,
+  done: number,
+): Promise<boolean> {
+  if (lookup.status !== "not_found" && lookup.status !== "failed") return false;
+  const delay = rt.artifactConfig.retryDelaysMs[done];
+  if (delay === undefined) return false;
+  const job: GitHubArtifactProvenanceJob = {
+    tenantId: connection.tenantId,
+    connectionId: connection.id,
+    artifact: ref,
+    attempt: done + 1,
+  };
+  await rt.ctx.jobs.send(GITHUB_JOBS.ARTIFACT_PROVENANCE, job, {
+    singletonKey: `${connection.tenantId}:${connection.id}:${ref.repository.id}:${ref.digest}:${done + 1}`,
+    startAfter: new Date(rt.clock() + delay),
+  });
+  return true;
+}
+
+export type ArtifactProvenanceOutcome =
+  | { status: "resolved"; inserted: boolean }
+  | { status: "retry_scheduled" | "gave_up" | "skipped"; detail: string };
+
+/**
+ * `github.artifact-provenance`: looks the attestation up again and, when it
+ * exists, ingests `artifact.provenance_resolved` (a separate event: the
+ * stored `artifact.published` is never changed). Lookup failures are not
+ * thrown (the bounded schedule replaces pg-boss retries); ingestion errors
+ * are, and the job is retried (idempotent).
+ */
+export async function runArtifactProvenanceJob(
+  rt: GitHubRuntime,
+  job: GitHubArtifactProvenanceJob,
+): Promise<ArtifactProvenanceOutcome> {
+  const log = rt.ctx.log.child({
+    source: "github",
+    connectionId: job.connectionId,
+    repositoryId: job.artifact.repository.id,
+    digest: job.artifact.digest,
+    attempt: job.attempt,
+  });
+  const connection = await getConnection(rt.ctx.pool, job.tenantId, job.connectionId);
+  if (!connection || connection.source !== CONNECTOR_SOURCE || connection.status !== "active") {
+    return { status: "skipped", detail: "connection not active" };
+  }
+  if (!isRepositorySelected(connection.config, job.artifact.repository.id)) {
+    return { status: "skipped", detail: "repository not selected" };
+  }
+  const lookup = await provenanceLookup(
+    rt,
+    connection,
+    job.artifact,
+    rt.artifactConfig.followUpTimeoutMs,
+  );
+  if (lookup.status === "resolved") {
+    const r = await rt.ctx.sink.ingest(
+      job.tenantId,
+      artifactProvenanceEvent(job.artifact, lookup, {
+        connectionId: connection.id,
+        observedAt: new Date(rt.clock()),
+        method: "poll",
+        detail: `attestation lookup ${job.attempt} after artifact.published`,
+      }),
+    );
+    log.info({ inserted: r.inserted }, "github.artifact-provenance: provenance resolved");
+    return { status: "resolved", inserted: r.inserted };
+  }
+  if (await scheduleProvenanceFollowUp(rt, connection, job.artifact, lookup, job.attempt)) {
+    log.debug({ lookup: lookup.status }, "github.artifact-provenance: not yet, retry scheduled");
+    return { status: "retry_scheduled", detail: lookup.detail };
+  }
+  log.info(
+    { lookup: lookup.status, detail: lookup.detail },
+    "github.artifact-provenance: no provenance found, giving up",
+  );
+  return { status: "gave_up", detail: lookup.detail };
+}
+
+// ---------------------------------------------------------------------------
 // Reconciliation and backfill (AFE-8)
 // ---------------------------------------------------------------------------
 
@@ -1338,6 +1551,8 @@ export const GITHUB_JOBS = {
   RECONCILE_REPO: "github.reconcile-repo",
   /** History import of a whole connection (first install). */
   BACKFILL: "github.backfill",
+  /** Follow-up build provenance lookup of a published image (AFE-21). */
+  ARTIFACT_PROVENANCE: "github.artifact-provenance",
 } as const;
 
 /** Payload of `github.reconcile-repo`. No credentials. */
@@ -2004,6 +2219,13 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
           retryLimit: 5,
           async handler(data) {
             await runBackfillJob(rt, data as GitHubBackfillJob);
+          },
+        },
+        {
+          name: GITHUB_JOBS.ARTIFACT_PROVENANCE,
+          retryLimit: 3,
+          async handler(data) {
+            await runArtifactProvenanceJob(rt, data as GitHubArtifactProvenanceJob);
           },
         },
       ];

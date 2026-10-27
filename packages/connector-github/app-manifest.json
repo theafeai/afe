@@ -11,13 +11,16 @@
     "actions": "read",
     "deployments": "read",
     "environments": "read",
-    "metadata": "read"
+    "metadata": "read",
+    "packages": "read",
+    "attestations": "read"
   },
   "default_events": [
     "deployment",
     "deployment_review",
     "deployment_status",
     "workflow_job",
-    "workflow_run"
+    "workflow_run",
+    "registry_package"
   ]
 }

@@ -28,14 +28,25 @@ import {
   deploymentReviewEventId,
   deploymentReviewRequestedEventId,
   deploymentStatusEventId,
+  packageVersionEventId,
   pullRequestEventId,
   pushEventId,
   repositoryDispatchEventId,
   workflowJobEventId,
   workflowRunEventId,
+  type PackageVersionAction,
   type PullRequestTransition,
   type WorkflowRunTransition,
 } from "./event-ids.ts";
+import {
+  IMAGE_REGISTRY,
+  pinnedImageRefs,
+  provenanceCorrelation,
+  provenanceData,
+  provenanceFromLabels,
+  type ArtifactProvenance,
+  type ProvenanceLookup,
+} from "./artifact.ts";
 import { githubRawPayload } from "./raw-payload.ts";
 import type {
   GitHubDeployment,
@@ -651,6 +662,12 @@ export interface WebhookDelivery {
   receivedAt: Date | string;
   connectionId: string | null;
   jobId?: string;
+  /**
+   * Build provenance looked up for a package delivery (AFE-21) by the caller
+   * before mapping (`lookupProvenance`); the mapping itself does no I/O.
+   * Absent: the event is mapped without it (OCI label fallback only).
+   */
+  provenance?: ProvenanceLookup;
 }
 
 export type MapResult =
@@ -668,6 +685,8 @@ export const MAPPED_EVENTS = [
   "push",
   "pull_request",
   "repository_dispatch",
+  "registry_package",
+  "package",
 ] as const;
 
 const MAPPED = new Set<string>(MAPPED_EVENTS);
@@ -681,6 +700,11 @@ const MAPPED = new Set<string>(MAPPED_EVENTS);
 export function mapWebhookDelivery(d: WebhookDelivery): MapResult {
   if (!MAPPED.has(d.event)) return { status: "ignored", reason: `event ${d.event} not recorded` };
   const p = needObject(d.payload, "payload");
+  if (isPackageEvent(d.event) && p.repository == null) {
+    // User/org packages not linked to a repository: no repository to select
+    // or to look attestations up in.
+    return { status: "ignored", reason: `${d.event}: package not linked to a repository` };
+  }
   const repo = needRepository(p.repository);
   const sanitised = githubRawPayload(d.rawBody, p);
   const ctx: ObservationContext = {
@@ -766,6 +790,14 @@ export function mapWebhookDelivery(d: WebhookDelivery): MapResult {
       return mapPullRequest(p, repo, action, ctx, ignored, mapped);
     case "repository_dispatch":
       return mapped(repositoryDispatchEvent(p, repo, d.deliveryId, ctx));
+    case "registry_package":
+    case "package": {
+      const pub = packagePublication(d.event, p);
+      if ("ignored" in pub) return ignored(pub.ignored);
+      return mapped(
+        artifactPublishedEvent(pub, repo, p.sender as GitHubUser | undefined, ctx, d.provenance),
+      );
+    }
   }
   return ignored(`event ${d.event} not recorded`);
 }
@@ -1196,6 +1228,212 @@ function repositoryDispatchEvent(
     },
     // client_payload is arbitrary caller data: raw payload only.
     data: { eventType, branch: branch ?? null } satisfies Record<string, JsonValue>,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Container packages (AFE-21)
+// ---------------------------------------------------------------------------
+
+/** Webhook events that report package publications. */
+export const PACKAGE_EVENTS = ["registry_package", "package"] as const;
+
+export function isPackageEvent(event: string): boolean {
+  return event === "registry_package" || event === "package";
+}
+
+/** A container package version publication, read from a `registry_package` / `package` payload. */
+export interface PackagePublication {
+  event: string;
+  action: PackageVersionAction;
+  packageId: number | null;
+  packageName: string;
+  namespace: string;
+  /** `ghcr.io/<namespace>/<name>`, lower case. */
+  image: string;
+  /** `sha256:<hex>`, lower case. */
+  digest: string;
+  /** Valid tags of the version (empty when untagged), sorted. */
+  tags: string[];
+  versionId: number;
+  versionUrl: string | null;
+  packageUrl: string | null;
+  createdAt: string | undefined;
+  updatedAt: string | undefined;
+  /** `container_metadata.labels` (OCI labels as GitHub reports them), if any. */
+  labels: unknown;
+}
+
+const IMAGE_DIGEST = /^sha256:[0-9a-f]{64}$/;
+/** Docker tag grammar: https://github.com/distribution/reference */
+const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
+/** GHCR package names and namespaces: lower-case path components. */
+const IMAGE_NAME = /^[a-z0-9]+(?:[._-]+[a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-]+[a-z0-9]+)*)*$/;
+
+function digestOf(...values: unknown[]): string | undefined {
+  for (const v of values) {
+    if (typeof v === "string" && IMAGE_DIGEST.test(v.toLowerCase())) return v.toLowerCase();
+  }
+  return undefined;
+}
+
+/**
+ * Reads the package publication of a `registry_package` / `package` delivery,
+ * or the reason it is not recorded (other actions, non-container packages,
+ * versions without a digest). Throws `GitHubPayloadError` when required ids
+ * are missing.
+ *
+ * Tags: `container_metadata.tag.name` (one per delivery, as webhooks report
+ * it) and `metadata.container.tags` (the REST package version shape, also
+ * accepted so a delivery listing several tags keeps all of them).
+ */
+export function packagePublication(
+  event: string,
+  p: Record<string, unknown>,
+): PackagePublication | { ignored: string } {
+  const action = p.action;
+  if (action !== "published" && action !== "updated") {
+    return { ignored: `${event} action ${String(action)} not recorded` };
+  }
+  const key = event === "package" ? "package" : "registry_package";
+  const pkg = needObject(p[key], key);
+  const type = String(pkg.package_type ?? pkg.ecosystem ?? "").toLowerCase();
+  if (type !== "container") {
+    return { ignored: `${event}: ${type || "unknown"} packages not recorded` };
+  }
+  const version = needObject(pkg.package_version, `${key}.package_version`);
+  const versionId = needId(version.id, `${key}.package_version.id`);
+  const name = needString(pkg.name, `${key}.name`).toLowerCase();
+  const owner = isObject(pkg.owner) ? optString(pkg.owner.login) : undefined;
+  const namespace = (optString(pkg.namespace) ?? owner ?? "").toLowerCase();
+  if (!IMAGE_NAME.test(name) || !IMAGE_NAME.test(namespace)) {
+    throw new GitHubPayloadError(`${key}.name`, `invalid ${key}.name or namespace`);
+  }
+  const container = isObject(version.container_metadata) ? version.container_metadata : {};
+  const tag = isObject(container.tag) ? container.tag : {};
+  const manifest = isObject(container.manifest) ? container.manifest : {};
+  const digest = digestOf(version.name, version.version, tag.digest, manifest.digest);
+  if (!digest) return { ignored: `${event}: package version without an image digest` };
+  const restTags =
+    isObject(version.metadata) && isObject(version.metadata.container)
+      ? version.metadata.container.tags
+      : undefined;
+  const tags = [
+    ...new Set(
+      [tag.name, ...(Array.isArray(restTags) ? restTags : [])].filter(
+        (t): t is string => typeof t === "string" && IMAGE_TAG.test(t),
+      ),
+    ),
+  ]
+    .sort()
+    .slice(0, MAX_KEYS);
+  return {
+    event,
+    action,
+    packageId: typeof pkg.id === "number" ? pkg.id : null,
+    packageName: name,
+    namespace,
+    image: `${IMAGE_REGISTRY}/${namespace}/${name}`,
+    digest,
+    tags,
+    versionId,
+    versionUrl: optString(version.html_url) ?? null,
+    packageUrl: optString(pkg.html_url) ?? null,
+    createdAt: timestamp(version.created_at) ?? timestamp(pkg.created_at),
+    updatedAt: timestamp(version.updated_at) ?? timestamp(pkg.updated_at),
+    labels: container.labels,
+  };
+}
+
+const ACTIONS_BOT = "github-actions[bot]";
+
+/**
+ * `artifact.published` for one container package version publication.
+ *
+ * Correlation: `imageRefs` = `ghcr.io/<namespace>/<name>:<tag>@sha256:<hex>`
+ * per tag, `imageDigests`, `repositories`; plus, from the provenance
+ * (attestation, else OCI labels), `commitShas`, `runIds` and the workflow
+ * `refs`. `data.provenance` says where it came from and that it is
+ * unverified; `data.provenanceLookup` records the attestation lookup outcome.
+ */
+export function artifactPublishedEvent(
+  pub: PackagePublication,
+  repo: GitHubWebhookRepository,
+  sender: GitHubUser | null | undefined,
+  ctx: ObservationContext,
+  lookup?: ProvenanceLookup,
+): CanonicalEventInputLike {
+  const attested = lookup?.status === "resolved" ? lookup.provenance : null;
+  const provenance: ArtifactProvenance | null = attested ?? provenanceFromLabels(pub.labels);
+  const corr = provenanceCorrelation(provenance);
+  const actor = githubActor(sender);
+  const byActions = actor?.login === ACTIONS_BOT;
+  const runNote = provenance?.runId ? ` by workflow run ${provenance.runId}` : "";
+  const trigger: CanonicalEventInputLike["trigger"] =
+    byActions || attested
+      ? {
+          type: "upstream",
+          sourceValue: `${pub.event}.${pub.action}`,
+          detail:
+            `pushed${runNote || " by GitHub Actions"}` +
+            (provenance?.eventName ? ` (run trigger ${provenance.eventName})` : ""),
+        }
+      : { type: "unknown", sourceValue: `${pub.event}.${pub.action}` };
+  const occurredAt =
+    pub.action === "published"
+      ? (pub.createdAt ?? pub.updatedAt)
+      : (pub.updatedAt ?? pub.createdAt);
+  const labelData = isObject(pub.labels)
+    ? {
+        revision: optString(pub.labels.revision) ?? null,
+        source: optString(pub.labels.source) ?? null,
+      }
+    : null;
+  return {
+    ...base(ctx),
+    sourceEventId: packageVersionEventId({
+      versionId: pub.versionId,
+      action: pub.action,
+      tags: pub.tags,
+    }),
+    action: ACTIONS.ARTIFACT_PUBLISHED,
+    actor: actorWith(actor),
+    target: {
+      type: "other",
+      id: `${pub.image}@${pub.digest}`,
+      name: pub.image,
+      url: pub.versionUrl ?? pub.packageUrl,
+      repository: repo.full_name,
+    },
+    trigger,
+    outcome: "none",
+    occurredAt: occurredAt ?? ctx.observedAt,
+    correlation: {
+      imageRefs: pinnedImageRefs(pub.image, pub.digest, pub.tags),
+      imageDigests: [pub.digest],
+      repositories: list(repositoryKey(repo.full_name), ...corr.repositories)!,
+      commitShas: corr.commitShas ?? null,
+      runIds: corr.runIds ?? null,
+      refs: corr.refs ?? null,
+    },
+    data: {
+      action: pub.action,
+      image: pub.image,
+      digest: pub.digest,
+      tags: pub.tags,
+      package: {
+        id: pub.packageId,
+        name: pub.packageName,
+        namespace: pub.namespace,
+        url: pub.packageUrl,
+      },
+      packageVersion: { id: pub.versionId, url: pub.versionUrl },
+      labels: labelData,
+      provenance: provenance ? provenanceData(provenance) : null,
+      provenanceLookup: lookup
+        ? { status: lookup.status, detail: lookup.status === "resolved" ? null : lookup.detail }
+        : null,
+    },
   };
 }
 
