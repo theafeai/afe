@@ -14,3 +14,5 @@ export * from "./alerts.ts";
 export * from "./event-filter.ts";
 export * from "./tenant.ts";
 export * from "./export/index.ts";
+// Chain anchoring: signed checkpoints outside the database (AFE-29).
+export * from "./anchoring/index.ts";

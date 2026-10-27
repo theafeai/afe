@@ -145,6 +145,7 @@ async function* generate(
     canonicalization: "rfc8785",
     eventsSha256: events.digest("hex"),
     contentSha256: content.digest("hex"),
+    ...(req.anchors && req.anchors.length > 0 ? { anchors: req.anchors } : {}),
   };
   if (signer) manifest = await signManifest(manifest, signer);
   buffer +=

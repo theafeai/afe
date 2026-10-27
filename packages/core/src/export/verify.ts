@@ -18,6 +18,13 @@ import { GENESIS_HASH, hashEvent, sha256Hex } from "../hash-chain.ts";
 import { CsvParseError, EXPORT_CSV_COLUMNS, eventToCsvCells, parseCsv } from "./csv.ts";
 import { eventsDigestLine } from "./exporter.ts";
 import { manifestSigningInput, normaliseExportPublicKey, verifyEd25519 } from "./signer.ts";
+import type { AnchorReceipt } from "../anchoring/types.ts";
+import { checkReceiptShape } from "../anchoring/checkpoint.ts";
+import {
+  anchoredSeqs,
+  verifyAnchorsAgainstChain,
+  type AnchorVerificationReport,
+} from "../anchoring/verify.ts";
 import { EXPORT_FORMAT_VERSION, type ExportFormat, type ExportManifest } from "./types.ts";
 
 export type ExportIssueCode =
@@ -50,7 +57,15 @@ export type ExportIssueCode =
   | "signature_missing"
   | "signature_untrusted"
   | "unexpected_tenant"
-  | "unexpected_head";
+  | "unexpected_head"
+  /** An anchor receipt is invalid (signature, timestamp or shape). */
+  | "anchor_invalid"
+  /** The export has a different hash at an anchored seq: the chain was rewritten. */
+  | "anchor_mismatch"
+  /** An anchor made before the export lies beyond its chain head: events were removed. */
+  | "anchor_beyond_head"
+  /** `requireAnchor` was set but no anchor could be confirmed. */
+  | "anchor_missing";
 
 export interface ExportIssue {
   code: ExportIssueCode;
@@ -90,7 +105,14 @@ export interface ExportVerificationReport {
     completeChain: boolean;
     /** The event at chainHead.seq is in the export and its hash equals the head hash. */
     headIncluded: boolean;
+    /** At least one anchor (embedded or supplied) was confirmed against this export. */
+    anchored: boolean;
   };
+  /**
+   * Anchor checks (AFE-29): embedded manifest anchors plus `anchors` supplied
+   * by the auditor. Null when there were none.
+   */
+  anchors: AnchorVerificationReport | null;
   /** Human-readable list of what is NOT proven by this export. */
   limitations: string[];
   errors: ExportIssue[];
@@ -112,6 +134,15 @@ export interface VerifyExportOptions {
   format?: ExportFormat;
   /** Stop collecting issues after this many (default 100). */
   maxIssues?: number;
+  /**
+   * Anchor receipts obtained independently of the export (the operator's
+   * anchor file, a TSA receipt, a webhook archive). See docs/export-verification.md.
+   */
+  anchors?: AnchorReceipt[];
+  /** Keys that anchor signatures must match; defaults to `trustedPublicKeys`. */
+  anchorPublicKeys?: string[];
+  /** Fail unless at least one anchor is confirmed against the export. */
+  requireAnchor?: boolean;
 }
 
 interface ParsedRecord {
@@ -133,6 +164,7 @@ export function verifyExport(
   const issue = (i: ExportIssue) => {
     if (errors.length < maxIssues) errors.push(i);
   };
+  let anchorReport: AnchorVerificationReport | null = null;
   const report = (
     format: ExportFormat | null,
     manifest: ExportManifest | null,
@@ -148,6 +180,7 @@ export function verifyExport(
       linksVerified: 0,
       completeChain: false,
       headIncluded: false,
+      anchored: false,
       ...partial,
     };
     return {
@@ -157,6 +190,7 @@ export function verifyExport(
       eventCount,
       signature,
       proofs,
+      anchors: anchorReport,
       limitations: limitations(manifest, proofs, signature.status),
       errors,
       warnings,
@@ -394,6 +428,14 @@ export function verifyExport(
   let contiguous = true;
   let prev: { seq: number; hash: string } | null = null;
   let firstSeq: number | null = null;
+  const embeddedAnchors = Array.isArray(manifest.anchors) ? manifest.anchors : [];
+  const allAnchors: AnchorReceipt[] = [...embeddedAnchors, ...(options.anchors ?? [])];
+  const anchorSources = [
+    ...embeddedAnchors.map(() => "manifest"),
+    ...(options.anchors ?? []).map(() => "supplied"),
+  ];
+  const wantSeqs = new Set(anchoredSeqs(allAnchors));
+  const anchoredHashes = new Map<number, string>();
 
   for (const rec of records) {
     const e = rec.event as CanonicalEvent;
@@ -420,6 +462,7 @@ export function verifyExport(
     } catch {
       // reported below
     }
+    if (recomputed === e.hash && wantSeqs.has(e.seq)) anchoredHashes.set(e.seq, e.hash);
     if (recomputed !== e.hash) {
       eventsIntact = false;
       issue({
@@ -545,17 +588,47 @@ export function verifyExport(
     fail("content_digest_mismatch", "contentSha256 does not match the file: the file was modified");
   }
 
+  // --- 7. Anchors -------------------------------------------------------------
+  const completeProven = formsChain && eventsIntact && isEmptyFilter(filter);
+  if (allAnchors.length > 0) {
+    anchorReport = verifyAnchorsAgainstChain(
+      allAnchors,
+      {
+        tenantId: manifest.tenantId,
+        head: manifest.chainHead,
+        hashes: anchoredHashes,
+        complete: completeProven,
+        takenAt: manifest.createdAt,
+      },
+      {
+        trustedPublicKeys: options.anchorPublicKeys ?? options.trustedPublicKeys ?? [],
+        sources: anchorSources,
+      },
+    );
+    for (const a of anchorReport.errors) {
+      const code: ExportIssueCode =
+        a.code === "anchor_mismatch" || a.code === "anchor_beyond_head" ? a.code : "anchor_invalid";
+      issue({ code, message: a.message, ...(a.seq !== undefined ? { seq: a.seq } : {}) });
+    }
+    warnings.push(...anchorReport.warnings);
+  }
+  const anchored = anchorReport !== null && anchorReport.ok && anchorReport.matched > 0;
+  if (options.requireAnchor && !anchored) {
+    issue({ code: "anchor_missing", message: "no anchor could be confirmed against this export" });
+  }
+
   return report(
     format,
     manifest,
     records.length,
     {
+      anchored,
       eventsIntact: eventsIntact && records.length === manifest.count,
       exportIntact,
       manifestSigned: signature.status === "valid_trusted" || signature.status === "valid_unpinned",
       matchesFilter,
       linksVerified,
-      completeChain: formsChain && eventsIntact && isEmptyFilter(filter) && errors.length === 0,
+      completeChain: completeProven && errors.length === 0,
       headIncluded,
     },
     signature,
@@ -586,6 +659,13 @@ function checkManifestShape(m: unknown): string | null {
     return "manifest.eventsSha256 invalid";
   if (typeof o.contentSha256 !== "string" || !HEX64.test(o.contentSha256))
     return "manifest.contentSha256 invalid";
+  if (o.anchors !== undefined) {
+    if (!Array.isArray(o.anchors)) return "manifest.anchors invalid";
+    for (const a of o.anchors) {
+      const problem = checkReceiptShape(a);
+      if (problem) return `manifest.anchors: ${problem}`;
+    }
+  }
   if (o.signature !== undefined) {
     const s = o.signature as Record<string, unknown>;
     if (!s || typeof s.publicKey !== "string" || typeof s.value !== "string")
@@ -622,6 +702,13 @@ function limitations(
       "Membership of non-adjacent events in the chain is proven only relative to the chain head: " +
         `confirm that the live chain still verifies and that its event at seq ${manifest.chainHead.seq} ` +
         `has hash ${manifest.chainHead.hash} (GET /api/audit/verify?anchorSeq=...&anchorHash=...).`,
+    );
+  }
+  if (!proofs.anchored) {
+    out.push(
+      "No chain anchor was confirmed: a consistent rewrite of the whole chain in the database " +
+        "before this export would not be detected. Check the export against anchors kept " +
+        "outside the database (afe verify-export --anchors <file>).",
     );
   }
   out.push(

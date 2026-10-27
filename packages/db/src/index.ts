@@ -75,6 +75,18 @@ export {
   type ObservationGapRecord,
 } from "./connection-health.ts";
 export {
+  getAnchorState,
+  getEventHashesBySeq,
+  getLatestAnchorReceipts,
+  insertAnchorReceipt,
+  listAnchorReceipts,
+  listChainHeadsAcrossTenants,
+  recordAnchorAttempt,
+  type ChainAnchorState,
+  type ListAnchorReceiptsOptions,
+  type StoredAnchorReceipt,
+} from "./chain-anchors.ts";
+export {
   eventFilterSql,
   getChainHead,
   getEventBySeq,
