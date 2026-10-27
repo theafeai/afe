@@ -236,7 +236,11 @@ are `containmentCandidates` and `applyContainment`.
   `commits[].via` / `notes`.
 - AFE-25 (journey UI): `stages` gives column order and membership, `edges`
   the arrows (style by confidence), `environments`, `excluded`,
-  `continuesAs`; every step carries an event summary.
+  `continuesAs`; every step carries an event summary. Implemented in
+  `apps/web/src/pages/Journey.tsx` at `/journeys?repository=owner/name&commit=<sha>`
+  (`view=diagram|list|placements`, `containment=1`); edges show the path
+  confidence of the step they lead to, evidence on hover/focus. The timeline
+  highlights a journey with `/events?journey=owner/name@<sha>`.
 - AFE-26 (drift): placements with `attribution.status` `unknown` or `guess`,
   `notes` (e.g. "was not produced by any observed build"), `kind: manual`,
   inconsistent cells and `tag_digest_mismatch` conflicts are the raw
