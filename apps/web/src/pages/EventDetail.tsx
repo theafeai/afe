@@ -14,6 +14,7 @@ import {
 import { formatBytes, formatDateTime, formatDuration, humanize } from "../format.ts";
 import { Link } from "../router.tsx";
 import { ContainmentPanel, containmentSubject } from "./ContainmentPanel.tsx";
+import { JourneyLinks } from "./JourneyLinks.tsx";
 
 function actorText(a: ActorRef | undefined) {
   if (!a) return null;
@@ -239,6 +240,7 @@ export function EventDetailPage({ id }: { id: string }) {
         )}
       </section>
 
+      <JourneyLinks event={e} />
       {subject && <ContainmentPanel repository={subject.repository} commit={subject.commit} />}
 
       <section className="card">

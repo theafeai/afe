@@ -24,6 +24,7 @@ import {
 import { dayKey, formatDateTime, formatDay, formatTime, humanize } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import { usePaged } from "../usePaged.ts";
+import { useJourneyHighlight, type RowDecoration } from "./JourneyHighlight.tsx";
 
 export function actorLabel(e: CanonicalEvent): string {
   const a = e.actor;
@@ -83,13 +84,16 @@ function GapRow({ e }: { e: CanonicalEvent }) {
   );
 }
 
-export function EventRow({ item }: { item: EventItem }) {
+export function EventRow({ item, decoration }: { item: EventItem; decoration?: RowDecoration }) {
   const e = item.event;
   if (isGapEvent(e)) return <GapRow e={e} />;
   const m = e.observation.method;
   const late = m === "reconciliation" || m === "backfill";
+  const hl = decoration?.highlight;
   return (
-    <li className={`event-row${late ? ` row-${m}` : ""}`}>
+    <li
+      className={`event-row${late ? ` row-${m}` : ""}${hl ? ` row-hl-${hl}` : ""}${decoration?.action ? " has-action" : ""}`}
+    >
       <Link to={`/events/${e.id}`} className="row-link">
         <time className="row-time" dateTime={e.occurredAt} title={e.occurredAt}>
           {formatTime(e.occurredAt)}
@@ -97,6 +101,8 @@ export function EventRow({ item }: { item: EventItem }) {
         <span className="row-main">
           <span className="row-title">
             <span className="action">{e.action}</span> <OutcomeBadge outcome={e.outcome} />
+            {hl === "on" && <span className="hl-tag"> · on the journey</span>}
+            {hl === "excluded" && <span className="hl-tag"> · ruled out of the journey</span>}
           </span>
           <span className="row-meta">
             <span>
@@ -128,12 +134,19 @@ export function EventRow({ item }: { item: EventItem }) {
           <MethodBadge method={m} />
         </span>
       </Link>
+      {decoration?.action && <span className="row-action">{decoration.action}</span>}
     </li>
   );
 }
 
 /** Reverse-chronological list grouped by local day. */
-export function EventList({ items }: { items: EventItem[] }) {
+export function EventList({
+  items,
+  decorate,
+}: {
+  items: EventItem[];
+  decorate?: (item: EventItem) => RowDecoration;
+}) {
   const groups: { key: string; label: string; items: EventItem[] }[] = [];
   for (const it of items) {
     const key = dayKey(it.event.occurredAt);
@@ -151,7 +164,7 @@ export function EventList({ items }: { items: EventItem[] }) {
           <h3 className="day-heading">{g.label}</h3>
           <ol className="events">
             {g.items.map((it) => (
-              <EventRow key={it.event.id} item={it} />
+              <EventRow key={it.event.id} item={it} decoration={decorate?.(it)} />
             ))}
           </ol>
         </section>
@@ -165,13 +178,15 @@ export function Timeline() {
   const [params, setParams] = useSearchParams();
   const filters = parseFilters(params);
   const key = filtersToSearch(filters).toString();
-  const setFilters = (f: Filters) => setParams(filtersToSearch(f), { replace: true });
   const connections = useAsync((s) => api.connections(s), []);
   const page = usePaged(
     key,
     () => filtersToApiParams(parseFilters(new URLSearchParams(key))),
     (p, s) => api.events(p, s),
   );
+  const highlight = useJourneyHighlight(params, setParams, page.items);
+  const setFilters = (f: Filters) =>
+    setParams(highlight.keep(filtersToSearch(f)), { replace: true });
   const filtered = activeFilterCount(filters) > 0;
 
   return (
@@ -195,6 +210,7 @@ export function Timeline() {
       )}
 
       <FilterBar filters={filters} onChange={setFilters} />
+      {highlight.banner}
 
       {page.loading ? (
         <Loading label="Loading events…" />
@@ -222,7 +238,7 @@ export function Timeline() {
         )
       ) : (
         <>
-          <EventList items={page.items} />
+          <EventList items={page.items} decorate={highlight.decorate} />
           {page.error && (
             <ErrorBox error={page.error} onRetry={page.loadMore} title="Could not load more" />
           )}

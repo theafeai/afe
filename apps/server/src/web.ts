@@ -42,6 +42,7 @@ export const CLIENT_ROUTE_ROOTS = [
   "connections",
   "login",
   "settings",
+  "journeys",
 ] as const;
 
 /**
