@@ -2,10 +2,24 @@ name: Example projects
 
 on:
   pull_request:
-    paths: ["examples/**", ".github/workflows/examples.yml"]
+    paths:
+      - examples/**
+      - .github/workflows/examples.yml
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - package.json
+      - pnpm-lock.yaml
   push:
     branches: [main]
-    paths: ["examples/**", ".github/workflows/examples.yml"]
+    paths:
+      - examples/**
+      - .github/workflows/examples.yml
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - package.json
+      - pnpm-lock.yaml
 
 permissions:
   contents: read
