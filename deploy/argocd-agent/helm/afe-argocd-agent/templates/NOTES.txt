@@ -1,0 +1,8 @@
+The Afe ArgoCD agent is running as {{ include "afe-argocd-agent.fullname" . }} in {{ .Release.Namespace }}.
+
+It reads Applications ({{ if .Values.argocd.clusterWide }}all namespaces{{ else }}{{ join ", " .Values.argocd.namespaces }}{{ end }}) read-only
+and sends them to {{ .Values.afe.url }}. Check it with:
+
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "afe-argocd-agent.fullname" . }}
+
+and in Afe: GET /api/connections/argocd/agents (last heartbeat, dropped count).

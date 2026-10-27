@@ -4,11 +4,14 @@
 - Applies to: the open-source build (self-host) and, through the rules in
   [`rules.md`](rules.md), the hosted multi-tenant service built on it.
 
-Afe is an audit tool. Its job is to tell the truth about who deployed what, to
-where and when. The two worst outcomes are therefore:
+Afe is a live deployment-visibility tool. Its job is to show correctly who
+deployed what, to where and when, over a recent window (events are deleted
+after `AFE_EVENT_RETENTION_DAYS`, at most 60 days; ADR 0008). It is **not** a
+tamper-evident audit record: there is no hash chain, verification or export.
+The two worst outcomes are therefore:
 
-1. **A false or silently incomplete audit record** (events forged, altered,
-   deleted or missed without anyone noticing).
+1. **A false or silently incomplete picture** (events forged or injected, or
+   missed without anyone noticing).
 2. **Afe becoming a path into the customer's delivery tools** (leaked or
    over-privileged credentials, SSRF into internal networks).
 
@@ -25,7 +28,7 @@ Everything below is ranked against those two outcomes.
                                 └──────────┬──────────┘
                                            │ (4) TLS, DB role
                                     ┌──────▼──────┐
-                                    │ PostgreSQL  │ events (append-only, hash-chained),
+                                    │ PostgreSQL  │ events (retention window),
                                     │             │ raw_payloads, credentials (encrypted),
                                     └─────────────┘ webhook_deliveries, connections …
  (3) optional in-cluster agent for ArgoCD: runs next to ArgoCD, reads its API
@@ -36,11 +39,10 @@ Everything below is ranked against those two outcomes.
 
 | Asset                                                                            | Why it matters                                                       | Where                     |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------- |
-| Audit log (`events`, `raw_payloads`)                                             | The product. Integrity and completeness are the core promise.        | PostgreSQL                |
+| Events (`events`, `raw_payloads`)                                                | The product. Correctness and completeness are the core promise.      | PostgreSQL                |
 | Connector credentials (GitHub App private key, ArgoCD token, Vercel token)       | Read access to customer delivery tools; abuse reaches customer infra | `credentials` (encrypted) |
 | Webhook secrets                                                                  | Whoever has them can forge deliveries                                | `credentials` (encrypted) |
 | Key-encryption keys (`AFE_ENCRYPTION_KEY` / KMS key)                             | Decrypts every credential                                            | Env/file (self-host); KMS |
-| Hash-chain heads / export proofs                                                 | Allow third parties to detect tampering                              | `events`, exports         |
 | Afe admin/session tokens                                                         | Control of Afe configuration                                         | Env / auth provider       |
 | Tenant boundary (hosted)                                                         | One customer must never see or affect another                        | Every table (`tenant_id`) |
 | Metadata about customer delivery (repo names, environments, commit SHAs, actors) | Confidential business information; personal data (user logins)       | `events`                  |
@@ -56,11 +58,11 @@ Everything below is ranked against those two outcomes.
 | Insider who deployed and wants to hide | Has write access to a delivery tool, maybe to the Afe database or host; wants an event gone. |
 | Compromised upstream tool              | A delivery tool (or its webhook sender) sends malicious or malformed payloads.               |
 | Compromised dependency                 | A malicious npm package in the build.                                                        |
-| Operator with DB access (self-host)    | Full SQL access to Afe's database. Trusted for availability, **not** for silent edits.       |
+| Operator with DB access (self-host)    | Full SQL access to Afe's database. Trusted: Afe cannot detect their edits (no hash chain).   |
 
 Out of scope: an attacker who controls the Afe process and its keys at runtime
-(they can do anything Afe can, including writing new events; tamper evidence then
-relies on previously exported chain heads), and compromise of GitHub, ArgoCD or
+(they can do anything Afe can, including writing or deleting events), and
+compromise of GitHub, ArgoCD or
 Vercel themselves.
 
 ## Trust boundaries
@@ -99,11 +101,12 @@ in its sequence are recorded as observation gaps.
 ### TB4 – Database
 
 PostgreSQL holds everything. The application connects with a role that should
-not own the schema in production (so it cannot drop the append-only triggers).
-Credentials are stored only as envelope ciphertext bound to tenant and id; a
-database dump alone does not reveal them. The event log is append-only and
-hash-chained, so an operator with SQL access can delete or change rows only
-detectably (see "Tamper evidence" below).
+not own the schema in production. Credentials are stored only as envelope
+ciphertext bound to tenant and id; a database dump alone does not reveal them.
+Events are immutable in application code (never updated; deleted only by the
+retention purge), but the database does not enforce it: anyone with write
+access to the database can change or delete events undetectably. Afe makes no
+tamper-evidence claim (ADR 0008).
 
 ### TB5 – UI and API (browser → Afe)
 
@@ -126,10 +129,10 @@ In the hosted service every request is bound to exactly one tenant by the
 | S3  | Spoofing an upstream API via DNS/MITM                                           | TB2      | TLS verification always on; custom CA instead of disabling verification; no redirects to other hosts.                                                                                           |
 | S4  | Spoofing a user/tenant in the UI/API                                            | TB5      | `AuthProvider` + `TenantResolver`; tenant derived from the authenticated session, never from a request parameter. Constant-time token compare; HMAC-signed sessions; CSRF token + Origin check. |
 | S5  | Claiming someone else's GitHub App installation via an edited `installation_id` | TB5      | Signed, browser-bound install state; admin session of the starting tenant required at the callback; hosted: OAuth installer verification (`GET /user/installations`, ADR 0006).                 |
-| T1  | **Tampering** with stored events (update/delete)                                | TB4      | Append-only `events` with triggers rejecting UPDATE/DELETE/TRUNCATE; per-tenant hash chain; exported chain heads (below).                                                                       |
+| T1  | **Tampering** with stored events (update/delete)                                | TB4      | Not detected (accepted, ADR 0008): restrict database access; the app role should not own the schema. Afe never updates events; only the retention purge deletes them.                           |
 | T2  | Tampering with stored credentials (swap ciphertext between tenants or rows)     | TB4      | AES-256-GCM with AAD = (tenant id, credential id) at both envelope layers; swapped or modified ciphertext fails to decrypt.                                                                     |
 | T3  | Tampering with a webhook body in transit                                        | TB1      | Signature covers the exact raw bytes; body is never re-serialised before verification.                                                                                                          |
-| R1  | **Repudiation**: a deployer claims "that was not me"/"that never happened"      | all      | Raw source payloads retained with the event; actor recorded as reported by the source; hash chain and integrity proof on export.                                                                |
+| R1  | **Repudiation**: a deployer claims "that was not me"/"that never happened"      | all      | Out of scope: Afe is not an audit record. Within the window, the actor is shown as reported by the source and the raw payload can be checked against the source tool.                           |
 | R2  | Missed events treated as "nothing happened"                                     | TB1/TB2  | Reconciliation polling; outages and sequence gaps recorded as observation gaps, not silence.                                                                                                    |
 | I1  | **Information disclosure**: credentials in logs, errors, API responses          | all      | `Secret` wrapper, pino `redact` paths, `redactDeep`, write-only credential API, errors never include secret values.                                                                             |
 | I2  | Credentials from a DB dump/backup                                               | TB4      | Envelope encryption; keys outside the DB (env/file or KMS).                                                                                                                                     |
@@ -140,39 +143,25 @@ In the hosted service every request is bound to exactly one tenant by the
 | D2  | Slow or hostile upstream APIs stalling workers                                  | TB2      | Timeouts on every outbound call, bounded retries with backoff, response size limits.                                                                                                            |
 | D3  | Replay flood of a valid captured delivery                                       | TB1      | `webhook_deliveries` dedup returns early; no reprocessing.                                                                                                                                      |
 | E1  | **Elevation of privilege** via over-scoped connector tokens                     | TB2      | Read-only scopes only (see rules); Afe never needs write access; documented per connector.                                                                                                      |
-| E2  | Afe DB role dropping append-only triggers                                       | TB4      | Production runs the app with a non-owner role; migrations run separately with the owner role.                                                                                                   |
+| E2  | Afe DB role altering the schema                                                 | TB4      | Production runs the app with a non-owner role; migrations run separately with the owner role.                                                                                                   |
 | E3  | Malicious dependency                                                            | build    | Lockfile, Dependabot, minimal dependencies, CI with read-only token.                                                                                                                            |
 
-## Tamper evidence of the audit log
+## Retention and deletion
 
-The event store (AFE-4, ADR 0002/0003) provides:
-
-- **Append-only at the database level.** Triggers reject `UPDATE`, `DELETE` and
-  `TRUNCATE` on `events`. An operator who owns the schema can still disable the
-  triggers; that is why the following matters.
-- **Per-tenant hash chain.** Each event stores `hash = H(prev_hash ‖ canonical
-content)`. Changing, removing or reordering any event breaks every later hash.
-  Verification recomputes the chain.
-- **Anchoring outside the database.** A chain can be rewritten entirely by
-  someone with full DB access and the code. Detection therefore depends on chain
-  heads that left the database earlier: exports carry the head hash and count
-  as an integrity proof, and operators are advised to record heads periodically
-  somewhere the DB operator cannot edit (a ticket, a signed commit, object
-  storage with retention lock). The hosted service anchors heads automatically.
-  Afe publishes signed checkpoints itself when configured (AFE-29, ADR 0007:
-  append-only file, webhook, RFC 3161 TSA), and `/api/audit/verify` and
-  `afe verify-export --anchors` check the chain against them.
-- **Raw evidence.** Raw payloads are stored next to the canonical event, so a
-  disputed event can be checked against what the source actually sent.
-
-What tamper evidence does **not** give: prevention. A sufficiently privileged
-insider can still destroy the database; Afe makes that visible, not impossible.
+Events and raw payloads are deleted after the retention window (default 30
+days, at most 60; see [`data-inventory.md`](data-inventory.md)). This limits
+what a database dump or a compromised Afe can reveal about past delivery
+activity and personal data. Events whose source time is already outside the
+window are never stored, so a malicious or buggy source cannot use old
+timestamps to fill the database with history.
 
 ## Residual risks and assumptions
 
 - A compromised Afe host with keys loaded can decrypt credentials and forge new
-  events. Mitigation is operational (least-privilege tokens limit blast radius;
-  anchored chain heads limit rewriting history).
+  events. Mitigation is operational (least-privilege tokens limit blast
+  radius).
+- Afe does not detect edits made directly in its database (no hash chain);
+  database access must be restricted to trusted operators.
 - GitHub webhooks carry no signed timestamp; replay protection relies on the
   delivery id store (kept longer than GitHub's redelivery window) plus
   idempotent ingestion by source event id.

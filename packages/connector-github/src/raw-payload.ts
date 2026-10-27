@@ -1,5 +1,5 @@
 /**
- * Raw evidence for GitHub events (docs/security/data-inventory.md, rule R8).
+ * Raw payloads for GitHub events (docs/security/data-inventory.md, rule R8).
  *
  * Afe keeps the delivery body as received, except for fields the data
  * inventory says Afe does not store:

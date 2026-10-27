@@ -110,6 +110,18 @@ export const ACTIONS = {
   CONNECTION_SUSPENDED: "connection.suspended",
   /** A suspended connection was resumed at the source. */
   CONNECTION_RESUMED: "connection.resumed",
+  /**
+   * The tenant's environment/service mapping changed (AFE-19): who changed how
+   * deployments are classified. `data` holds the change with before/after.
+   */
+  CONFIG_MAPPING_CHANGED: "config.mapping.changed",
+  /**
+   * Afe found drift (AFE-26): a placement whose content does not trace to Git
+   * (manual override, untracked deploy, unknown image...). `data.finding`.
+   */
+  DRIFT_FINDING_OPENED: "drift.finding.opened",
+  /** A drift finding was resolved (a later placement no longer exhibits it). */
+  DRIFT_FINDING_RESOLVED: "drift.finding.resolved",
 } as const;
 
 export type KnownAction = (typeof ACTIONS)[keyof typeof ACTIONS];

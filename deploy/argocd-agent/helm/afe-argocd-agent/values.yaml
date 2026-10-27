@@ -1,0 +1,53 @@
+# Afe in-cluster ArgoCD agent. Docs: docs/connectors/argocd.md "In-cluster agent".
+
+image:
+  repository: ghcr.io/theafeai/afe-argocd-agent
+  tag: "" # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+
+afe:
+  # Afe's public URL (https).
+  url: ""
+  # Agent id shown when the agent was registered in Afe.
+  agentId: ""
+  # Existing Secret holding the agent secret (key below). The chart never
+  # creates it, so the secret stays out of Helm values and release history:
+  #   kubectl -n <ns> create secret generic afe-argocd-agent --from-literal=secret=...
+  existingSecret: afe-argocd-agent
+  existingSecretKey: secret
+  # Optional ConfigMap with a CA bundle (key ca.crt) for Afe's certificate.
+  caConfigMap: ""
+
+argocd:
+  # Namespaces whose Applications are read; one Role per namespace.
+  namespaces: ["argocd"]
+  # Read Applications in all namespaces with a ClusterRole instead.
+  clusterWide: false
+  # Read core/v1 Events (get/list) to attribute actions to users.
+  attributeWithEvents: true
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+buffer:
+  maxItems: 10000
+  maxBytes: 67108864
+
+logLevel: info
+
+networkPolicy:
+  enabled: true
+  # Kubernetes API server endpoints (kubectl get endpoints kubernetes -n default).
+  apiServerCidrs: []
+  apiServerPorts: [443, 6443]
+  # Address ranges of Afe (or of your egress proxy).
+  afeCidrs: []
+  afePort: 443
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

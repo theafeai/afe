@@ -1,5 +1,5 @@
 /**
- * Maps observations of ArgoCD Applications to canonical audit events (AFE-10).
+ * Maps observations of ArgoCD Applications to canonical events (AFE-10).
  *
  * Pure apart from the optional, lazily-called `appEvents` lookup: given what
  * was last seen of an application (`AppCaptureState`) and its current object,
@@ -73,6 +73,12 @@ export interface ObserveContext {
   /** Watch event type (ADDED/MODIFIED/DELETED) for stream observations. */
   watchType?: string;
   jobId?: string;
+  /**
+   * Transport that delivered the observation when it is not Afe's own pull
+   * (AFE-28: "agent", the in-cluster agent). Only changes `observation.detail`;
+   * keys and mapping are identical, so agent and pull observations dedupe.
+   */
+  transport?: "agent";
   /**
    * Loads the Kubernetes Events of the application (actor attribution). Called
    * at most once per observation and only when needed; failures are tolerated.
@@ -439,12 +445,16 @@ class Builder {
     const before = new Date(e.occurredAt).getTime() < this.ctx.baselineAt.getTime();
     const method: ObservationMethod = before ? "backfill" : this.ctx.method;
     this.#raw ??= jsonRawPayload(this.rawSource());
-    const detail =
+    const baseDetail =
       method === "stream" && this.ctx.watchType
         ? `watch ${this.ctx.watchType}`
         : method === "backfill"
           ? "happened before capture started for this connection"
           : undefined;
+    const detail =
+      this.ctx.transport === "agent"
+        ? `in-cluster agent${baseDetail ? `: ${baseDetail}` : method === "reconciliation" ? ": full snapshot" : ""}`
+        : baseDetail;
     this.events.push({
       source: SOURCE,
       sourceEventId: sourceEventId(...e.key),

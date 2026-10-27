@@ -9,6 +9,8 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  clampLookbackMs,
+  clampToRetention,
   type Connection,
   type ConnectorHealthHooks,
   type HealthFailureReason,
@@ -561,6 +563,25 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
     );
   }
 
+  const DEFAULT_BACKFILL_DAYS = 30;
+  const DAY_MS = 24 * 3600_000;
+  let backfillClampLogged = false;
+  /** First-connect history, never longer than the retention window (ADR 0008). */
+  function backfillDays(ctx: ServerContext): number {
+    const configured = options.backfillDays ?? DEFAULT_BACKFILL_DAYS;
+    const c = clampLookbackMs(configured * DAY_MS, ctx.retention);
+    if (!c.clamped) return configured;
+    const used = Math.floor(c.ms / DAY_MS);
+    if (!backfillClampLogged) {
+      backfillClampLogged = true;
+      ctx.log.info(
+        { source: SOURCE, configured, used },
+        "vercel backfill exceeds the event retention window; clamped to it",
+      );
+    }
+    return used;
+  }
+
   async function runCapture(
     ctx: ServerContext,
     conn: Connection,
@@ -574,7 +595,7 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
       tenantId: conn.tenantId,
       connectionId: conn.id,
       now,
-      ...(options.backfillDays !== undefined ? { backfillDays: options.backfillDays } : {}),
+      backfillDays: backfillDays(ctx),
       ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
       ...(options.overlapMs !== undefined ? { overlapMs: options.overlapMs } : {}),
     });
@@ -669,7 +690,13 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
         source: SOURCE,
         async backfill(conn: Connection, from: Date, to: Date): Promise<void> {
           if (conn.source !== SOURCE || conn.status !== "active") return;
-          await runCapture(ctx, conn, "reconcile", (poller) => poller.reconcile(from, to));
+          // Events before the retention cutoff would be dropped anyway (ADR 0008).
+          const start = clampToRetention(
+            from,
+            await ctx.retention.cutoff(conn.tenantId, new Date(now())),
+          );
+          if (start.getTime() >= to.getTime()) return;
+          await runCapture(ctx, conn, "reconcile", (poller) => poller.reconcile(start, to));
         },
         async probe(conn: Connection): Promise<ProbeResult> {
           try {

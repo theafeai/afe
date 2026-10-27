@@ -1,13 +1,16 @@
 # ADR 0002: Architecture, tech stack and open-core extension points
 
-- Status: Accepted
+- Status: Accepted; datastore and extension points amended by ADR 0008 (no
+  audit log, hash chain or export in the open-source build; events are kept
+  for a retention window)
 - Date: 2026-10-26
 - Issue: AFE-2
 
 ## Context
 
 Afe records every way a deployment can happen across GitHub, ArgoCD and
-Vercel, and who caused it, into a tamper-evident audit log. It must be:
+Vercel, and who caused it, and shows it live and for a recent window (ADR
+0008). It must be:
 
 1. trivially self-hostable by open-source users (one `docker compose up`), and
 2. runnable later as a hosted multi-tenant service, whose extra features live in
@@ -25,16 +28,15 @@ Vercel, and who caused it, into a tamper-evident audit log. It must be:
 ### Datastore
 
 - **PostgreSQL (16+) is the only required infrastructure.**
-- The audit log is an **append-only `events` table**:
-  - `UPDATE`/`DELETE`/`TRUNCATE` are rejected by triggers;
-  - each row carries a hash of its canonical content chained to the previous
-    row's hash **per tenant** (tamper evidence; see ADR 0003);
+- Events live in an **`events` table** (amended by ADR 0008):
+  - rows are immutable once written; the only deletion is the retention
+    purge (`RetentionPolicy`, below);
   - a unique key on `(tenant_id, source, source_event_id)` makes ingestion
     idempotent (webhook and polling deliver the same event once).
 - Mutable, queryable state (connections, installations, cursors, health) lives
   in ordinary tables next to it.
 - Raw source payloads are stored in a separate `raw_payloads` table referenced
-  by the event, so the canonical event stays small and the raw evidence is kept.
+  by the event, so the canonical event stays small; they are deleted with it.
 - Migrations are plain, forward-only SQL files in `packages/db/migrations`,
   applied by a small built-in migrator (no ORM). Database access uses `pg`.
 
@@ -61,7 +63,7 @@ apps/
   server/               Fastify API, webhook receivers, workers, CLI entrypoint
   web/                  React UI
 packages/
-  core/                 canonical event model, hashing, interfaces/extension points
+  core/                 canonical event model, interfaces/extension points
   db/                   migrations, migrator, repositories (event store, connections)
   connector-github/     GitHub App, webhooks, reconciliation
   connector-argocd/     ArgoCD connection, watch, reconciliation
@@ -86,15 +88,15 @@ The server is assembled in one composition root, `createAfe(options)` in
 `@afe/server`. Every capability that the paid product may replace is an
 interface defined in `@afe/core` with an open-source default implementation:
 
-| Extension point | Interface         | OSS default                               | Hosted/paid replacement                         |
-| --------------- | ----------------- | ----------------------------------------- | ----------------------------------------------- |
-| Authentication  | `AuthProvider`    | single admin token / no-auth on localhost | SSO, SAML, SCIM                                 |
-| Multi-tenancy   | `TenantResolver`  | always `default` tenant                   | per-org tenants                                 |
-| Secrets / keys  | `KeyProvider`     | key from env (`AFE_ENCRYPTION_KEY`)       | KMS-backed envelope keys                        |
-| Retention       | `RetentionPolicy` | keep forever                              | per-plan retention with signed deletion records |
-| Audit export    | `AuditExporter`   | CSV/JSON with integrity proof             | signed PDF evidence packs, SIEM streaming       |
-| Connectors      | `Connector`       | GitHub, ArgoCD, Vercel                    | additional tools                                |
-| Alerts          | `AlertSink`       | log + optional webhook                    | email, Slack, PagerDuty                         |
+| Extension point | Interface         | OSS default                                                   | Hosted/paid replacement                  |
+| --------------- | ----------------- | ------------------------------------------------------------- | ---------------------------------------- |
+| Authentication  | `AuthProvider`    | single admin token / no-auth on localhost                     | SSO, SAML, SCIM                          |
+| Multi-tenancy   | `TenantResolver`  | always `default` tenant                                       | per-org tenants                          |
+| Secrets / keys  | `KeyProvider`     | key from env (`AFE_ENCRYPTION_KEY`)                           | KMS-backed envelope keys                 |
+| Event storage   | `EventSink`       | PostgreSQL `events` table                                     | a sink that also keeps long-term history |
+| Retention       | `RetentionPolicy` | fixed window, `AFE_EVENT_RETENTION_DAYS` (default 30, max 60) | per-plan retention                       |
+| Connectors      | `Connector`       | GitHub, ArgoCD, Vercel                                        | additional tools                         |
+| Alerts          | `AlertSink`       | log + optional webhook                                        | email, Slack, PagerDuty                  |
 
 The private repository depends on the published `@afe/*` packages (or the
 image) and calls `createAfe({ tenantResolver, authProvider, ... })`. Nothing in
@@ -105,7 +107,7 @@ here behind a flag.
 
 - Self-hosters run two containers: Postgres and Afe.
 - Postgres-as-queue limits throughput to what one database can serve; that is
-  far above audit-event volumes for the foreseeable future. The queue sits
-  behind pg-boss, so it can be swapped if needed.
-- Hash chaining per tenant serialises inserts per tenant; acceptable at audit
-  volumes, and it keeps tenants independent.
+  far above deployment-event volumes for the foreseeable future. The queue
+  sits behind pg-boss, so it can be swapped if needed.
+- Per-tenant `seq` allocation serialises inserts per tenant; acceptable at
+  these volumes, and it keeps tenants independent.

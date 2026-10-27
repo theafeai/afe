@@ -6,7 +6,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./agent-protocol": "./src/agent-protocol.ts",
+    "./sse": "./src/sse.ts"
   },
   "dependencies": {
     "@afe/core": "workspace:*",

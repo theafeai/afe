@@ -175,7 +175,7 @@ describe("connection health", () => {
       expect((await health(c.id)).consecutiveFailures).toBe(5);
       expect(gapEvents(c.id)).toHaveLength(1);
 
-      // Blind for > 15 minutes: alert opened (once), recorded as an audit event.
+      // Blind for > 15 minutes: alert opened (once), recorded as an event.
       await alertCheck();
       await alertCheck();
       const opened = alerts.filter((a) => a.connectionId === c.id);
@@ -404,21 +404,12 @@ describe("connection health", () => {
     const tEnd = advance(MIN);
     await service.reportSuccess("default", c.id, tEnd);
     await jobs.drain();
-    // Gap history is read from the audit log; this test uses the memory sink,
+    // Gap history is read from stored events; this test uses the memory sink,
     // so copy the events into the database through the real sink.
     const { createPgEventSink } = await import("@afe/db");
     const pgSink = createPgEventSink(pool);
     for (const e of gapEvents(c.id)) {
-      const {
-        schemaVersion: _v,
-        id: _id,
-        seq: _s,
-        tenantId: _t,
-        recordedAt: _r,
-        prevHash: _p,
-        hash: _h,
-        ...rest
-      } = e;
+      const { schemaVersion: _v, id: _id, seq: _s, tenantId: _t, recordedAt: _r, ...rest } = e;
       await pgSink.ingest("default", { ...rest, rawPayload: null });
     }
     const res = await afe.app.inject({ method: "GET", url: `/api/connections/${c.id}/health` });

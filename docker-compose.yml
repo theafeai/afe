@@ -9,7 +9,8 @@
 # Services:
 #   postgres    PostgreSQL 16, data in the named volume `afe-pgdata`
 #   afe-server  HTTP API, webhook receivers and web UI (role `server`)
-#   afe-worker  background jobs: webhook processing, polling, reconciliation (role `worker`)
+#   afe-worker  background jobs: webhook processing, polling, reconciliation,
+#               retention purge (role `worker`)
 #
 # Migrations are forward-only and run automatically when afe-server or
 # afe-worker starts (serialised by a database lock). Take a backup before
@@ -39,6 +40,8 @@ x-afe: &afe
     AFE_LOG_LEVEL: ${AFE_LOG_LEVEL:-info}
     AFE_ALLOW_PRIVATE_NETWORK_TARGETS: ${AFE_ALLOW_PRIVATE_NETWORK_TARGETS:-false}
     AFE_ALLOW_INSECURE_HTTP_TARGETS: ${AFE_ALLOW_INSECURE_HTTP_TARGETS:-false}
+    # Days events are kept (1..60, default 30; docs/self-hosting/configuration.md).
+    AFE_EVENT_RETENTION_DAYS: ${AFE_EVENT_RETENTION_DAYS:-30}
   # Further settings (e.g. connector settings) are read from .env; see
   # docs/self-hosting/configuration.md. Values under `environment` win.
   env_file: .env

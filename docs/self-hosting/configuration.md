@@ -35,8 +35,8 @@ Webhooks, `/healthz` and the static UI are public.
 
 | Variable                      | Default         | Secret | Description                                                                                                                                                                                                                               |
 | ----------------------------- | --------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AFE_ADMIN_TOKEN`             | (see below)     | yes    | Full access to the API and UI (connections, install flows, export key). At least 32 characters, e.g. `openssl rand -hex 32`. Prefer `AFE_ADMIN_TOKEN_FILE`; docker-compose.yml sets it to `/run/secrets/afe_admin_token`.                 |
-| `AFE_VIEWER_TOKEN`            | unset           | yes    | Optional read-only access (events, deployments, export, audit verification, connection status). At least 32 characters, different from the admin token. `_FILE` variant supported.                                                        |
+| `AFE_ADMIN_TOKEN`             | (see below)     | yes    | Full access to the API and UI (connections, install flows). At least 32 characters, e.g. `openssl rand -hex 32`. Prefer `AFE_ADMIN_TOKEN_FILE`; docker-compose.yml sets it to `/run/secrets/afe_admin_token`.                             |
+| `AFE_VIEWER_TOKEN`            | unset           | yes    | Optional read-only access (events, deployments, connection status). At least 32 characters, different from the admin token. `_FILE` variant supported.                                                                                    |
 | `AFE_SESSION_SECRET`          | from the tokens | yes    | HMAC key for UI session cookies (at least 32 characters). Unset: derived from the admin and viewer tokens, so rotating a token signs everyone out. Rotate it to end all sessions. `_FILE` supported.                                      |
 | `AFE_SESSION_TTL`             | `12h`           | no     | Lifetime of a UI session (`1m` to `30d`).                                                                                                                                                                                                 |
 | `AFE_GITHUB_VERIFY_INSTALLER` | `false`         | no     | Hosted/multi-tenant: verify via OAuth that the user completing a GitHub App install can access the installation. Needs `AFE_GITHUB_APP_CLIENT_ID` and `AFE_GITHUB_APP_CLIENT_SECRET` (or `_FILE`). See [GitHub](../connectors/github.md). |
@@ -52,46 +52,27 @@ Set `AFE_PUBLIC_URL` to the https address users open, so session cookies are
 `Secure` and the CSRF Origin check compares against it. API clients send
 `Authorization: Bearer <token>`.
 
-## Chain anchoring
+## Event retention
 
-Signed checkpoints of each tenant's audit chain head, published outside the
-database so that a consistent rewrite of the chain is detectable
-([ADR 0007](../decisions/0007-chain-anchoring.md),
-[verification](../export-verification.md#chain-anchors)). Off unless at
-least one anchor is set; an anchor without a signing key is a startup error.
+Afe keeps events for a limited window and then deletes them, together with
+their raw payloads ([ADR 0008](../decisions/0008-open-source-scope-without-audit-log.md),
+[data inventory](../security/data-inventory.md#retention-and-deletion)).
 
-| Variable                         | Default                  | Secret | Description                                                                                                                                                                                     |
-| -------------------------------- | ------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AFE_ANCHOR_DIR`                 | unset                    | no     | Directory for the append-only anchor files `<tenant>.anchors.jsonl`. Mount a **separate volume** that the database administrator cannot write, and sync it to retention-locked storage (below). |
-| `AFE_ANCHOR_WEBHOOK_URL`         | unset                    | no     | Operator endpoint that receives each signed checkpoint as JSON (`{"type":"afe.chain_checkpoint","receipt":…}`). Outbound rules apply (https, no private targets unless allowed).                |
-| `AFE_ANCHOR_TSA_URL`             | unset                    | no     | RFC 3161 timestamp authority, e.g. `https://freetsa.org/tsr`. Must be `https:` (rules R6). The token is stored with every receipt.                                                              |
-| `AFE_ANCHOR_TSA_POLICY`          | unset                    | no     | Optional TSA policy OID to request.                                                                                                                                                             |
-| `AFE_ANCHOR_INTERVAL`            | `1h`                     | no     | How often the `anchor.publish` job runs (`15m`, `1h`, `6h`, `1d`, or a 5-field cron expression). A tenant is anchored only when its head moved.                                                 |
-| `AFE_ANCHOR_ON_EXPORT`           | `true`                   | no     | Also anchor the head at export time and embed the receipt in the export manifest.                                                                                                               |
-| `AFE_ANCHOR_SIGNING_KEY`         | `AFE_EXPORT_SIGNING_KEY` | yes    | Ed25519 key for checkpoints (same formats as the export key; `afe export-keygen`). Defaults to the export signing key. `_FILE` variant supported.                                               |
-| `AFE_ANCHOR_TRUSTED_PUBLIC_KEYS` | unset                    | no     | Comma-separated extra public keys accepted on older checkpoints (after a key rotation).                                                                                                         |
+| Variable                   | Default | Secret | Description                                                                                                                                                                                                                                                                     |
+| -------------------------- | ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AFE_EVENT_RETENTION_DAYS` | `30`    | no     | How long events are kept, in whole days, measured from when they happened in the source (`occurredAt`). `1` to `60`. **60 days is the maximum of the open-source build**; a value outside 1..60 is a startup error (Afe refuses to start rather than keep less than you asked). |
 
-### Retention-locked storage without cloud SDKs
-
-Afe writes plain files; copy them to object storage with your usual tools, on
-a schedule shorter than or equal to `AFE_ANCHOR_INTERVAL`, from a host or
-identity the database administrator does not control:
-
-- **S3 Object Lock:** create the bucket with Object Lock enabled and a default
-  retention in _compliance_ mode, then e.g.
-  `aws s3 cp /anchors/default.anchors.jsonl s3://afe-anchors/default/$(date -u +%Y%m%dT%H%M%SZ).jsonl`.
-  Upload a new object each time (versions are retained); do not rely on
-  overwriting one key.
-- **GCS:** set a bucket retention policy and lock it
-  (`gcloud storage buckets update gs://afe-anchors --retention-period=7y` then
-  `--lock-retention-period`), and upload timestamped copies with
-  `gcloud storage cp`.
-- Or point `AFE_ANCHOR_WEBHOOK_URL` at a small service you run that writes to
-  such storage (it can authenticate requests by verifying the Ed25519
-  signature with your public key).
-
-An anchor file on the same disk or volume as the database adds nothing against
-a database administrator who also controls that disk.
+- The `retention.purge` job runs hourly (on workers) and deletes expired
+  events in small batches; after lowering the value, the next runs catch up.
+- Events that are already older than the window when Afe sees them (e.g.
+  from a backfill) are not stored.
+- Connector history windows are clamped to the retention window, with a log
+  line when a configured value is longer: `AFE_GITHUB_BACKFILL_DAYS`,
+  `AFE_GITHUB_RECONCILE_LOOKBACK` and the Vercel first-connect backfill
+  (30 days).
+- Afe is not an audit log: there is no export, and history older than the
+  window is gone. Back up the database if you need older data
+  ([operations](operations.md#backups)).
 
 ## docker-compose.yml settings (`.env`)
 

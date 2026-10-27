@@ -10,6 +10,12 @@ import {
 import { AppJwtSource } from "./jwt.ts";
 import { InstallationTokenCache, type InstallationToken, type TokenRequest } from "./tokens.ts";
 import type { GitHubAttestationsResponse } from "./artifact.ts";
+import {
+  isCommitSha,
+  parseComparison,
+  type CommitComparison,
+  type GitHubCompareResponse,
+} from "./compare.ts";
 import type {
   GitHubDeployment,
   GitHubDeploymentStatus,
@@ -320,6 +326,31 @@ export class InstallationClient {
         )
       ).data ?? {}
     );
+  }
+
+  /**
+   * GET /repos/{owner}/{repo}/compare/{base}...{head} (AFE-22): how `head`
+   * relates to `base` (`ahead` / `identical` means base is contained in
+   * head). Needs `contents: read`. Asks for one commit per page: Afe reads
+   * only the status and counts, never commit messages or files. GitHub
+   * answers 404 for an unknown commit (or one removed by a force-push).
+   * https://docs.github.com/en/rest/commits/commits#compare-two-commits
+   */
+  async compareCommits(
+    owner: string,
+    repo: string,
+    base: string,
+    head: string,
+  ): Promise<CommitComparison> {
+    // Validated, then sent unencoded: `...` separates the two commits.
+    if (!isCommitSha(base) || !isCommitSha(head)) {
+      throw new GitHubApiError("invalid commit SHA for compare", 0, null);
+    }
+    const { data } = await this.#get<GitHubCompareResponse>(
+      `/repos/${seg(owner)}/${seg(repo)}/compare/${base}...${head}`,
+      { per_page: 1 },
+    );
+    return parseComparison(data);
   }
 
   /** GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses */

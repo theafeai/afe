@@ -26,7 +26,7 @@
    - a **per-commit journey**, "where did this change go".
 3. **v1 UI after AFE-16: an environment matrix as the landing view, with a
    per-commit journey as the drill-down.** The unified timeline stays as
-   the raw audit view (what AFE-16 shows anyway) with a "highlight this
+   the raw event view (what AFE-16 shows anyway) with a "highlight this
    journey" filter. A general dependency graph is not worth building: it is
    unreadable past a handful of events and answers no question the other
    two do not.
@@ -125,7 +125,7 @@ In the prototypes, and recommended for the UI:
 | ----------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Graph of related events | anything, in principle                          | Right **internal** representation (links + evidence). As a UI it is unreadable: 68 events produced 169 links.                                                                                                                             |
 | Per-change journey      | "where did my commit go, and is it live?"       | Good drill-down. Needs a stop rule (do not walk into a different commit of the same repo) and an exclusion rule (a sync of the right config revision running a different image is not part of the journey). Root = head commit of a push. |
-| Environment view        | "what is live where, how did it get there, who" | Best landing view for an audit tool: it is the question asked during incidents and audits, and it is where uncertainty matters most.                                                                                                      |
+| Environment view        | "what is live where, how did it get there, who" | Best landing view: it is the question asked during incidents and reviews, and it is where uncertainty matters most.                                                                                                                       |
 
 **Recommendation:** links graph as the stored/derived model; environment
 state and journeys as the two derived read models. The prototype computes all
@@ -166,12 +166,12 @@ What the prototype produced on the synthetic data:
 
 ## Visualisation candidates
 
-| Candidate                  | Prototype           | Findings                                                                                                                                                                                                                                                                                                        |
-| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unified timeline           | `timeline.html`     | Complete and honest (it is the log), easy to build, needed anyway. Interleaved tools make a single flow hard to follow until a journey is highlighted; then it works well. Does not answer "what is live".                                                                                                      |
-| Per-commit journey diagram | `journey.html`      | Clearest for one change; confidence on edges is legible. Columns by stage work for GitOps (change → CI → artifact → config → deploy → runtime). Needs "excluded" and "continues as" lists to be honest. Breaks down for long-lived commits with many deploys (W): a list of placements reads better there.      |
-| Environment matrix         | `environments.html` | Answers the audit/incident question at a glance; surfaces uncertainty (unknown, ambiguous, weak) exactly where it matters. Per-cell history ("how it got here") covers rollback/promotion/manual steps well. Needs service and environment mapping (GitHub's `Production – web` shows as a separate row today). |
-| Dependency graph           | not built           | The link graph rendered generically (169 edges for 68 events) is noise; journeys are the readable projection of it.                                                                                                                                                                                             |
+| Candidate                  | Prototype           | Findings                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unified timeline           | `timeline.html`     | Complete and honest (it is the log), easy to build, needed anyway. Interleaved tools make a single flow hard to follow until a journey is highlighted; then it works well. Does not answer "what is live".                                                                                                 |
+| Per-commit journey diagram | `journey.html`      | Clearest for one change; confidence on edges is legible. Columns by stage work for GitOps (change → CI → artifact → config → deploy → runtime). Needs "excluded" and "continues as" lists to be honest. Breaks down for long-lived commits with many deploys (W): a list of placements reads better there. |
+| Environment matrix         | `environments.html` | Answers the incident question at a glance; surfaces uncertainty (unknown, ambiguous, weak) exactly where it matters. Per-cell history ("how it got here") covers rollback/promotion/manual steps well. Needs service and environment mapping (GitHub's `Production – web` shows as a separate row today).  |
+| Dependency graph           | not built           | The link graph rendered generically (169 edges for 68 events) is noise; journeys are the readable projection of it.                                                                                                                                                                                        |
 
 **v1 after AFE-16:** environment matrix (landing) → click a cell → history of
 placements → click a placement → per-commit journey. Keep the unified
@@ -179,18 +179,18 @@ timeline as the event log with a "highlight journey" filter.
 
 ## Gaps
 
-| Gap                                                     | Effect in the data                                                               | Mitigation                                                                                                                       |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| No artifact event (image ↔ commit ↔ run)                | GitOps links only via tag conventions                                            | `artifact.published` from `registry_package` + attestations / OCI `org.opencontainers.image.revision` (follow-up 2)              |
-| Config repo separate from app repo                      | Config commit links to app commit only by message convention (probable)          | Attribute via images instead; extract SHAs from bump messages as `upstreamCommitShas`; recommend digest pinning in bump tooling. |
-| Manual ArgoCD parameter/image override                  | Sync carries a correct config revision but runs an untracked image               | Capture `spec.source.kustomize.images` / Helm parameters on `argocd.application.updated`; show "drift from Git" (follow-up 9).   |
-| Mutable tags (`:1.4`, `:latest`)                        | Ambiguous attribution; digest unknown at the Argo side                           | Read running pod `imageID` digests via the ArgoCD resource tree; recommend digest pinning.                                       |
-| Deploys without Git metadata (`vercel deploy` from CLI) | Only a weak time guess                                                           | Show as "untracked deploy"; capture Vercel `source: cli` and `meta.gitDirty` when present.                                       |
-| Commit containment (ancestry)                           | P1's content went live inside merge M1, but P1's journey stops at "merged as M1" | "continues as" links today; GitHub compare API for "is X included in what is live" (follow-up 10).                               |
-| Environment names differ per tool                       | `production`, `Production – web`, Argo app names                                 | Environment/service mapping config (follow-up 8).                                                                                |
-| Helm chart sources                                      | Argo revision is a chart version, not a commit                                   | Add chart name+version as a key when needed (out of scope for v1).                                                               |
-| Multi-source ArgoCD apps                                | `status.sync.revisions[]` and several repos                                      | Connector must emit every revision with its repository.                                                                          |
-| Missed events                                           | A missing webhook breaks a chain silently                                        | Show observation gaps (AFE-4) on the timeline and matrix cells whose evidence falls in a gap.                                    |
+| Gap                                                     | Effect in the data                                                               | Mitigation                                                                                                                                   |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| No artifact event (image ↔ commit ↔ run)                | GitOps links only via tag conventions                                            | `artifact.published` from `registry_package` + attestations / OCI `org.opencontainers.image.revision` (follow-up 2)                          |
+| Config repo separate from app repo                      | Config commit links to app commit only by message convention (probable)          | Attribute via images instead; extract SHAs from bump messages as `upstreamCommitShas`; recommend digest pinning in bump tooling.             |
+| Manual ArgoCD parameter/image override                  | Sync carries a correct config revision but runs an untracked image               | Capture `spec.source.kustomize.images` / Helm parameters on `argocd.application.updated`; show "drift from Git" (follow-up 9, done: AFE-26). |
+| Mutable tags (`:1.4`, `:latest`)                        | Ambiguous attribution; digest unknown at the Argo side                           | Read running pod `imageID` digests via the ArgoCD resource tree; recommend digest pinning.                                                   |
+| Deploys without Git metadata (`vercel deploy` from CLI) | Only a weak time guess                                                           | Show as "untracked deploy"; capture Vercel `source: cli` and `meta.gitDirty` when present.                                                   |
+| Commit containment (ancestry)                           | P1's content went live inside merge M1, but P1's journey stops at "merged as M1" | "continues as" links today; GitHub compare API for "is X included in what is live" (follow-up 10, done: AFE-22).                             |
+| Environment names differ per tool                       | `production`, `Production – web`, Argo app names                                 | Environment/service mapping config (follow-up 8).                                                                                            |
+| Helm chart sources                                      | Argo revision is a chart version, not a commit                                   | Add chart name+version as a key when needed (out of scope for v1).                                                                           |
+| Multi-source ArgoCD apps                                | `status.sync.revisions[]` and several repos                                      | Connector must emit every revision with its repository.                                                                                      |
+| Missed events                                           | A missing webhook breaks a chain silently                                        | Show observation gaps (AFE-4) on the timeline and matrix cells whose evidence falls in a gap.                                                |
 
 ## What the connectors must capture
 
@@ -298,7 +298,9 @@ Afe once the connectors exist, then check:
 Known prototype limits: pairwise linking inside each key bucket (fine for a
 prototype, quadratic for hot keys such as a busy repository's environment);
 digest conflict detection assumes one image per event; everything is
-recomputed from scratch.
+recomputed from scratch. AFE-20 removed the first two (linear-size linking,
+digest-pinned refs and per-tag conflicts) and kept the third on purpose,
+with caching; see [docs/correlation.md](../correlation.md).
 
 ## Proposed follow-up issues
 
@@ -324,10 +326,15 @@ recomputed from scratch.
 5. **Vercel connector: placement fidelity.** Capture Git meta, `source`,
    `aliasAssigned`, deployment URL; enrich promote/rollback events with the
    deployment's commit; reconcile the project's current production deployment.
-6. **Correlation service (server).** Productionise the prototype: derived,
-   rebuildable `event_links` (tenant-scoped, not part of the hash chain) or
+6. **(Done, AFE-20) Correlation service (server).** Productionise the prototype: derived,
+   rebuildable `event_links` (tenant-scoped, derived from events) or
    compute-on-read for a time window; API for environment state and journeys
    on top of the AFE-14 query API. Decide incremental vs batch after measuring.
+   Measured and decided: compute-on-read over the retention window with a
+   per-tenant cache, incremental event loading and a throttled full recompute
+   (no derived tables); linear-size linking; mapping, gaps, artifacts and
+   containment integrated. See [docs/correlation.md](../correlation.md) and
+   [api.md](../api.md#environments-and-journeys).
 7. **UI: environment matrix (v1 landing view).** Service × environment
    matrix with confidence badges, unknown/ambiguous states and per-cell
    placement history, after AFE-16.
@@ -335,12 +342,19 @@ recomputed from scratch.
    tool environment names (`Production – web`, Argo app labels, Vercel
    targets) to one environment, and Argo apps / Vercel projects / repos to a
    service. Used by the matrix rows/columns.
-9. **Drift and untracked deploy detection.** Flag placements whose content
+9. **(Done, AFE-26) Drift and untracked deploy detection.** Flag placements whose content
    does not trace to Git (manual image overrides, CLI deploys without Git
-   metadata, unknown images) as findings/alerts, with evidence.
-10. **Commit containment.** Use the GitHub compare API to answer "is commit X
+   metadata, unknown images) as findings/alerts, with evidence. Implemented as
+   `detectDrift` in `@afe/core/drift` on top of the correlation output, findings
+   persisted per tenant (episodes with deterministic ids, auto-resolved by the
+   next Git-traced placement), `drift.finding.*` events, optional alerts, the
+   `/api/drift/*` API and the Drift page; see [drift.md](../drift.md).
+10. **(Done, AFE-22) Commit containment.** Use the GitHub compare API to answer "is commit X
     included in what is live in env Y", so PR head commits and older commits
-    show where their content went.
+    show where their content went. Implemented as `compareCommits` in
+    `@afe/connector-github`, `ContainmentService` and `GET /api/containment`
+    in the server, and the "Where is this commit live?" panel on the event
+    detail page; see [docs/containment.md](../containment.md).
 11. **UI: commit journey drill-down.** Stage-column journey with confidence on
     edges, "where it went", excluded steps and "continues as", linked from the
     matrix and the timeline.

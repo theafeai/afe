@@ -2,19 +2,20 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type pg from "pg";
 import {
   EventValidationError,
-  hashEvent,
+  FixedWindowRetention,
   observationGapClosed,
   observationGapOpened,
-  verifyChain,
   type CanonicalEventInputLike,
 } from "@afe/core";
 import {
   createPgEventSink,
   findEventBySourceId,
   getEvent,
+  getLatestSeq,
   ingestEvent,
   listEvents,
-  verifyTenantChain,
+  listTenantsWithEvents,
+  purgeEventsBefore,
 } from "../src/index.ts";
 import { createTestPool } from "../src/testing.ts";
 
@@ -60,27 +61,27 @@ describe("event store", () => {
     await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1)", [tenant]);
   });
 
-  it("appends a hash-chained event and reads it back identically", async () => {
+  it("stores an event and reads it back identically", async () => {
     const a = await ingestEvent(pool, tenant, input(1));
     const b = await ingestEvent(pool, tenant, input(2));
+    expect(a.status).toBe("inserted");
     expect(a.inserted).toBe(true);
-    expect(a.event.seq).toBe(1);
-    expect(b.event.seq).toBe(2);
-    expect(b.event.prevHash).toBe(a.event.hash);
+    expect(a.event!.seq).toBe(1);
+    expect(b.event!.seq).toBe(2);
+    expect(a.event).not.toHaveProperty("hash");
+    expect(a.event).not.toHaveProperty("prevHash");
+    expect(await getLatestSeq(pool, tenant)).toBe(2);
 
-    const read = await getEvent(pool, tenant, a.event.id);
+    const read = await getEvent(pool, tenant, a.event!.id);
     expect(read).toEqual(a.event);
-    expect(hashEvent(read!)).toBe(a.event.hash);
-    expect(await getEvent(pool, "default", a.event.id)).toBeNull();
+    expect(await getEvent(pool, "default", a.event!.id)).toBeNull();
 
     const raw = await pool.query(
       "SELECT body, content_type, size_bytes FROM raw_payloads WHERE id = $1",
-      [a.event.rawPayload!.id],
+      [a.event!.rawPayload!.id],
     );
     expect(raw.rows[0].body.toString("utf8")).toBe('{"deployment":{"id":1},"é":"ü"}');
     expect(raw.rows[0].size_bytes).toBe(Buffer.byteLength('{"deployment":{"id":1},"é":"ü"}'));
-
-    expect(await verifyTenantChain(pool, tenant)).toMatchObject({ ok: true, count: 2 });
   });
 
   it("is idempotent: webhook then poll stores once and keeps the first", async () => {
@@ -94,9 +95,9 @@ describe("event store", () => {
         rawPayload: { contentType: "application/json", body: '{"different":"body"}' },
       }),
     );
-    expect(viaPoll.inserted).toBe(false);
+    expect(viaPoll.status).toBe("duplicate");
     expect(viaPoll.event).toEqual(viaWebhook.event);
-    expect(viaPoll.event.observation.method).toBe("webhook");
+    expect(viaPoll.event!.observation.method).toBe("webhook");
     const count = await pool.query(
       "SELECT (SELECT count(*) FROM events WHERE tenant_id = $1)::int AS e, " +
         "(SELECT count(*) FROM raw_payloads WHERE tenant_id = $1)::int AS r",
@@ -127,7 +128,7 @@ describe("event store", () => {
     await expect(ingestEvent(pool, "no-such-tenant", input(1))).rejects.toThrow(/foreign key/);
   });
 
-  it("keeps a valid gap-free chain under concurrent ingestion, including duplicates", async () => {
+  it("assigns unique, gap-free seqs under concurrent ingestion, including duplicates", async () => {
     const other = `${tenant}-b`;
     await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1)", [other]);
     const jobs: Promise<unknown>[] = [];
@@ -140,8 +141,11 @@ describe("event store", () => {
     expect(results.filter((r) => r.inserted)).toHaveLength(80);
 
     for (const t of [tenant, other]) {
-      const r = await verifyTenantChain(pool, t, { batchSize: 7 });
-      expect(r).toMatchObject({ ok: true, count: 40, lastSeq: 40 });
+      const { events } = await listEvents(pool, t, { limit: 1000 });
+      // Duplicates roll their seq allocation back, so nothing is skipped here.
+      expect(events.map((e) => e.seq)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+      expect(new Set(events.map((e) => e.sourceEventId)).size).toBe(40);
+      expect(await getLatestSeq(pool, t)).toBe(40);
     }
   });
 
@@ -159,9 +163,9 @@ describe("event store", () => {
       tenant,
       observationGapClosed({ ...gap, endedAt: "2026-10-01T10:30:00Z" }),
     );
-    expect(closed.event.data.gap).toMatchObject({ endedAt: "2026-10-01T10:30:00.000Z" });
-    expect(closed.event.source).toBe("afe");
-    expect(await verifyTenantChain(pool, tenant)).toMatchObject({ ok: true, count: 2 });
+    expect(closed.event!.data.gap).toMatchObject({ endedAt: "2026-10-01T10:30:00.000Z" });
+    expect(closed.event!.source).toBe("afe");
+    expect((await listEvents(pool, tenant)).events).toHaveLength(2);
   });
 
   it("lists events by time range with a cursor", async () => {
@@ -184,10 +188,6 @@ describe("event store", () => {
     expect(desc2.events.map((e) => e.seq)).toEqual([6, 5, 4, 3, 2, 1]);
 
     await expect(listEvents(pool, tenant, { cursor: "garbage" })).rejects.toThrow(/cursor/);
-
-    // The listed events form a verifiable chain on their own (as an export would).
-    const all = await listEvents(pool, tenant, { limit: 1000 });
-    expect(verifyChain(all.events, { tenantId: tenant })).toMatchObject({ ok: true, count: 10 });
   });
 
   it("supports correlation-key containment queries", async () => {
@@ -200,114 +200,94 @@ describe("event store", () => {
     expect(rows).toEqual([{ seq: "1" }]);
   });
 
-  describe("append-only enforcement", () => {
-    it.each([
-      ["UPDATE events", "UPDATE events SET outcome = 'failed' WHERE tenant_id = $1"],
-      ["DELETE events", "DELETE FROM events WHERE tenant_id = $1"],
-      ["UPDATE raw_payloads", "UPDATE raw_payloads SET body = 'x' WHERE tenant_id = $1"],
-      ["DELETE raw_payloads", "DELETE FROM raw_payloads WHERE tenant_id = $1"],
-    ])("rejects %s", async (_name, sql) => {
-      await ingestEvent(pool, tenant, input(1));
-      await expect(pool.query(sql, [tenant])).rejects.toThrow(/append-only/);
-    });
+  describe("retention", () => {
+    const DAY = 24 * 3600_000;
+    // input(n) occurred on 2026-10-01; with a 30-day window "now" keeps them.
+    const NOW = new Date("2026-10-20T00:00:00Z");
+    const retention = new FixedWindowRetention(30);
+    const old = (n: number) => input(n, { occurredAt: new Date(NOW.getTime() - 45 * DAY + n) });
 
-    it.each(["events", "raw_payloads"])("rejects TRUNCATE %s", async (table) => {
-      await expect(pool.query(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(/append-only/);
-    });
-
-    it("rejects inserts that do not link to the previous event", async () => {
-      const a = await ingestEvent(pool, tenant, input(1));
-      await expect(
-        pool.query(
-          `INSERT INTO events (id, tenant_id, seq, schema_version, source, source_event_id, action,
-             actor, target, trigger, outcome, occurred_at, observed_at, recorded_at, observation,
-             correlation, data, prev_hash, hash)
-           SELECT gen_random_uuid(), tenant_id, 2, schema_version, source, 'forged', action, actor,
-             target, trigger, outcome, occurred_at, observed_at, recorded_at, observation,
-             correlation, data, repeat('a', 64), repeat('b', 64)
-           FROM events WHERE id = $1`,
-          [a.event.id],
-        ),
-      ).rejects.toThrow(/does not link/);
-    });
-  });
-
-  describe("verifyTenantChain detects tampering done behind the triggers' back", () => {
-    // Simulates an attacker with superuser rights who disables the triggers.
-    async function tamper(sql: string | string[], params: unknown[]) {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query("ALTER TABLE events DISABLE TRIGGER USER");
-        await client.query("ALTER TABLE raw_payloads DISABLE TRIGGER USER");
-        for (const q of Array.isArray(sql) ? sql : [sql]) await client.query(q, params);
-        await client.query("ALTER TABLE events ENABLE TRIGGER USER");
-        await client.query("ALTER TABLE raw_payloads ENABLE TRIGGER USER");
-        await client.query("COMMIT");
-      } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-      } finally {
-        client.release();
-      }
-    }
-
-    beforeEach(async () => {
-      for (let i = 1; i <= 5; i++) await ingestEvent(pool, tenant, input(i));
-    });
-
-    it("modification", async () => {
-      await tamper(
-        `UPDATE events SET actor = jsonb_set(actor, '{login}', '"mallory"')
-          WHERE tenant_id = $1 AND seq = 3`,
+    it("drops events whose occurredAt is already outside the window", async () => {
+      const r = await ingestEvent(pool, tenant, old(1), { retention, now: () => NOW });
+      expect(r).toEqual({ status: "expired", inserted: false, event: null });
+      const kept = await ingestEvent(pool, tenant, input(2), { retention, now: () => NOW });
+      expect(kept.status).toBe("inserted");
+      const count = await pool.query(
+        "SELECT (SELECT count(*) FROM events WHERE tenant_id = $1)::int AS e, " +
+          "(SELECT count(*) FROM raw_payloads WHERE tenant_id = $1)::int AS r",
         [tenant],
       );
-      const r = await verifyTenantChain(pool, tenant);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.break).toMatchObject({ kind: "hash_mismatch", seq: 3, index: 2 });
+      expect(count.rows[0]).toEqual({ e: 1, r: 1 });
     });
 
-    it("deletion in the middle", async () => {
-      await tamper("DELETE FROM events WHERE tenant_id = $1 AND seq = 2", [tenant]);
-      const r = await verifyTenantChain(pool, tenant);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.break).toMatchObject({ kind: "seq_gap", seq: 3, expected: 2 });
-    });
+    it("purges events before the cutoff with their raw payloads, in batches", async () => {
+      for (let i = 1; i <= 7; i++) await ingestEvent(pool, tenant, old(i));
+      for (let i = 10; i <= 12; i++) await ingestEvent(pool, tenant, input(i));
+      const other = `${tenant}-o`;
+      await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1)", [other]);
+      await ingestEvent(pool, other, old(1));
 
-    it("deletion at the end", async () => {
-      await tamper("DELETE FROM events WHERE tenant_id = $1 AND seq = 5", [tenant]);
-      const r = await verifyTenantChain(pool, tenant);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.break).toMatchObject({ kind: "head_mismatch", seq: 5 });
-    });
-
-    it("reordering", async () => {
-      // Swap the positions of events 2 and 4.
-      await tamper(
-        [
-          "UPDATE events SET seq = 1002 WHERE tenant_id = $1 AND seq = 2",
-          "UPDATE events SET seq = 2 WHERE tenant_id = $1 AND seq = 4",
-          "UPDATE events SET seq = 4 WHERE tenant_id = $1 AND seq = 1002",
-        ],
-        [tenant],
-      );
-      const r = await verifyTenantChain(pool, tenant);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.break).toMatchObject({ index: 1, seq: 2 });
-    });
-
-    it("raw payload modification", async () => {
-      await tamper(
-        `UPDATE raw_payloads SET body = convert_to('{"forged":true}', 'UTF8')
-          WHERE id = (SELECT raw_payload_id FROM events WHERE tenant_id = $1 AND seq = 4)`,
-        [tenant],
-      );
-      const r = await verifyTenantChain(pool, tenant);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.break).toMatchObject({ kind: "raw_payload_mismatch", seq: 4 });
-      expect(await verifyTenantChain(pool, tenant, { checkRawPayloads: false })).toMatchObject({
-        ok: true,
+      const cutoff = retention.cutoff(tenant, NOW);
+      const limited = await purgeEventsBefore(pool, tenant, cutoff, {
+        batchSize: 2,
+        maxBatches: 2,
       });
+      expect(limited).toEqual({ events: 4, rawPayloads: 4, more: true });
+      const rest = await purgeEventsBefore(pool, tenant, cutoff, { batchSize: 2 });
+      expect(rest).toEqual({ events: 3, rawPayloads: 3, more: false });
+
+      const left = (await listEvents(pool, tenant)).events;
+      expect(left.map((e) => e.data.n)).toEqual([10, 11, 12]);
+      const raw = await pool.query(
+        "SELECT count(*)::int AS n FROM raw_payloads WHERE tenant_id = $1",
+        [tenant],
+      );
+      expect(raw.rows[0].n).toBe(3);
+      // Tenant-scoped: the other tenant's expired event is still there.
+      expect((await listEvents(pool, other)).events).toHaveLength(1);
+      expect(await listTenantsWithEvents(pool)).toEqual(expect.arrayContaining([tenant, other]));
+    });
+
+    it("a purged event cannot come back, and seq numbers are not reused", async () => {
+      const first = await ingestEvent(pool, tenant, old(1));
+      await ingestEvent(pool, tenant, input(2));
+      await purgeEventsBefore(pool, tenant, retention.cutoff(tenant, NOW));
+      expect(await findEventBySourceId(pool, tenant, "github", first.event!.sourceEventId)).toBe(
+        null,
+      );
+      // A poll or backfill delivers the same object again: dropped, not re-stored.
+      const again = await ingestEvent(pool, tenant, old(1), { retention, now: () => NOW });
+      expect(again.status).toBe("expired");
+      const next = await ingestEvent(pool, tenant, input(3), { retention, now: () => NOW });
+      expect(next.event!.seq).toBe(3);
+    });
+
+    it("sweeps raw payloads no event references", async () => {
+      await pool.query(
+        `INSERT INTO raw_payloads (id, tenant_id, source, content_type, body, sha256, size_bytes, received_at)
+         VALUES (gen_random_uuid(), $1, 'github', 'text/plain', 'x', repeat('0', 64), 1, $2)`,
+        [tenant, new Date(NOW.getTime() - 40 * DAY)],
+      );
+      const r = await purgeEventsBefore(pool, tenant, retention.cutoff(tenant, NOW));
+      expect(r).toEqual({ events: 0, rawPayloads: 1, more: false });
+    });
+
+    it("events and raw payloads are no longer append-only at the database level", async () => {
+      // Retention deletes rows; immutability of stored events is an application rule.
+      await ingestEvent(pool, tenant, input(1));
+      const triggers = await pool.query(
+        `SELECT tgname FROM pg_trigger
+          WHERE NOT tgisinternal AND tgrelid IN ('events'::regclass, 'raw_payloads'::regclass)`,
+      );
+      expect(triggers.rows).toEqual([]);
+      const cols = await pool.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_name = 'events' AND column_name IN ('prev_hash', 'hash')`,
+      );
+      expect(cols.rows).toEqual([]);
+      expect(
+        (await pool.query("SELECT to_regclass('event_chain_heads') AS t")).rows[0].t,
+      ).toBeNull();
     });
   });
 

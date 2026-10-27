@@ -38,7 +38,7 @@ data:
 | Policy line         | Why Afe needs it                                                                                                           |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `applications, get` | List and watch applications; read sync status, operation state and history (who synced which revision). Required.          |
-| `projects, get`     | Resolve project names/destinations for the audit target. Optional; drop it if you do not want Afe to see project settings. |
+| `projects, get`     | Resolve project names/destinations for the event target. Optional; drop it if you do not want Afe to see project settings. |
 | `clusters, get`     | Map destination server URLs to cluster names. Optional; Afe falls back to the destination URL.                             |
 | `g, afe, role:...`  | Binds the account to the role.                                                                                             |
 
@@ -156,7 +156,9 @@ All are covered by `applications, get`. Nothing is written to ArgoCD.
 Both paths call the same `observeApplication(prev, app)`, serialised per
 application (Postgres advisory lock), and emit only what changed relative to
 the stored per-application state. Events that occurred before capture started
-for the connection (`baseline_at`) are recorded with method `backfill`.
+for the connection (`baseline_at`) are recorded with method `backfill`; history
+entries older than the event retention window (`AFE_EVENT_RETENTION_DAYS`) are not
+stored (ADR 0008).
 
 ### What is recorded
 
@@ -250,3 +252,175 @@ application spec`, `patched application`, `deleted application`,
 8. Not covered: resource actions (`action/*`); `argocd app set` overrides are
    seen only as spec updates; pod image digests via the resource tree
    (optional, out of scope).
+
+## In-cluster agent
+
+For ArgoCD instances Afe cannot reach (private cluster, behind a firewall,
+hosted Afe), a small read-only agent runs in the cluster and pushes outward
+over HTTPS. Nothing needs inbound access, and no ArgoCD token is needed.
+Design and protocol: [ADR 0004](../decisions/0004-argocd-connection-model.md)
+"Agent protocol". Code: `apps/argocd-agent` (agent),
+`apps/server/src/connectors/argocd-agent.ts` (Afe side),
+`packages/connector-argocd/src/agent-protocol.ts` (shared wire format).
+
+### How it reads ArgoCD
+
+The agent watches `applications.argoproj.io/v1alpha1` through the
+**Kubernetes API** with its ServiceAccount: list (paginated), then watch from
+the list's `resourceVersion`, and list again on `410 Gone`. This was chosen
+over the ArgoCD API because, in the cluster, it needs no ArgoCD account or
+token (nothing to create, rotate or leak), works with SSO-only ArgoCD
+installs, does not depend on argocd-server being up, and its RBAC is the
+narrowest possible (get/list/watch on one resource). It sees the same objects
+argocd-server would return, since both read them from the API server.
+
+It sends **raw Application objects** (watch events and full snapshots), not
+canonical events. Afe maps them with the same AFE-10 code as pull mode
+(`ArgoCdCapture`, `observeApplication`), so:
+
+- mapping and its versioning live in one place (Afe), and an agent upgrade is
+  never needed for a mapping fix;
+- agent and pull observations produce identical idempotency keys (the same
+  sync seen by both is stored once);
+- the per-application state store dedupes watch and snapshot observations;
+- the agent stays stateless: a restart simply sends a new full snapshot.
+
+Before sending, the agent drops what the mapping never reads and that is
+large or may hold configuration: `metadata.managedFields`, every annotation
+except `argocd.argoproj.io/refresh` and `argocd.argoproj.io/tracking-id`
+(this removes `last-applied-configuration`), `status.resources`,
+`status.conditions` and per-resource sync messages. `spec` is sent unchanged
+because the mapping hashes it to notice changes (Helm/Kustomize settings
+included) and reads image overrides from it; as in pull mode, Afe stores only
+the minimised form as evidence. Accepted batches wait in
+`argocd_agent_batches` until a job processes them (seconds) and are then
+deleted.
+
+With `AFE_AGENT_ATTRIBUTE_WITH_EVENTS=true` (default) the agent also lists the
+core/v1 Events of an Application (`involvedObject.uid`) when something that
+may need actor attribution changed (operation, spec generation, deletion,
+refresh, history length) and attaches them, so "alice initiated sync" is
+attributed as in pull mode. Without `events` RBAC it logs once and continues
+without them.
+
+### Install
+
+1. Register the agent (admin):
+
+   ```sh
+   curl -sS -X POST "$AFE/api/connections/argocd/agents" \
+     -H "Authorization: Bearer $AFE_ADMIN_TOKEN" -H 'content-type: application/json' \
+     -d '{"instanceId":"prod-eu-1","name":"Prod EU"}'
+   ```
+
+   The answer contains `agentId` and `secret`. The secret is shown **once**;
+   Afe stores it encrypted (credential kind `argocd_agent_secret`).
+
+2. Store the secret in the cluster:
+   `kubectl -n afe-argocd-agent create secret generic afe-argocd-agent --from-literal=secret=<secret>`
+   (see [the credentials guide](../self-hosting/credentials/argocd.md#in-cluster-agent-secret)).
+
+3. Deploy with the Helm chart (`deploy/argocd-agent/helm/afe-argocd-agent`;
+   set `afe.url`, `afe.agentId`, `networkPolicy.apiServerCidrs`,
+   `networkPolicy.afeCidrs`) or the plain manifests
+   (`deploy/argocd-agent/manifests`; edit the placeholders, then
+   `kubectl apply -k deploy/argocd-agent/manifests`). Image:
+   `ghcr.io/theafeai/afe-argocd-agent:<version>`.
+
+The manifests contain: a Namespace (`pod-security: restricted`), a
+ServiceAccount, a Role and RoleBinding in the ArgoCD namespace (or, optionally,
+a ClusterRole for applications in any namespace) with **only**
+`get/list/watch applications.argoproj.io` and `get/list events`; a reference to
+the Secret (never created by the chart); a Deployment with one replica
+(`Recreate`), `runAsNonRoot`, `readOnlyRootFilesystem`, all capabilities
+dropped, `seccompProfile: RuntimeDefault` and a memory limit; and a
+NetworkPolicy with no ingress and egress only to DNS, the API server and Afe.
+NetworkPolicy cannot select the API server or an external host by name, so
+their CIDRs must be filled in. A test (`apps/argocd-agent/test/manifests.test.ts`)
+fails if any write verb or any other resource appears.
+
+Agent settings (environment):
+
+| Variable                          | Default                             | Meaning                                                  |
+| --------------------------------- | ----------------------------------- | -------------------------------------------------------- |
+| `AFE_URL`                         | required                            | Afe's public URL (https)                                 |
+| `AFE_AGENT_ID`                    | required                            | agent id from registration                               |
+| `AFE_AGENT_SECRET_FILE`           | required                            | file with the secret (re-read on every request)          |
+| `AFE_AGENT_NAMESPACES`            | `argocd`                            | comma-separated namespaces, or `*` (needs a ClusterRole) |
+| `AFE_AGENT_ATTRIBUTE_WITH_EVENTS` | `true`                              | read Events for actor attribution                        |
+| `AFE_AGENT_CA_FILE`               | none                                | extra CA (PEM) for Afe's certificate                     |
+| `AFE_AGENT_BUFFER_MAX_ITEMS`      | `10000`                             | buffer bound (items)                                     |
+| `AFE_AGENT_BUFFER_MAX_BYTES`      | `67108864`                          | buffer bound (bytes)                                     |
+| `AFE_AGENT_BATCH_MAX_ITEMS`       | `200`                               | items per batch                                          |
+| `AFE_AGENT_HEALTH_PORT`           | `8081`                              | `/healthz` and Prometheus `/metrics`; `0` disables       |
+| `AFE_AGENT_LOG_LEVEL`             | `info`                              | JSON logs on stdout                                      |
+| `AFE_AGENT_KUBE_URL`              | from `KUBERNETES_SERVICE_HOST/PORT` | API server URL (out-of-cluster testing)                  |
+| `AFE_AGENT_KUBE_TOKEN_FILE`       | the ServiceAccount token            | re-read on every request (projected tokens rotate)       |
+
+### Afe side
+
+| Route                                                   | Access       | Purpose                                                              |
+| ------------------------------------------------------- | ------------ | -------------------------------------------------------------------- |
+| `POST /api/connections/argocd/agents`                   | admin        | register: connection (`source` argocd, `config.mode` agent) + secret |
+| `GET /api/connections/argocd/agents`                    | admin        | agents with last heartbeat, sequence, dropped count, waiting state   |
+| `POST /api/connections/argocd/agents/:id/rotate-secret` | admin        | new secret; `{"graceSeconds": n}` keeps the old one valid (max 24 h) |
+| `DELETE /api/connections/argocd/:id`                    | admin        | (existing route) disconnect: revokes the secret                      |
+| `POST /agent/argocd/v1/batches`                         | agent (HMAC) | watch events and full snapshots                                      |
+| `POST /agent/argocd/v1/heartbeat`                       | agent (HMAC) | liveness and counters; the response may ask for a full snapshot      |
+
+The agent endpoints are outside `/api/` and authenticate the agent
+themselves: `X-Afe-Agent-Id`, `X-Afe-Timestamp` (unix seconds) and
+`X-Afe-Signature: v1=<hex HMAC-SHA256(secret, "v1:<timestamp>:<raw body>")>`;
+the secret never travels. Requests more than 5 minutes away from Afe's clock
+(header or `sentAt`) are rejected (`401 clock_skew` with `serverTime`). Every
+`batchId`/`heartbeatId` is recorded once (`webhook_deliveries`, source
+`argocd-agent`); a retried batch gets `200 {"status":"duplicate"}`. Accepted
+batches are staged and processed strictly in order per agent
+(`argocd-agent.process`, plus `argocd-agent.sweep` every minute); with more
+than 500 waiting, the endpoint answers `429` with `Retry-After` and the agent
+keeps buffering.
+
+Observation methods: watch items are `stream`, snapshot items are
+`reconciliation`, and `observation.detail` starts with `in-cluster agent`. A
+full snapshot ends with the list of uids; applications Afe knew that are not
+listed, and were last seen before the list started, are recorded as
+`argocd.application.deleted` (confidence `certain`: a Kubernetes list is
+authoritative for its namespaces). The scheduled pull reconciliation and
+watch skip agent connections.
+
+### Gaps (connection health)
+
+An agent's health is what it reports; Afe cannot probe it.
+
+- Heartbeat every 30 s (Afe sets the interval). `argocd-agent.heartbeat-check`
+  (every minute) reports a failure (`unreachable`) when none arrived for 90 s,
+  which opens an observation gap from the last success.
+- Possible loss also opens a gap: dropped observations (`droppedTotal`
+  increased), a batch sequence gap, an agent restart (unsent data of the old
+  process is lost), or a batch Afe could not process after 10 attempts.
+- Such a gap is closed **only by a full snapshot that started after the
+  loss** (for drops: `droppedTotalAtStart` at least the reported count, and
+  no drops while it ran), not by the next heartbeat. Afe asks for it in the
+  heartbeat response (`resync: true`, repeated every 15 minutes while
+  waiting); after a restart the agent sends one by itself. The health probe of
+  an agent connection fails while heartbeats are missing or a snapshot is
+  awaited, and the `backfill` hook asks for a snapshot.
+- Backpressure: the agent's buffer is bounded (items and bytes). When it is
+  full the agent drops the **oldest** waiting observations, counts them, and
+  lists again once there is room. What a snapshot cannot recover (for example
+  an operation that started and finished entirely within dropped data and has
+  left ArgoCD's history) is lost; the gap records that it may be.
+
+### To verify (agent)
+
+1. Kubernetes watch frames, bookmarks and `410` handling as described in
+   https://kubernetes.io/docs/reference/using-api/api-concepts/.
+2. Events of an Application can be selected with
+   `fieldSelector=involvedObject.kind=Application,involvedObject.uid=<uid>`
+   in the Application's namespace, and argocd-server writes its audit events
+   there (as `/api/v1/applications/{name}/events` suggests).
+3. Kubelet HTTP probes are not blocked by the NetworkPolicy (`ingress: []`) on
+   the target CNI.
+4. The image runs under `pod-security.kubernetes.io/enforce: restricted` and
+   the distroless image tag `gcr.io/distroless/nodejs22-debian12:nonroot`
+   (the image was not built here: no Docker daemon was available).

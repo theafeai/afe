@@ -4,7 +4,7 @@ const MAX_DETAIL = 500;
 
 // Things that may carry credentials in an error message. Connectors must not
 // pass them in the first place (HealthReporter docs); this is defence in depth,
-// because gap details end up in the immutable audit log.
+// because gap details end up in stored events (never edited).
 const PATTERNS: [RegExp, string][] = [
   // Authorization schemes followed by a credential.
   [/\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{6,}/gi, "$1 [REDACTED]"],
@@ -27,7 +27,7 @@ const PATTERNS: [RegExp, string][] = [
 ];
 
 /**
- * Makes a failure detail safe to store (health row, audit log, alerts):
+ * Makes a failure detail safe to store (health row, events, alerts):
  * removes control characters, redacts anything that looks like a credential,
  * collapses whitespace and truncates.
  */

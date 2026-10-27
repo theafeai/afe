@@ -46,7 +46,7 @@ export interface UpsertConnectionInput {
 /**
  * Creates the connection, or updates name/config/status of the existing one
  * with the same (tenant, source, externalId). Reconnecting a disconnected
- * connection keeps its id, so its audit history stays linked.
+ * connection keeps its id, so its event history stays linked.
  */
 export async function upsertConnection(
   db: Db,

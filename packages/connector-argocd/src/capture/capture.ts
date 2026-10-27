@@ -19,7 +19,7 @@ import {
 } from "@afe/core";
 import type { ArgoCdClient } from "../client.ts";
 import { ArgoCdError } from "../errors.ts";
-import type { ArgoCdApplication, ArgoCdApplicationWatchEvent } from "../types.ts";
+import type { ArgoCdApplication, ArgoCdApplicationWatchEvent, ArgoCdKubeEvent } from "../types.ts";
 import {
   observeApplication,
   observeDeletion,
@@ -56,7 +56,15 @@ export interface CaptureLogger {
 export interface ArgoCdCaptureOptions {
   tenantId: string;
   connectionId: string;
-  client: ArgoCdClient;
+  /**
+   * The ArgoCD API client. Optional (AFE-28): without it, the capture only
+   * processes observations handed to it (`observe`, `handleWatchEvent`,
+   * `reconcileFromSnapshot`), e.g. snapshots sent by the in-cluster agent;
+   * `reconcile()` and `watch()` then throw.
+   */
+  client?: ArgoCdClient;
+  /** Set to "agent" when observations arrive from the in-cluster agent (observation.detail). */
+  transport?: ObserveContext["transport"];
   sink: EventSink;
   store: CaptureStateStore;
   /** Hook for connection health (AFE-13). Errors thrown by it are logged and ignored. */
@@ -67,6 +75,24 @@ export interface ArgoCdCaptureOptions {
   log?: CaptureLogger;
   now?: () => Date;
   jobId?: string;
+}
+
+/** Per-observation overrides, for observations made elsewhere (the in-cluster agent). */
+export interface ObserveOptions {
+  /** When the object was observed (default: now). */
+  observedAt?: Date;
+  /** Kubernetes Events of the application, instead of asking the client. */
+  appEvents?: () => Promise<ArgoCdKubeEvent[]>;
+}
+
+/** A complete list of the source's applications taken elsewhere (agent full snapshot). */
+export interface SnapshotCompletion {
+  /** uids of every application in the list. */
+  uids: readonly string[];
+  /** When the list was taken. Applications last seen after it are never treated as deleted. */
+  listedAt: Date;
+  /** Evidence text for deletions found by this snapshot. */
+  evidence?: string;
 }
 
 export interface CaptureCounts {
@@ -199,10 +225,16 @@ export class ArgoCdCapture {
     }
   }
 
+  #client(): ArgoCdClient {
+    if (!this.#o.client) throw new Error("this ArgoCD capture has no API client");
+    return this.#o.client;
+  }
+
   async #context(
     method: ObserveContext["method"],
     app: ArgoCdApplication | undefined,
     watchType?: string,
+    opts: ObserveOptions = {},
   ): Promise<ObserveContext> {
     const { client } = this.#o;
     const name = app?.metadata?.name;
@@ -210,21 +242,24 @@ export class ArgoCdCapture {
     return {
       connectionId: this.#o.connectionId,
       method,
-      observedAt: this.#now(),
+      observedAt: opts.observedAt ?? this.#now(),
       baselineAt: await this.#baselineAt(),
       ...(watchType ? { watchType } : {}),
       ...(this.#o.jobId ? { jobId: this.#o.jobId } : {}),
+      ...(this.#o.transport ? { transport: this.#o.transport } : {}),
       ...(this.#o.environmentOf ? { environmentOf: this.#o.environmentOf } : {}),
-      ...(this.#o.attributeWithEvents !== false && name
-        ? {
-            appEvents: async () =>
-              (
-                await client.listApplicationEvents(name, {
-                  ...(appNamespace ? { appNamespace } : {}),
-                })
-              ).items ?? [],
-          }
-        : {}),
+      ...(opts.appEvents
+        ? { appEvents: opts.appEvents }
+        : this.#o.attributeWithEvents !== false && name && client
+          ? {
+              appEvents: async () =>
+                (
+                  await client.listApplicationEvents(name, {
+                    ...(appNamespace ? { appNamespace } : {}),
+                  })
+                ).items ?? [],
+            }
+          : {}),
     };
   }
 
@@ -234,10 +269,11 @@ export class ArgoCdCapture {
     method: ObserveContext["method"],
     counts: CaptureCounts = emptyCounts(),
     watchType?: string,
+    opts: ObserveOptions = {},
   ): Promise<CaptureCounts> {
     const uid = app.metadata?.uid;
     if (!uid) return counts;
-    const ctx = await this.#context(method, app, watchType);
+    const ctx = await this.#context(method, app, watchType, opts);
     await this.#o.store.withApp(uid, async (prev) => {
       const r: ObserveResult = await observeApplication(prev, app, ctx);
       await this.#ingest(r.events, counts);
@@ -253,8 +289,9 @@ export class ArgoCdCapture {
     ev: DeletionEvidence,
     counts: CaptureCounts,
     watchType?: string,
+    opts: ObserveOptions = {},
   ): Promise<void> {
-    const ctx = await this.#context(method, undefined, watchType);
+    const ctx = await this.#context(method, undefined, watchType, opts);
     await this.#o.store.withApp(uid, async (prev) => {
       const r = observeDeletion(prev, ctx, ev);
       const before = counts.inserted;
@@ -279,6 +316,7 @@ export class ArgoCdCapture {
   async handleWatchEvent(
     evt: ArgoCdApplicationWatchEvent,
     counts: CaptureCounts = emptyCounts(),
+    opts: ObserveOptions = {},
   ): Promise<CaptureCounts> {
     const app = evt.application;
     const uid = app?.metadata?.uid;
@@ -290,9 +328,10 @@ export class ArgoCdCapture {
         { app, evidence: "watch DELETED event", confidence: "certain" },
         counts,
         "DELETED",
+        opts,
       );
     } else if (evt.type === "ADDED" || evt.type === "MODIFIED") {
-      await this.observe(app, "stream", counts, evt.type);
+      await this.observe(app, "stream", counts, evt.type, opts);
     } else {
       return counts;
     }
@@ -315,8 +354,9 @@ export class ArgoCdCapture {
    */
   async reconcile(): Promise<CaptureCounts> {
     const counts = emptyCounts();
-    const { client, store } = this.#o;
+    const { store } = this.#o;
     try {
+      const client = this.#client();
       await this.#baselineAt();
       const list = await client.listApplications();
       const items = list.items ?? [];
@@ -348,13 +388,48 @@ export class ArgoCdCapture {
     }
   }
 
+  /**
+   * Completes a reconciliation from a full list taken elsewhere (AFE-28: the
+   * in-cluster agent's full snapshot, whose items were already passed to
+   * `observe(app, "reconciliation")`): every live application that is not in
+   * the list and was last seen before the list was taken is recorded as
+   * deleted. A Kubernetes list is authoritative for the namespaces it covers,
+   * so the deletion is `certain`. Does not report to `onObservation`; the
+   * caller decides connection health.
+   */
+  async reconcileFromSnapshot(snapshot: SnapshotCompletion): Promise<CaptureCounts> {
+    const counts = emptyCounts();
+    const { store } = this.#o;
+    await this.#baselineAt();
+    const listed = new Set(snapshot.uids);
+    const listedAt = snapshot.listedAt.getTime();
+    for (const s of await store.listLiveApps()) {
+      if (listed.has(s.uid)) continue;
+      const seen = Math.max(Date.parse(s.lastSeenAt) || 0, Date.parse(s.firstSeenAt) || 0);
+      if (seen >= listedAt) continue; // appeared after the list was taken
+      await this.#observeDeletion(
+        s.uid,
+        "reconciliation",
+        {
+          evidence: snapshot.evidence ?? "absent from a complete list of applications",
+          confidence: "certain",
+        },
+        counts,
+        undefined,
+        { observedAt: snapshot.listedAt },
+      );
+    }
+    await store.updateConnectionState({ lastReconciledAt: snapshot.listedAt.toISOString() });
+    return counts;
+  }
+
   async #confirmAbsent(
     name: string,
     appNamespace: string | undefined,
     uid: string,
   ): Promise<DeletionEvidence | undefined> {
     try {
-      const app = await this.#o.client.getApplication(name, {
+      const app = await this.#client().getApplication(name, {
         ...(appNamespace ? { appNamespace } : {}),
       });
       if (app.metadata?.uid && app.metadata.uid !== uid) {
@@ -401,7 +476,7 @@ export class ArgoCdCapture {
       while (!controller.signal.aborted) {
         const state = await this.#o.store.getConnectionState();
         try {
-          const stream = this.#o.client.watchApplications({
+          const stream = this.#client().watchApplications({
             signal: controller.signal,
             ...(state?.resourceVersion ? { resourceVersion: state.resourceVersion } : {}),
             onOpen: () => {

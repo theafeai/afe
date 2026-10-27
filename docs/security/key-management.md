@@ -139,4 +139,5 @@ The hosted service supplies its own `KeyProvider` through `createAfe(...)`:
 - Webhook secrets and API tokens are both "credentials" and use this scheme.
 - The Afe admin token and database password are deployment configuration, not
   stored in Afe's database; manage them with the platform's secret store.
-- Integrity of the audit log uses hashing, not encryption; see the threat model.
+- Events are not encrypted or hash-chained; they are kept only for the
+  retention window (see the threat model and the data inventory).

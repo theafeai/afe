@@ -25,12 +25,12 @@ for write access (docs/security/rules.md R1).
 
 Not requested, by design:
 
-| Permission      | Why not                                                                                                                                                                                                                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contents`      | Would allow reading source code. Commit SHA, ref, actor and trigger of every run and deployment are already on the `workflow_run` and `deployment` payloads, so `push` webhooks are not needed. An operator **may** grant `contents: read` to also get `push`/`create`/`delete`/`release` events; Afe still never downloads file contents. |
-| `pull_requests` | Pull requests that triggered runs are listed on `workflow_run.pull_requests`. Optional, for `pull_request` events (`pull_request.merged`).                                                                                                                                                                                                 |
-| `checks`        | `workflow_run`/`workflow_job` cover GitHub Actions; third-party CI via checks is out of scope for now.                                                                                                                                                                                                                                     |
-| anything write  | Afe never changes anything in GitHub. It is not a deployment protection rule (that would need `deployments: write`).                                                                                                                                                                                                                       |
+| Permission      | Why not                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contents`      | Would allow reading source code. Commit SHA, ref, actor and trigger of every run and deployment are already on the `workflow_run` and `deployment` payloads, so `push` webhooks are not needed. An operator **may** grant `contents: read` to also get `push`/`create`/`delete`/`release` events and [commit containment](../containment.md) (compare API); Afe still never downloads file contents. |
+| `pull_requests` | Pull requests that triggered runs are listed on `workflow_run.pull_requests`. Optional, for `pull_request` events (`pull_request.merged`).                                                                                                                                                                                                                                                           |
+| `checks`        | `workflow_run`/`workflow_job` cover GitHub Actions; third-party CI via checks is out of scope for now.                                                                                                                                                                                                                                                                                               |
+| anything write  | Afe never changes anything in GitHub. It is not a deployment protection rule (that would need `deployments: write`).                                                                                                                                                                                                                                                                                 |
 
 ### Permission check
 
@@ -88,7 +88,7 @@ How AFE-7 triggers map onto these:
 3. `installation` / `installation_repositories` are applied inline, in the same
    transaction as the delivery record (database work only, no outbound calls):
 
-   | Delivery                                     | Connection                                 | Audit event (source `afe`)                            |
+   | Delivery                                     | Connection                                 | Event (source `afe`)                                  |
    | -------------------------------------------- | ------------------------------------------ | ----------------------------------------------------- |
    | `installation.created`                       | upsert, `active` (or `suspended`)          | `connection.created`                                  |
    | `installation.deleted`                       | `revoked`, reason "GitHub App uninstalled" | `connection.revoked`                                  |
@@ -116,7 +116,7 @@ How AFE-7 triggers map onto these:
 
 - Issue: AFE-7. Code: `packages/connector-github/src/mapping.ts` (pure mapping),
   `event-ids.ts` (idempotency keys, shared with AFE-8 polling), `raw-payload.ts`
-  (evidence redaction), and `processGitHubWebhook` in `apps/server/src/connectors/github.ts`.
+  (raw payload redaction), and `processGitHubWebhook` in `apps/server/src/connectors/github.ts`.
 - Fixtures: `packages/connector-github/test/fixtures/webhooks/*.json`, one per trigger.
 
 ### Processing a `github.webhook` job
@@ -427,7 +427,7 @@ https://docs.github.com/en/rest/packages/packages):
 
 Webhooks can be missed (failed deliveries, Afe down, webhooks switched off on the App),
 so every selected repository is also re-read through the REST API and compared with
-what the audit log holds. Whatever is missing is ingested, built by the **same AFE-7
+what Afe already stored. Whatever is missing is ingested, built by the **same AFE-7
 builders** (`workflowRunEvent`, `deploymentEvent`, `deploymentStatusEvent`, the
 review/push/pull request builders) from the REST objects, so it gets exactly the
 `sourceEventId` the webhook would have produced ([keys](#idempotency-keys-shared-with-afe-8)).
@@ -556,6 +556,11 @@ interval = max(AFE_GITHUB_RECONCILE_INTERVAL,
 | `AFE_GITHUB_BACKFILL_DAYS`      | `30`    | History imported on first install (`0` disables)                                     |
 
 `createGitHubModule({ reconcile: { … } })` overrides them (also `budgetShare`, `schedule`).
+
+`AFE_GITHUB_BACKFILL_DAYS` and `AFE_GITHUB_RECONCILE_LOOKBACK` never exceed the event
+retention window (`AFE_EVENT_RETENTION_DAYS`, ADR 0008): a longer value is clamped to it
+with a log line, and every pass starts no earlier than the retention cutoff. Events older
+than the window would be dropped at ingestion anyway.
 
 ### Honest limits
 

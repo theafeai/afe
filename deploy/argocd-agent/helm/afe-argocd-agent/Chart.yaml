@@ -1,0 +1,9 @@
+apiVersion: v2
+name: afe-argocd-agent
+description: Read-only in-cluster agent that sends ArgoCD Application changes to Afe
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/theafeai/afe
+sources:
+  - https://github.com/theafeai/afe

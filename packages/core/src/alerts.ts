@@ -5,7 +5,7 @@
  * logs and optionally POSTs JSON to a webhook; the hosted product can supply
  * email, Slack, PagerDuty... by passing its own `AlertSink`.
  *
- * Alerts are also recorded in the audit log as `connection.alert.opened` /
+ * Alerts are also recorded as `connection.alert.opened` /
  * `connection.alert.resolved` events (builders below).
  */
 import { ACTIONS } from "./actions.ts";
@@ -35,6 +35,27 @@ export interface AlertNotification {
   gapId: string | null;
   /** Start of the blind period (last successful observation). */
   blindSince: string | null;
+  /**
+   * Set for drift findings (AFE-26, kind `drift_<type>`). `connectionId` is
+   * then the connection that observed the finding's latest event ("" when
+   * unknown) and `alertId` the finding id.
+   */
+  drift?: DriftAlertDetail;
+}
+
+export interface DriftAlertDetail {
+  findingId: string;
+  type: string;
+  severity: string;
+  title: string;
+  targetKey: string;
+  targetLabel: string;
+  /** Mapped service/environment names (null = unmapped). */
+  service: string | null;
+  environment: string | null;
+  /** Link to the finding in the web UI (absolute when AFE_PUBLIC_URL is set). */
+  url: string;
+  evidenceEventIds: string[];
 }
 
 export interface AlertSink {
@@ -76,7 +97,7 @@ function alertEvent(action: string, occurredAt: string, a: AlertNotification) {
   } satisfies Omit<CanonicalEventInputLike, "observedAt">;
 }
 
-/** Audit event for an alert being raised (occurredAt = openedAt). */
+/** Event for an alert being raised (occurredAt = openedAt). */
 export function connectionAlertOpened(
   a: AlertNotification,
   observedAt: Date = new Date(),
@@ -84,7 +105,7 @@ export function connectionAlertOpened(
   return { ...alertEvent(ACTIONS.CONNECTION_ALERT_OPENED, a.openedAt, a), observedAt };
 }
 
-/** Audit event for an alert being resolved (occurredAt = resolvedAt). */
+/** Event for an alert being resolved (occurredAt = resolvedAt). */
 export function connectionAlertResolved(
   a: AlertNotification & { resolvedAt: string },
   observedAt: Date = new Date(),

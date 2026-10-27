@@ -27,8 +27,6 @@ function ev(seq: number, patch: Partial<CanonicalEvent>): EventItem {
     correlation: {},
     data: {},
     rawPayload: null,
-    prevHash: "0".repeat(64),
-    hash: "a".repeat(64),
     ...patch,
   };
   return {
@@ -172,11 +170,9 @@ describe("Timeline", () => {
       expect(last.searchParams.get("trigger")).toBe("manual");
       expect(last.searchParams.get("source")).toBe("argocd");
     });
-    // Export links carry the same filters.
-    const csv = screen.getByRole("menuitem", { name: "CSV", hidden: true }) as HTMLAnchorElement;
-    expect(csv.getAttribute("href")).toMatch(
-      /^\/api\/export\?source=argocd&actor=bob&trigger=manual&from=.*&format=csv$/,
-    );
+    // No export or audit verification in the open-source UI (ADR 0008).
+    expect(screen.queryByText("Export")).toBeNull();
+    expect(screen.queryByRole("button", { name: /verify/i })).toBeNull();
   });
 
   it("shows an error with retry when the API fails", async () => {

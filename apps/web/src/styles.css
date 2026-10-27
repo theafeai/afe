@@ -378,34 +378,6 @@ fieldset {
   border-radius: 50%;
 }
 
-/* Menus */
-.menu {
-  position: relative;
-}
-.menu summary {
-  list-style: none;
-}
-.menu summary::-webkit-details-marker {
-  display: none;
-}
-.menu-body {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-  width: 17rem;
-  display: grid;
-  gap: 0.5rem;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.15);
-  z-index: 4;
-}
-.menu-body p {
-  margin: 0;
-}
-
 /* Callouts and states */
 .callout {
   border: 1px solid var(--border);
@@ -728,14 +700,6 @@ fieldset {
 .hash {
   word-break: break-all;
 }
-.check-result.ok {
-  color: var(--ok);
-  font-weight: 600;
-}
-.check-result.bad {
-  color: var(--bad);
-  font-weight: 700;
-}
 .inline-list,
 .plain {
   list-style: none;
@@ -838,4 +802,27 @@ fieldset {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+/* Drift findings (AFE-26) */
+.severity-critical,
+.severity-high {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-color: currentColor;
+}
+.severity-medium {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+.drift-status-open {
+  color: var(--warn);
+}
+.drift-status-resolved {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.drift-evidence li {
+  margin-bottom: 0.6rem;
 }

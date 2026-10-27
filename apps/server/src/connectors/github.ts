@@ -15,10 +15,12 @@
  * `reconcileRepository` in `@afe/connector-github`.
  */
 import { createHash, randomUUID } from "node:crypto";
-import type { FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type pg from "pg";
 import {
   ACTIONS,
+  clampLookbackMs,
+  clampToRetention,
   DEFAULT_TENANT_ID,
   EventValidationError,
   sourceEventId,
@@ -28,6 +30,7 @@ import {
   type ConnectorHealthHooks,
   type JsonObject,
   type ProbeResult,
+  type RetentionPolicy,
 } from "@afe/core";
 import { Secret, verifyGitHubSignature } from "@afe/core/security";
 import {
@@ -212,6 +215,38 @@ export function loadGitHubReconcileConfig(
 }
 
 /**
+ * Keeps backfill and lookback windows inside the retention window: events
+ * older than it would be dropped at ingestion anyway (ADR 0008), so reading
+ * them only costs API rate limit. Logs a line when a setting is clamped.
+ */
+export function clampReconcileToRetention(
+  cfg: GitHubReconcileConfig,
+  retention: Pick<RetentionPolicy, "maxWindowMs">,
+  log: Pick<FastifyBaseLogger, "info">,
+): GitHubReconcileConfig {
+  const out = { ...cfg };
+  const backfill = clampLookbackMs(cfg.backfillDays * DAY_MS, retention);
+  if (backfill.clamped) {
+    out.backfillDays = Math.floor(backfill.ms / DAY_MS);
+    log.info(
+      { configured: cfg.backfillDays, used: out.backfillDays },
+      "AFE_GITHUB_BACKFILL_DAYS exceeds the event retention window; clamped to it",
+    );
+  }
+  const lookback = clampLookbackMs(cfg.lookbackMs, retention);
+  if (lookback.clamped) {
+    out.lookbackMs = lookback.ms;
+    log.info(
+      { configuredMs: cfg.lookbackMs, usedMs: out.lookbackMs },
+      "AFE_GITHUB_RECONCILE_LOOKBACK exceeds the event retention window; clamped to it",
+    );
+  }
+  return out;
+}
+
+const DAY_MS = 24 * 3600_000;
+
+/**
  * Build provenance lookups for `artifact.published` (AFE-21,
  * docs/connectors/github.md "Artifacts").
  */
@@ -279,12 +314,19 @@ export class GitHubRuntime {
 
   #reconcile: GitHubReconcileConfig | undefined;
 
-  /** Reconciliation settings: environment, then `options.reconcile`. */
+  /**
+   * Reconciliation settings: environment, then `options.reconcile`, clamped
+   * to the retention window (ADR 0008).
+   */
   get reconcileConfig(): GitHubReconcileConfig {
-    return (this.#reconcile ??= {
-      ...loadGitHubReconcileConfig(this.options.env ?? process.env),
-      ...this.options.reconcile,
-    });
+    return (this.#reconcile ??= clampReconcileToRetention(
+      {
+        ...loadGitHubReconcileConfig(this.options.env ?? process.env),
+        ...this.options.reconcile,
+      },
+      this.ctx.retention,
+      this.ctx.log,
+    ));
   }
 
   #artifacts: GitHubArtifactConfig | undefined;
@@ -542,7 +584,7 @@ function warnOnPermissions(ctx: ServerContext, connection: Connection): void {
 
 /**
  * Applies an `installation` or `installation_repositories` delivery inside the
- * caller's transaction and returns the audit events to ingest.
+ * caller's transaction and returns the events to ingest.
  */
 async function applyLifecycle(
   rt: GitHubRuntime,
@@ -1764,7 +1806,11 @@ export async function reconcileRepo(
         connectionId: connection.id,
         repository: repo,
         mode: p.mode,
-        from: p.from ?? new Date(now.getTime() - cfg.lookbackMs),
+        // Never read further back than the retention window (ADR 0008).
+        from: clampToRetention(
+          p.from ?? new Date(now.getTime() - cfg.lookbackMs),
+          await ctx.retention.cutoff(connection.tenantId, now),
+        ),
         to: p.to ?? now,
         conditional: routine,
         pushes: permissionGranted(connection, "contents"),
@@ -1951,7 +1997,7 @@ export async function ensureInstallBackfill(rt: GitHubRuntime, connection: Conne
   const cfg = rt.reconcileConfig;
   if (!cfg.enabled || cfg.backfillDays <= 0 || connection.status !== "active") return false;
   const to = new Date(rt.clock());
-  const from = new Date(to.getTime() - cfg.backfillDays * 24 * 3600_000);
+  const from = new Date(to.getTime() - cfg.backfillDays * DAY_MS);
   const { rowCount } = await rt.ctx.pool.query(
     `INSERT INTO github_backfills (tenant_id, connection_id, kind, window_from, window_to)
      VALUES ($1, $2, 'install', $3, $4) ON CONFLICT DO NOTHING`,

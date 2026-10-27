@@ -1,13 +1,16 @@
-# Event model and audit log
+# Event model
 
 This is the reference for the canonical event that every Afe integration maps
-into, the ingestion contract for connector authors, and the hash-chain
-algorithm used to verify the audit log. The design rationale is in
-[ADR 0003](decisions/0003-event-model-and-audit-log.md).
+into, the ingestion contract for connector authors, and how long events are
+kept. The design rationale is in
+[ADR 0003](decisions/0003-event-model-and-audit-log.md) (event model) and
+[ADR 0008](decisions/0008-open-source-scope-without-audit-log.md) (no audit
+log; retention).
 
 Code: `packages/core/src/` (`event.ts`, `actions.ts`, `observation-gap.ts`,
-`canonical-json.ts`, `hash-chain.ts`, `ingestion.ts`) and
-`packages/db/src/event-store.ts`, `packages/db/migrations/0002_events.sql`.
+`ingestion.ts`, `retention.ts`) and `packages/db/src/event-store.ts`,
+`packages/db/src/retention.ts`, `packages/db/migrations/0002_events.sql`,
+`0021_remove_audit_chain.sql`.
 
 ## Contents
 
@@ -18,7 +21,8 @@ Code: `packages/core/src/` (`event.ts`, `actions.ts`, `observation-gap.ts`,
 - [Observation gaps](#observation-gaps)
 - [Ingestion contract](#ingestion-contract)
 - [Idempotency keys](#idempotency-keys)
-- [Hash chain and verification](#hash-chain-and-verification)
+- [Retention](#retention)
+- [Storage](#storage)
 
 ## Event fields
 
@@ -29,10 +33,10 @@ the stored event.
 
 | Field                 | Type                     | Description                                                                                                                |
 | --------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `schemaVersion`       | `1` (stored)             | Version of this shape; part of the hash.                                                                                   |
+| `schemaVersion`       | `1` (stored)             | Version of this shape.                                                                                                     |
 | `id`                  | UUID (stored)            | Assigned by Afe.                                                                                                           |
 | `tenantId`            | string (stored)          | Owning tenant (`default` in self-hosted installs).                                                                         |
-| `seq`                 | integer (stored)         | Position in the tenant's chain: 1, 2, 3... with no gaps.                                                                   |
+| `seq`                 | integer (stored)         | Per-tenant ordering key, increasing in the order events were stored. Not gap-free: purged events leave gaps.               |
 | `source`              | string                   | Tool: `github`, `argocd`, `vercel`, or `afe` (Afe itself). Pattern `^[a-z][a-z0-9_-]{0,31}$`.                              |
 | `sourceEventId`       | string, 1..512           | Idempotency key within (tenant, source). See [Idempotency keys](#idempotency-keys).                                        |
 | `connectionId`        | string or null           | Afe connection that observed the event.                                                                                    |
@@ -43,13 +47,12 @@ the stored event.
 | `outcome`             | enum                     | `succeeded`, `failed`, `cancelled`, `in_progress`, `pending`, `skipped`, `none` (no outcome applies), `unknown` (default). |
 | `occurredAt`          | timestamp                | When it happened in the source tool.                                                                                       |
 | `observedAt`          | timestamp                | When Afe received or read it.                                                                                              |
-| `recordedAt`          | timestamp (stored)       | When Afe appended it to the log.                                                                                           |
+| `recordedAt`          | timestamp (stored)       | When Afe stored it.                                                                                                        |
 | `observation`         | object                   | Provenance: `{ method, deliveryId?, jobId?, detail? }`.                                                                    |
 | `correlation`         | object                   | Cross-tool keys. See [Correlation keys](#correlation-keys).                                                                |
 | `data`                | JSON object              | Small, action-specific details. The full source object belongs in the raw payload.                                         |
-| `rawPayload` (input)  | `{ contentType, body }`  | Raw evidence exactly as received; `body` is a string (stored as UTF-8) or bytes.                                           |
-| `rawPayload` (stored) | `{ id, sha256 }` or null | Reference to the `raw_payloads` row; the SHA-256 of the body is part of the event hash.                                    |
-| `prevHash`, `hash`    | 64 hex chars (stored)    | Hash chain. See [Hash chain](#hash-chain-and-verification).                                                                |
+| `rawPayload` (input)  | `{ contentType, body }`  | Raw payload exactly as received; `body` is a string (stored as UTF-8) or bytes.                                            |
+| `rawPayload` (stored) | `{ id, sha256 }` or null | Reference to the `raw_payloads` row and the SHA-256 of its body.                                                           |
 
 Timestamps are accepted as ISO 8601 strings with an offset (`Z` or `+02:00`)
 or `Date` objects and are stored as UTC with millisecond precision
@@ -146,6 +149,8 @@ here. Never rename or remove one: stored events keep their names.
 | `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).                                                         |
 | `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                                                                       |
 | `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).                                                               |
+| `config.mapping.changed`                               | afe            | Environment/service mapping changed; who, and before/after ([mapping](environment-mapping.md)).                                       |
+| `drift.finding.opened` / `.resolved`                   | afe            | Afe found / resolved drift: content that does not trace to Git, `data.finding` ([drift](drift.md)).                                   |
 
 The validator accepts any action that matches the pattern, so connectors can
 ship a new action before the shared list is updated; `isKnownAction()` tells
@@ -209,13 +214,13 @@ Notes on individual keys:
   lower-cased).
 - `deploymentUrls`: only the host is kept, never scheme, port, path, query or
   fragment. Preview and share URLs can carry tokens in their query string
-  (e.g. Vercel `?_vercel_share=…`, protection bypass links) and the event log is
-  append-only, so a token stored there could never be removed. The schema
+  (e.g. Vercel `?_vercel_share=…`, protection bypass links) and stored events
+  are never edited, so a token stored there would stay until the event is
+  purged. The schema
   rejects anything that is not a bare host; `deploymentUrlKey()` reduces a URL
   to its host.
 - Empty lists are dropped (absent and `[]` are the same), so adding a key does
-  not change the canonical form, and therefore the hash, of an event that does
-  not use it.
+  not change the stored form of an event that does not use it.
 - Events recorded before AFE-18 carried `upstreamCommitShas`/`deploymentUrls`
   as `data.correlationHints.{mentionedCommitShas,deploymentUrls}`. Stored
   events are immutable, so readers (the correlation prototype) read the
@@ -224,8 +229,8 @@ Notes on individual keys:
 ## Observation gaps
 
 An observation gap is a period during which a connection could not observe
-its source, so the log may be missing events for it. Gaps are recorded as
-events in the same chain, so their absence or presence is itself evidence.
+its source, so Afe may be missing events for it. Gaps are recorded as events
+next to the events they qualify, so the timeline shows them in place.
 
 - `observation_gap.opened`: `occurredAt` = gap start.
 - `observation_gap.closed`: `occurredAt` = gap end.
@@ -259,15 +264,16 @@ Connectors depend on `EventSink` from `@afe/core`, never on the database:
 interface EventSink {
   ingest(tenantId: string, input: CanonicalEventInputLike): Promise<IngestResult>;
 }
-interface IngestResult {
-  inserted: boolean; // false: already stored, `event` is the stored one
-  event: CanonicalEvent;
-}
+type IngestResult =
+  | { status: "inserted"; inserted: true; event: CanonicalEvent }
+  | { status: "duplicate"; inserted: false; event: CanonicalEvent } // the stored one
+  | { status: "expired"; inserted: false; event: null }; // outside the retention window
 ```
 
-The server passes `createPgEventSink(pool)` (`@afe/db`); tests use
-`createMemoryEventSink()` (`@afe/core`), which builds the same hash chain in
-memory.
+The server passes `createPgEventSink(pool, { retention })` (`@afe/db`); tests
+use `createMemoryEventSink({ retention? })` (`@afe/core`). `EventSink` is also
+the seam a different build can replace or wrap (`createAfe({ sink })`, ADR
+0008).
 
 Rules for connector authors:
 
@@ -286,12 +292,16 @@ Rules for connector authors:
 5. **Errors:** `EventValidationError` is a bug in the mapping; log it (without
    payload secrets) and do not retry. Any other error is transient: let the
    job retry. Retrying is always safe.
-6. **Ordering:** events may be ingested in any order; `seq` is log order, not
-   source order. Use `occurredAt` for source time.
+6. **Ordering:** events may be ingested in any order; `seq` is storage order,
+   not source order. Use `occurredAt` for source time.
 7. **First arrival wins.** If the same key arrives again (webhook after poll,
    or a retry), nothing is written and the stored event is returned. A later
    observation with more information (e.g. a final status) must be a
    _different_ event with its own key (e.g. `...:completed`), not an update.
+8. **Old events are dropped.** An event whose `occurredAt` is already outside
+   the retention window is not stored (`status: "expired"`); this is not an
+   error. Keep backfill and lookback windows inside the window
+   (`ctx.retention`, see [Retention](#retention)).
 
 ## Idempotency keys
 
@@ -322,6 +332,8 @@ state transition of one source object. Keys below are written as
 | vercel | production promotion / rollback     | `production_alias`, `<project id>`, `<previous dpl_ id or none>`, `<new dpl_ id>`, `<occurrence ms>` (AFE-30)            |
 | afe    | observation gap                     | `observation_gap`, `<gapId>`, `opened\|closed`                                                                           |
 | afe    | connection alert                    | `connection_alert`, `<alertId>`, `opened\|resolved`                                                                      |
+| afe    | mapping change                      | `config_mapping`, `<mapping revision>`                                                                                   |
+| afe    | drift finding                       | `drift_finding`, `<finding id>`, `opened\|resolved`                                                                      |
 
 GitHub keys are built by `packages/connector-github/src/event-ids.ts` and listed,
 with AFE-7's refinements (run attempt in review keys, `repository_dispatch`), in
@@ -332,52 +344,28 @@ use the source's immutable numeric/opaque id rather than names (names can be
 reused after deletion); keep each key under 512 characters. Connector issues
 (AFE-5+) may refine the table for their source, additively.
 
-## Hash chain and verification
+## Retention
 
-Each tenant's events form one chain ordered by `seq`.
+Afe keeps recent events only (ADR 0008). `RetentionPolicy` (`@afe/core`)
+gives each tenant a cutoff; the open-source default `FixedWindowRetention`
+uses `AFE_EVENT_RETENTION_DAYS` (default 30, 1..60; 60 days is the maximum of
+the open-source build and larger values stop Afe from starting).
 
-```
-hashInput(e) = JCS(e without the "hash" member)   -- RFC 8785, UTF-8
-e.hash       = lowercase hex SHA-256(hashInput(e))
-e.prevHash   = "000…0" (64 zeros) if e.seq = 1, else hash of the event with seq - 1
-```
+- Retention is measured on **`occurredAt`**, the time shown in the timeline.
+- **At ingestion**, an event whose `occurredAt` is before the cutoff is
+  dropped (`status: "expired"`). A poll, backfill or reconciliation pass that
+  re-reads an old object therefore cannot store it again, and a duplicate of
+  a purged event cannot reappear.
+- **The `retention.purge` job** (hourly) deletes, per tenant, events with
+  `occurredAt` before the cutoff and their raw payloads, in batches of 1000
+  rows per transaction, then raw payloads that no event references.
+- **Connector windows** (GitHub backfill days and reconcile lookback, Vercel
+  first-connect backfill, gap backfills) are clamped to the window, with a
+  log line when a configured value is longer.
+- `seq` numbers are never reused: purged events leave gaps.
 
-The hashed object contains every stored field listed above, including
-`tenantId`, `seq`, `prevHash`, `recordedAt` and `rawPayload.sha256`, which is
-the lowercase hex SHA-256 of the raw body bytes. Members whose value is absent
-are omitted (never serialised as `null`), so the same logical event always
-produces the same bytes. JCS ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)):
-object members sorted by UTF-16 code units, no whitespace, ECMAScript number
-formatting and `JSON.stringify` string escaping. Any RFC 8785 implementation
-plus `sha256sum` can recompute a hash, independent of Afe.
-
-Verification of events `e1..en` (in `seq` order), starting from an anchor
-(`seq 0` / genesis hash, or the last event before a slice):
-
-1. `e.tenantId` is the expected tenant, else `tenant_mismatch`.
-2. `e.seq = previous seq + 1`, else `seq_gap` (event deleted or reordered).
-3. `e.prevHash = previous hash`, else `prev_hash_mismatch` (deleted,
-   inserted, reordered, or the previous event was rewritten and rehashed).
-4. `SHA-256(hashInput(e)) = e.hash`, else `hash_mismatch` (modified).
-5. (database) the raw payload bytes hash to `e.rawPayload.sha256`, else
-   `raw_payload_mismatch`.
-6. After the last event, `(seq, hash)` equals a trusted head, else
-   `head_mismatch` (events removed from the end). In the database the head is
-   `event_chain_heads`; for exports, a head recorded or published earlier.
-
-The verifier stops at the first failure and reports its kind, the index and
-seq where it was detected, the expected and actual values, and how many events
-verified before it. APIs: `verifyChain(events, { tenantId, after,
-expectedHead })` and the streaming `ChainVerifier` in `@afe/core`;
-`verifyTenantChain(pool, tenantId)` in `@afe/db`, which reads the log in
-one consistent snapshot.
-
-Limits: the chain proves the log was not changed relative to a trusted head.
-Someone with full database control could rewrite the whole chain
-consistently; anchoring heads outside the database (exports, signed
-checkpoints) closes that gap: every export carries the chain head, which
-`GET /api/audit/verify?anchorSeq=…&anchorHash=…` checks against the live
-chain (see [export-verification.md](export-verification.md)).
+Stored events are otherwise immutable: Afe never updates an event, and the
+purge is the only deletion.
 
 ## Storage
 
@@ -390,12 +378,14 @@ Migration `0002_events.sql`:
   on `correlation`.
 - `raw_payloads` — `bytea` body, content type, sha256, size; referenced by
   `(tenant_id, raw_payload_id)`.
-- `event_chain_heads` — current `(seq, hash)` per tenant; the row locked to
-  serialise appends.
-- Triggers reject `UPDATE`, `DELETE` and `TRUNCATE` on `events` and
-  `raw_payloads`, and reject inserted events whose `prev_hash` does not link to
-  the previous event.
+- `event_sequences` — the last `seq` per tenant (migration 0021). An insert
+  increments it and holds the row lock until commit, so a tenant's seq order is
+  its commit order (query snapshots rely on this); tenants do not block each
+  other.
+- Migration 0021 removed the append-only triggers, the hash-chain columns and
+  `event_chain_heads` (ADR 0008).
 
 Read APIs in `@afe/db`: `getEvent`, `findEventBySourceId`, `listEvents`
 (tenant, `occurredAt` range, keyset cursor in `seq` order). The filtered query
-API and verifiable export (AFE-14) are in `event-query.ts`; see [api.md](api.md).
+API (AFE-14) is in `event-query.ts`; see [api.md](api.md). Purge:
+`purgeEventsBefore` in `retention.ts`.

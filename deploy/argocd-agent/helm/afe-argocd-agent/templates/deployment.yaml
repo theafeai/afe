@@ -1,0 +1,120 @@
+{{- if not .Values.afe.url }}{{ fail "afe.url is required" }}{{ end }}
+{{- if not .Values.afe.agentId }}{{ fail "afe.agentId is required" }}{{ end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "afe-argocd-agent.fullname" . }}
+  labels:
+    {{- include "afe-argocd-agent.labels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "afe-argocd-agent.fullname" . }}
+  labels:
+    {{- include "afe-argocd-agent.labels" . | nindent 4 }}
+spec:
+  # Exactly one agent per registration: two would interleave runs.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "afe-argocd-agent.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "afe-argocd-agent.selector" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "afe-argocd-agent.fullname" . }}
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: AFE_URL
+              value: {{ .Values.afe.url | quote }}
+            - name: AFE_AGENT_ID
+              value: {{ .Values.afe.agentId | quote }}
+            - name: AFE_AGENT_SECRET_FILE
+              value: /var/run/secrets/afe/secret
+            - name: AFE_AGENT_NAMESPACES
+              value: {{ if .Values.argocd.clusterWide }}"*"{{ else }}{{ join "," .Values.argocd.namespaces | quote }}{{ end }}
+            - name: AFE_AGENT_ATTRIBUTE_WITH_EVENTS
+              value: {{ .Values.argocd.attributeWithEvents | quote }}
+            - name: AFE_AGENT_BUFFER_MAX_ITEMS
+              value: {{ .Values.buffer.maxItems | quote }}
+            - name: AFE_AGENT_BUFFER_MAX_BYTES
+              value: {{ .Values.buffer.maxBytes | int64 | quote }}
+            - name: AFE_AGENT_LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            {{- if .Values.afe.caConfigMap }}
+            - name: AFE_AGENT_CA_FILE
+              value: /etc/afe-ca/ca.crt
+            {{- end }}
+          ports:
+            - name: health
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: agent-secret
+              mountPath: /var/run/secrets/afe
+              readOnly: true
+            {{- if .Values.afe.caConfigMap }}
+            - name: afe-ca
+              mountPath: /etc/afe-ca
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: agent-secret
+          secret:
+            secretName: {{ .Values.afe.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.afe.existingSecretKey }}
+                path: secret
+        {{- if .Values.afe.caConfigMap }}
+        - name: afe-ca
+          configMap:
+            name: {{ .Values.afe.caConfigMap }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

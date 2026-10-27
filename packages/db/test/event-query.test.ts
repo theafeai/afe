@@ -1,22 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
 import {
-  collectExport,
-  createDefaultAuditExporter,
   eventMatchesFilter,
   normaliseEventFilter,
-  verifyExport,
   type CanonicalEvent,
   type CanonicalEventInputLike,
   type EventFilterInput,
 } from "@afe/core";
 import {
-  getChainHead,
+  getLatestSeq,
   getRawPayload,
   ingestEvent,
   InvalidCursorError,
   listEvents,
-  openEventExport,
+  purgeEventsBefore,
   queryEvents,
   type EventOrder,
 } from "../src/index.ts";
@@ -76,7 +73,7 @@ export function seedInput(n: number, minute = n): CanonicalEventInputLike {
   };
 }
 
-async function all(pool: pg.Pool, tenant: string): Promise<CanonicalEvent[]> {
+async function allEvents(pool: pg.Pool, tenant: string): Promise<CanonicalEvent[]> {
   return (await listEvents(pool, tenant, { limit: 1000 })).events;
 }
 
@@ -120,7 +117,7 @@ describe("event query", () => {
     await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1), ($2, $2)", [tenant, other]);
     for (let n = 1; n <= 40; n++) await ingestEvent(pool, tenant, seedInput(n));
     for (let n = 1; n <= 5; n++) await ingestEvent(pool, other, seedInput(n));
-    seeded = await all(pool, tenant);
+    seeded = await allEvents(pool, tenant);
   });
   afterAll(async () => {
     await pool.end();
@@ -189,7 +186,7 @@ describe("event query", () => {
     const t = "q3";
     await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1)", [t]);
     for (let n = 1; n <= 20; n++) await ingestEvent(pool, t, seedInput(n));
-    const before = await all(pool, t);
+    const before = await allEvents(pool, t);
     let extra = 100;
     const paged = await pageAll(pool, t, {}, "desc", 4, async () => {
       // Late arrivals: older, newer and same-time occurredAt as the page boundary.
@@ -228,34 +225,32 @@ describe("event query", () => {
     const own = seeded[0]!;
     expect(await getRawPayload(pool, other, own.rawPayload!.id)).toBeNull();
     const raw = await getRawPayload(pool, tenant, own.rawPayload!.id);
-    expect(raw!.actualSha256).toBe(own.rawPayload!.sha256);
+    expect(raw!.sha256).toBe(own.rawPayload!.sha256);
     expect((await queryEvents(pool, "nobody", {})).events).toEqual([]);
-    expect(await getChainHead(pool, "nobody")).toEqual({ seq: 0, hash: "0".repeat(64) });
+    expect(await getLatestSeq(pool, "nobody")).toBe(0);
   });
 
-  it("export snapshot is consistent with its chain head while inserts continue", async () => {
+  it("a traversal keeps working when retention purges events between pages", async () => {
     const t = "q4";
     await pool.query("INSERT INTO tenants (id, name) VALUES ($1, $1)", [t]);
     for (let n = 1; n <= 12; n++) await ingestEvent(pool, t, seedInput(n));
-    const snap = await openEventExport(pool, t, {}, { includeRawPayloads: true, batchSize: 5 });
-    for (let n = 13; n <= 15; n++) await ingestEvent(pool, t, seedInput(n));
-    expect(snap.chainHead.seq).toBe(12);
-    const text = await collectExport(
-      createDefaultAuditExporter().export({
-        tenantId: t,
-        format: "json",
-        filter: {},
-        chainHead: snap.chainHead,
-        exportId: "00000000-0000-4000-8000-000000000002",
-        createdAt: new Date(),
-        includeRawPayloads: true,
-        records: snap.records,
-      }),
-    );
-    const r = verifyExport(text);
-    expect(r.errors).toEqual([]);
-    expect(r.proofs.completeChain).toBe(true);
-    expect(r.eventCount).toBe(12);
-    await snap.close();
+    const all = sortBy(await allEvents(pool, t), "asc");
+    const first = await queryEvents(pool, t, { order: "asc", limit: 4 });
+    expect(first.snapshotSeq).toBe(12);
+    // Purge the 6 oldest events (by occurredAt) while the client is paging.
+    const cutoff = new Date(all[6]!.occurredAt);
+    const purged = await purgeEventsBefore(pool, t, cutoff);
+    const expectedRest = all.slice(4).filter((e) => e.occurredAt >= all[6]!.occurredAt);
+    expect(purged.events).toBe(all.filter((e) => e.occurredAt < all[6]!.occurredAt).length);
+    const rest: CanonicalEvent[] = [];
+    let cursor = first.nextCursor;
+    while (cursor) {
+      const page = await queryEvents(pool, t, { order: "asc", limit: 4, cursor });
+      expect(page.snapshotSeq).toBe(12);
+      rest.push(...page.events);
+      cursor = page.nextCursor;
+    }
+    expect(rest.map((e) => e.seq)).toEqual(expectedRest.map((e) => e.seq));
+    expect(await getLatestSeq(pool, t)).toBe(12);
   });
 });

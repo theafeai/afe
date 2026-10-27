@@ -7,7 +7,7 @@
 
 "Integration" means any code that receives data from, or sends requests to, a
 system outside Afe: connectors (GitHub, ArgoCD, Vercel, future ones), the ArgoCD
-agent, alert sinks, exporters.
+agent, alert sinks.
 
 Helpers referenced below live in `@afe/core/security` and `@afe/db`.
 
@@ -48,7 +48,7 @@ Helpers referenced below live in `@afe/core/security` and `@afe/db`.
 3. In memory they travel as `Secret<string>`; call `.reveal()` only at the point
    of use (building the `Authorization` header, signing a JWT).
 4. **Never logged.** Not in logs, error messages, exceptions, metrics labels,
-   traces, job payloads, UI responses or exports. Errors from upstream APIs are
+   traces, job payloads or UI responses. Errors from upstream APIs are
    logged with status and request id, not with request headers.
 5. **Scoped per tenant.** Every credential belongs to exactly one tenant; every
    access passes the tenant id. A connection may only reference credentials of
@@ -130,8 +130,8 @@ the hosted service can rely on these rules without changes:
 6. Jobs carry the tenant id; workers load all state through tenant-scoped
    functions.
 7. Caches, rate-limit buckets and in-memory maps are keyed by tenant id.
-8. Hash chains are per tenant; one tenant's events never affect another
-   tenant's chain.
+8. Sequences and retention are per tenant: one tenant's events never affect
+   another tenant's ordering or purge (`event_sequences`, `retention.purge`).
 9. The hosted service may additionally enable PostgreSQL row-level security
    keyed on a per-transaction `app.tenant_id` setting; schema in this repository
    must not prevent that (no cross-tenant views or functions).
@@ -140,8 +140,8 @@ the hosted service can rely on these rules without changes:
 
 ## R6 – Outbound request safety
 
-1. Every user-supplied URL (ArgoCD server URL, GitHub Enterprise URL, alert or
-   export webhook URL) is checked with `validateOutboundUrl` when it is saved
+1. Every user-supplied URL (ArgoCD server URL, GitHub Enterprise URL, alert
+   webhook URL) is checked with `validateOutboundUrl` when it is saved
    **and** the HTTP client uses `createSafeLookup` so the resolved address is
    checked again at connect time (DNS rebinding).
 2. Policy: `https:` only; no `user:pass@`; link-local, cloud-metadata,

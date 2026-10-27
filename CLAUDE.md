@@ -8,7 +8,11 @@ Read `docs/decisions/` first (ADRs are binding). Key points:
 - Migrations: forward-only SQL in `packages/db/migrations`, named `NNNN_description.sql`.
   Never edit a migration that has been merged; add a new one.
 - Every customer-data table has `tenant_id`; every data-access function takes a tenant id.
-- The `events` table is append-only. Never UPDATE/DELETE it.
+- Events are immutable once written: never UPDATE them. The only DELETE is the
+  retention purge (`purgeEventsBefore` in `@afe/db`, job `retention.purge`, ADR 0008).
+- There is no audit log, hash chain or export in this repository (ADR 0008); do not
+  add tamper-evidence or "paid feature" placeholders. Extension seams: `EventSink`,
+  `RetentionPolicy` (`createAfe({ sink, retentionPolicy })`).
 - Never log credentials, tokens, webhook secrets or raw Authorization headers.
 - Tests: vitest, files `*.test.ts` under `src/` or `test/`. DB tests use
   `createTestPool()` from `@afe/db/testing` (resets the schema; needs Postgres at

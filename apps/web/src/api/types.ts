@@ -13,6 +13,7 @@ import type {
   Outcome,
   Trigger,
 } from "@afe/core/types";
+import type { PlacementView } from "./mapping.ts";
 
 export type {
   CanonicalEvent,
@@ -45,11 +46,6 @@ export interface EventItem {
   provenance: Provenance;
 }
 
-export interface ChainHead {
-  seq: number;
-  hash: string;
-}
-
 export interface EventDetail extends EventItem {
   rawPayload: {
     id: string;
@@ -57,17 +53,8 @@ export interface EventDetail extends EventItem {
     contentType: string | null;
     sizeBytes: number | null;
     receivedAt: string | null;
-    verified: boolean;
     url: string;
   } | null;
-  chain: {
-    seq: number;
-    prevHash: string;
-    hash: string;
-    hashVerified: boolean;
-    prevLinkVerified: boolean;
-    head: ChainHead | null;
-  };
 }
 
 interface ActorSummary {
@@ -113,30 +100,8 @@ export interface DeploymentRow {
   };
   how: Trigger;
   provenance: Provenance;
-}
-
-/** `ChainBreak` from @afe/core hash-chain.ts (not importable in the browser: node:crypto). */
-export interface ChainBreak {
-  kind: string;
-  index: number;
-  seq: number | null;
-  eventId: string | null;
-  expected: string | number | null;
-  actual: string | number | null;
-  message: string;
-}
-
-export interface AuditVerifyResult {
-  ok: boolean;
-  verification: {
-    ok: boolean;
-    count: number;
-    lastSeq: number;
-    lastHash: string;
-    break?: ChainBreak;
-  };
-  head: ChainHead | null;
-  anchor: { seq: number; hash: string; found: boolean; matches: boolean } | null;
+  /** Service/environment from the tenant's mapping (AFE-19), resolved when read. */
+  placement?: PlacementView | null;
 }
 
 // --- Connections and health (docs/connection-health.md) ---------------------

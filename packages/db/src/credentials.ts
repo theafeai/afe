@@ -148,7 +148,7 @@ export async function rotateCredential(
 
 /**
  * Revokes a credential: marks it revoked and destroys its key material, so it
- * can never be decrypted again. The metadata row is kept for the audit trail.
+ * can never be decrypted again. The metadata row (no secret) is kept so the connection shows when it changed.
  * Returns false if there was no active credential with this id in this tenant.
  */
 export async function revokeCredential(db: Db, tenantId: string, id: string): Promise<boolean> {

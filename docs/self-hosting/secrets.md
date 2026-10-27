@@ -34,8 +34,8 @@ Prefer the `_FILE` variant to `AFE_ENCRYPTION_KEY`: environment variables show
 up in `docker inspect`, process listings and crash dumps.
 
 **Back the key up separately from database backups.** If the key is lost, every
-connector credential must be re-entered (the audit log itself is not
-encrypted and is unaffected). If a database backup and the key are stolen
+connector credential must be re-entered (stored events are not
+encrypted and are unaffected). If a database backup and the key are stolen
 together, every credential is exposed.
 
 ## Rotating the encryption key

@@ -1,8 +1,13 @@
 import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
+import { containmentModule } from "../containment/index.ts";
+import { correlationModule } from "../correlation/index.ts";
+import { driftModule } from "../drift/index.ts";
 import { healthModule } from "../health/index.ts";
-import { anchorModule } from "../anchoring/index.ts";
+import { mappingModule } from "../mapping/index.ts";
+import { retentionModule } from "../retention.ts";
 import { argocdModule } from "./argocd.ts";
+import { argocdAgentModule } from "./argocd-agent.ts";
 import { githubModule } from "./github.ts";
 import { vercelModule } from "./vercel.ts";
 
@@ -13,11 +18,21 @@ import { vercelModule } from "./vercel.ts";
 export const defaultModules: ConnectorModule[] = [
   githubModule,
   argocdModule,
+  // In-cluster ArgoCD agent ingest (AFE-28).
+  argocdAgentModule,
   vercelModule,
   // Connection health (AFE-13): collects every module's `health` hooks.
   healthModule,
-  // Audit query API and verifiable export (AFE-14).
+  // Event query API (AFE-14).
   eventsApiModule,
-  // Chain anchoring outside the database (AFE-29).
-  anchorModule,
+  // Environment and service mapping (AFE-19).
+  mappingModule,
+  // Retention purge of expired events (ADR 0008).
+  retentionModule,
+  // Commit containment: is commit X in what is live (AFE-22).
+  containmentModule,
+  // Correlation: environment state, placement history, journeys, event links (AFE-20).
+  correlationModule,
+  // Drift and untracked deploy findings, with alerts (AFE-26).
+  driftModule,
 ];

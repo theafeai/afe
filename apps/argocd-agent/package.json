@@ -1,0 +1,22 @@
+{
+  "name": "@afe/argocd-agent",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Read-only in-cluster agent that sends ArgoCD Application snapshots to Afe (AFE-28)",
+  "bin": {
+    "afe-argocd-agent": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@afe/connector-argocd": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "yaml": "^2.9.1"
+  }
+}

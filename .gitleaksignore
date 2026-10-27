@@ -1,0 +1,11 @@
+# Reviewed false positives only: exact historical commit, file, rule and line.
+# Synthetic prototype data, fake test credentials, test-only TLS key, and documented placeholders.
+13f1305c94d6668c0313ac9490679ba0c59ef436:docs/research/prototypes/environments.html:generic-api-key:64
+13f1305c94d6668c0313ac9490679ba0c59ef436:docs/research/prototypes/journey.html:generic-api-key:73
+13f1305c94d6668c0313ac9490679ba0c59ef436:docs/research/prototypes/timeline.html:generic-api-key:78
+7c85c833cf3b704d99f3f85cd1bae3b33a0991fc:apps/server/test/github-artifacts.test.ts:generic-api-key:35
+9fe92e5654b21928cd10cb9332f21a9600c314b1:apps/server/test/github-events.test.ts:generic-api-key:31
+babef1df804acd884b73c2736ce22aa9b23b093b:packages/connector-argocd/test/fixtures/tls/server-key.pem:private-key:1
+eac0a85060693073058e469f03626311f0190c99:docs/security/key-management.md:generic-api-key:91
+f1a134b2dc8c463d74a9544585c5a155f375cde4:packages/connector-argocd/test/capture.test.ts:generic-api-key:326
+f4f75b794e674820e2f5cc9195a33642fde20950:apps/server/test/github-reconcile.test.ts:generic-api-key:47

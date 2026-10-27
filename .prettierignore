@@ -6,3 +6,5 @@ DCO
 NOTICE
 .claude
 docs/research/prototypes/*.html
+# Helm templates are not plain YAML
+deploy/argocd-agent/helm/*/templates

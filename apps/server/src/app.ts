@@ -3,10 +3,12 @@ import type pg from "pg";
 import { randomBytes } from "node:crypto";
 import {
   denyAllAuthProvider,
+  FixedWindowRetention,
   principalTenantResolver,
   StaticTokenAuthProvider,
   type AuthProvider,
   type EventSink,
+  type RetentionPolicy,
   type TenantResolver,
 } from "@afe/core";
 import { LOG_REDACT_OPTIONS, type KeyProvider } from "@afe/core/security";
@@ -35,7 +37,18 @@ export interface CreateAfeOptions {
   keys?: KeyProvider;
   /** Defaults to an in-process queue (tests); the CLI passes PgBossJobRunner. */
   jobs?: JobQueue;
+  /**
+   * Where events are stored (ADR 0002/0008 extension point). Default: the
+   * PostgreSQL sink, which drops events outside `retentionPolicy`'s window.
+   * A replacement (e.g. one that also copies events to a long-term store)
+   * applies its own retention rules.
+   */
   sink?: EventSink;
+  /**
+   * How long events are kept (ADR 0008 extension point). Default:
+   * `FixedWindowRetention` of `config.eventRetentionDays` (AFE_EVENT_RETENTION_DAYS, default 30).
+   */
+  retentionPolicy?: RetentionPolicy;
   connectors?: ConnectorModule[];
   /** Built web UI to serve; defaults to `config.webDir` (`AFE_WEB_DIR`). */
   webDir?: string;
@@ -134,9 +147,11 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     options.clock,
   );
 
+  const retention = options.retentionPolicy ?? new FixedWindowRetention(config.eventRetentionDays);
   const context: ServerContext = {
     pool: options.pool,
-    sink: options.sink ?? createPgEventSink(options.pool),
+    sink: options.sink ?? createPgEventSink(options.pool, { retention }),
+    retention,
     keys: options.keys ?? missingKeys,
     jobs: options.jobs ?? new InlineJobQueue(),
     config,

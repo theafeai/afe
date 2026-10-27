@@ -1,6 +1,6 @@
 /**
  * Connection health service (AFE-13): tracks the health and last successful
- * observation of every connection, records observation gaps as audit events,
+ * observation of every connection, records observation gaps as events,
  * schedules probes with backoff, enqueues backfills on recovery and raises
  * alerts when a connection has been blind for too long.
  *

@@ -387,7 +387,7 @@ describe("API authentication (AFE-27)", () => {
         "INSERT INTO tenants (id, name) VALUES ('other', 'Other') ON CONFLICT DO NOTHING",
       );
       const ev = await ingestEvent(pool, "default", event(1));
-      ids.event = ev.event.id;
+      ids.event = ev.event!.id;
       ids.argocd = (
         await upsertConnection(pool, "default", {
           source: "argocd",
@@ -469,15 +469,12 @@ describe("API authentication (AFE-27)", () => {
       }
     });
 
-    it("lists and exports only the caller's tenant", async () => {
+    it("lists only the caller's tenant", async () => {
       const lists = [
         "/api/events",
         "/api/deployments",
         "/api/connections",
         "/api/connections/argocd",
-        "/api/export?format=json",
-        "/api/audit/verify",
-        "/api/audit/anchors",
       ];
       for (const url of lists) {
         const b = await inject("GET", url, B);

@@ -1,16 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
-import {
-  createEd25519ExportSigner,
-  generateExportSigningKey,
-  verifyExport,
-  type CanonicalEventInputLike,
-} from "@afe/core";
+import type { CanonicalEventInputLike } from "@afe/core";
 import { ingestEvent } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import { buildAfe, createEventsApiModule } from "../src/index.ts";
-import { runVerifyExport } from "../src/verify-export-cli.ts";
 import { trustedTestAuth } from "./helpers/auth.ts";
 
 const SHA1 = "1111111111111111111111111111111111111111";
@@ -42,7 +36,6 @@ function ev(n: number, o: Partial<CanonicalEventInputLike> = {}): CanonicalEvent
 describe("events API", () => {
   let pool: pg.Pool;
   let app: FastifyInstance;
-  const key = generateExportSigningKey();
 
   beforeAll(async () => {
     pool = await createTestPool();
@@ -94,7 +87,6 @@ describe("events API", () => {
     // Test resolver: tenant from a header (stands in for an authenticated principal).
     const mod = createEventsApiModule({
       tenantResolver: { resolveTenant: (r) => (r.headers["x-test-tenant"] as string) ?? "default" },
-      signer: createEd25519ExportSigner(key.privateKey),
     });
     ({ app } = await buildAfe({
       authProvider: trustedTestAuth(),
@@ -149,9 +141,6 @@ describe("events API", () => {
       "/api/events?sauce=github",
       "/api/events?cursor=zzz",
       "/api/events?from=yesterday",
-      "/api/export?format=xml",
-      "/api/export?format=csv&raw=true",
-      "/api/audit/verify?anchorSeq=1",
     ]) {
       expect((await get(url)).statusCode, url).toBe(400);
     }
@@ -176,24 +165,20 @@ describe("events API", () => {
     expect(all.json().items.map((r: { seq: number }) => r.seq)).toEqual([4, 3, 1]);
   });
 
-  it("shows one event with provenance, raw payload and chain verification", async () => {
+  it("shows one event with provenance and its raw payload", async () => {
     const list = (await get("/api/events?source=vercel")).json();
     const id = list.items[0].event.id;
     const res = await get(`/api/events/${id}`);
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.provenance).toMatchObject({ method: "reconciliation", sourceEventId: "e:3" });
+    expect(body.event.seq).toBe(3);
     expect(body.rawPayload).toMatchObject({
-      verified: true,
       contentType: "text/html",
       url: `/api/events/${id}/raw`,
     });
-    expect(body.chain).toMatchObject({
-      seq: 3,
-      hashVerified: true,
-      prevLinkVerified: true,
-      head: { seq: 4 },
-    });
+    expect(body).not.toHaveProperty("chain");
+    expect(body.event).not.toHaveProperty("hash");
 
     const raw = await get(`/api/events/${id}/raw`);
     expect(raw.statusCode).toBe(200);
@@ -202,7 +187,7 @@ describe("events API", () => {
     expect(raw.headers["content-type"]).toBe("application/octet-stream");
     expect(raw.headers["x-content-type-options"]).toBe("nosniff");
     expect(raw.headers["content-disposition"]).toMatch(/^attachment/);
-    expect(raw.headers["x-afe-raw-verified"]).toBe("true");
+    expect(raw.headers["x-afe-raw-sha256"]).toMatch(/^[0-9a-f]{64}$/);
 
     expect((await get(`/api/events/${id}`, "other")).statusCode).toBe(404);
     expect((await get(`/api/events/${id}/raw`, "other")).statusCode).toBe(404);
@@ -216,87 +201,6 @@ describe("events API", () => {
     expect((await get("/api/events?actor=eve")).json().items).toEqual([]);
   });
 
-  it("verifies the chain and checks a previously recorded head", async () => {
-    const res = (await get("/api/audit/verify")).json();
-    expect(res.ok).toBe(true);
-    expect(res.verification).toMatchObject({ ok: true, count: 4 });
-    const head = res.head;
-    const anchored = (
-      await get(`/api/audit/verify?anchorSeq=${head.seq}&anchorHash=${head.hash}`)
-    ).json();
-    expect(anchored.anchor).toMatchObject({ found: true, matches: true });
-    const wrong = (await get(`/api/audit/verify?anchorSeq=2&anchorHash=${head.hash}`)).json();
-    expect(wrong.ok).toBe(false);
-    expect(wrong.anchor.matches).toBe(false);
-  });
-
-  it.each(["json", "csv"] as const)(
-    "exports %s that verifies offline, and detects tampering",
-    async (format) => {
-      const res = await get(`/api/export?format=${format}&view=deployments&environment=production`);
-      expect(res.statusCode).toBe(200);
-      expect(res.headers["content-disposition"]).toMatch(
-        /attachment; filename="afe-export-default-/,
-      );
-      const r = verifyExport(res.body, {
-        trustedPublicKeys: [key.publicKey],
-        expectedTenantId: "default",
-      });
-      expect(r.errors).toEqual([]);
-      expect(r.signature.status).toBe("valid_trusted");
-      expect(r.eventCount).toBe(2);
-      expect(r.manifest!.chainHead.seq).toBe(4);
-      expect(r.manifest!.filter.actions).toContain("argocd.sync.*");
-
-      const tampered = res.body.replace("alice", "mallory");
-      expect(verifyExport(tampered, { trustedPublicKeys: [key.publicKey] }).ok).toBe(false);
-      expect(verifyExport(res.body, { expectedTenantId: "other" }).ok).toBe(false);
-    },
-  );
-
-  it("exports the complete chain with raw payloads", async () => {
-    const res = await get("/api/export?raw=true");
-    const r = verifyExport(res.body, { trustedPublicKeys: [key.publicKey] });
-    expect(r.errors).toEqual([]);
-    expect(r.proofs.completeChain).toBe(true);
-    expect(r.manifest!.includesRawPayloads).toBe(true);
-    const other = verifyExport((await get("/api/export", "other")).body);
-    expect(other.manifest!.tenantId).toBe("other");
-    expect(other.eventCount).toBe(1);
-  });
-
-  it("serves the export public key", async () => {
-    expect((await get("/api/export/public-key")).json()).toEqual({
-      algorithm: "ed25519",
-      keyId: key.keyId,
-      publicKey: key.publicKey,
-    });
-  });
-
-  it("afe verify-export CLI verifies and reports failures", async () => {
-    const body = (await get("/api/export?format=csv")).body;
-    const files: Record<string, string> = {
-      "good.csv": body,
-      "bad.csv": body.replaceAll("octocat", "octodog"),
-      "key.txt": key.publicKey,
-    };
-    let out = "";
-    const io = {
-      readFile: async (p: string) => new TextEncoder().encode(files[p]!),
-      out: (t: string) => void (out += t),
-    };
-    expect(
-      await runVerifyExport(["good.csv", "--public-key", "key.txt", "--require-signature"], io),
-    ).toBe(0);
-    expect(out).toMatch(/^VERIFIED/);
-    expect(out).toMatch(/complete chain proven: {2}yes/);
-    out = "";
-    expect(await runVerifyExport(["bad.csv"], io)).toBe(1);
-    expect(out).toMatch(/^FAILED/);
-    expect(out).toMatch(/hash_mismatch/);
-    expect(await runVerifyExport([], io)).toBe(2);
-  });
-
   it("is registered by default", async () => {
     const { app: def } = await buildAfe({
       authProvider: trustedTestAuth(),
@@ -305,9 +209,20 @@ describe("events API", () => {
       connectors: (await import("../src/index.ts")).defaultModules,
     });
     expect((await def.inject({ method: "GET", url: "/api/events" })).statusCode).toBe(200);
-    expect((await def.inject({ method: "GET", url: "/api/export/public-key" })).statusCode).toBe(
-      404,
-    );
+    // Export, audit verification and chain anchoring are not part of Afe (ADR 0008).
+    for (const url of [
+      "/api/export",
+      "/api/export?format=csv",
+      "/api/export/public-key",
+      "/api/audit/verify",
+      "/api/audit/anchors",
+    ]) {
+      expect((await def.inject({ method: "GET", url })).statusCode, url).toBe(404);
+    }
+    expect(
+      (await def.inject({ method: "POST", url: "/api/audit/anchors/verify", payload: {} }))
+        .statusCode,
+    ).toBe(404);
     await def.close();
   });
 });

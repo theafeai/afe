@@ -1,20 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildChainedEvent,
+  buildStoredEvent,
   EventFilterError,
   eventMatchesFilter,
   filterFingerprint,
-  GENESIS_HASH,
   normaliseEventFilter,
   parseEventFilterParams,
   parseEventInput,
 } from "../src/index.ts";
 import { deploymentInput, SHA } from "./fixtures.ts";
 
-const event = buildChainedEvent({
+const event = buildStoredEvent({
   tenantId: "t",
   seq: 1,
-  prevHash: GENESIS_HASH,
   input: parseEventInput(deploymentInput()),
   rawPayload: null,
 });

@@ -10,8 +10,12 @@ import {
 } from "./pages/Connect.tsx";
 import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
+import { EnvironmentMatrix } from "./pages/EnvironmentMatrix.tsx";
+import { DriftFindingPage, DriftPage } from "./pages/Drift.tsx";
 import { EventDetailPage } from "./pages/EventDetail.tsx";
+import { JourneyPage } from "./pages/Journey.tsx";
 import { LoginPage } from "./pages/Login.tsx";
+import { MappingPage } from "./pages/Mapping.tsx";
 import { Timeline } from "./pages/Timeline.tsx";
 import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx";
 
@@ -23,16 +27,17 @@ import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx"
  */
 export function Routes() {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (pathname === "/" || pathname === "") navigate("/events", { replace: true });
-  }, [pathname, navigate]);
 
   let m: Record<string, string> | null;
-  if (pathname === "/" || matchPath("/events", pathname)) return <Timeline />;
+  if (pathname === "/" || pathname === "") return <EnvironmentMatrix />;
+  if (matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
+  if (matchPath("/journeys", pathname)) return <JourneyPage />;
+  if (matchPath("/drift", pathname)) return <DriftPage />;
+  if ((m = matchPath("/drift/:id", pathname))) return <DriftFindingPage key={m.id} id={m.id!} />;
   if (matchPath("/connections", pathname)) return <Connections />;
+  if (matchPath("/settings/mapping", pathname)) return <MappingPage />;
   if (matchPath("/connections/github", pathname)) return <ConnectGitHub />;
   if (matchPath("/connections/argocd", pathname)) return <ConnectArgoCD />;
   if (matchPath("/connections/vercel", pathname)) return <ConnectVercel />;
@@ -52,9 +57,12 @@ export function Routes() {
 }
 
 const NAV = [
+  { to: "/", label: "Environments" },
   { to: "/events", label: "Events" },
   { to: "/deployments", label: "Deployments" },
+  { to: "/drift", label: "Drift" },
   { to: "/connections", label: "Connections" },
+  { to: "/settings/mapping", label: "Mapping" },
 ];
 
 function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () => void }) {
@@ -64,7 +72,7 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <Link to="/events" className="brand" aria-label="Afe home">
+      <Link to="/" className="brand" aria-label="Afe home">
         Afe
       </Link>
       <nav aria-label="Main">
@@ -131,7 +139,7 @@ function Shell() {
   // Signed in already: the login URL just continues to the app.
   useEffect(() => {
     if (auth.status === "signed-in" && pathname === "/login") {
-      navigate("/events", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [auth.status, pathname, navigate]);
 
