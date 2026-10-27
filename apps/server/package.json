@@ -11,7 +11,7 @@
     "afe": "./dist/cli.js"
   },
   "scripts": {
-    "dev": "tsx watch src/cli.ts all",
+    "dev": "AFE_HOST=${AFE_HOST:-127.0.0.1} tsx watch src/cli.ts all",
     "build": "tsup"
   },
   "dependencies": {
