@@ -43,6 +43,7 @@ export const CLIENT_ROUTE_ROOTS = [
   "login",
   "settings",
   "journeys",
+  "drift",
 ] as const;
 
 /**

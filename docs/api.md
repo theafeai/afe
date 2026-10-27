@@ -60,6 +60,7 @@ resources answer `404`.
 | `GET /api/environments/:service/:environment/history` | Placements of one matrix cell over time, with their causes                                 |
 | `GET /api/journeys`                                   | Where a commit went: change → CI → artifact → config → deploy → runtime                    |
 | `GET /api/events/:id/links`                           | Events related to one event, with typed evidence and confidence                            |
+| `/api/drift/...`                                      | Drift and untracked deploy findings, settings (see [below](#drift-findings))               |
 
 Errors: `400 {"error":"bad_request","message":...}` for invalid parameters
 (including unknown parameters: a typo never silently widens a query),
@@ -589,3 +590,133 @@ member (see [correlation.md](correlation.md#linking-core)). `placement` is
 set when the event put something live (as in the matrix, plus its `target`
 and whether it is `current`). `404` for unknown ids and other tenants'
 events; `inWindow: false` for events without correlation keys.
+
+## Drift findings
+
+Drift and untracked deploy detection (AFE-26): placements whose content does
+not trace to Git. How findings are derived, resolved, alerted and retained:
+[drift.md](drift.md). Reads are viewer access, `PUT /api/drift/settings` is
+admin; everything is scoped to the caller's tenant (another tenant's finding
+id answers `404`). Reads first bring the findings up to date with the
+correlation window (cheap when nothing changed). Unknown query parameters
+answer `400`.
+
+### `GET /api/drift/findings`
+
+Most recently seen first. Filters (all optional): `status` (`open`,
+`resolved`, `all`; default `all`), `type` and `severity` (comma-separated),
+`service` and `environment` (mapping ids or `_unmapped`), `target` (a
+correlation target key, e.g. `argocd:argocd/shop-api-production`), `limit`
+(1–200, default 50), `cursor` (from `nextCursor`).
+
+```json
+{
+  "evaluatedAt": "2026-10-27T10:00:00.000Z",
+  "counts": { "open": 3, "resolved": 1 },
+  "findings": [
+    {
+      "id": "…",
+      "type": "manual_override",
+      "severity": "high",
+      "status": "open",
+      "title": "Manual image override on shop-api-production",
+      "explanation": "The ArgoCD Application's image/parameter overrides were changed outside Git (via cli by alice), pointing at ghcr.io/acme/shop-api:hotfix-1022. 1 sync ran the overridden content.",
+      "target": {
+        "key": "argocd:argocd/shop-api-production",
+        "source": "argocd",
+        "label": "shop-api-production",
+        "toolEnvironment": "production"
+      },
+      "service": { "id": "shop-api", "name": "Shop API" },
+      "environment": { "id": "production", "name": "Production" },
+      "firstSeenAt": "…",
+      "lastSeenAt": "…",
+      "resolvedAt": null,
+      "openingEventId": "…",
+      "resolvedByEventId": null,
+      "evidenceCount": 2,
+      "url": "/api/drift/findings/…"
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`counts` are per status with the other filters applied. `type`:
+`manual_override`, `untracked_deploy`, `unknown_image`,
+`ambiguous_attribution`, `out_of_band_change` (open set: extra detectors may
+add types). `severity`: `info`, `low`, `medium`, `high`, `critical`.
+`service`/`environment` are `null` when unmapped.
+
+### `GET /api/drift/findings/:id`
+
+`{ "finding": { ... } }`: the summary fields plus
+
+- `evidence[]`: `{eventId, role, at, summary, available, url}`. `role`:
+  `override`, `placement`, `build`, `conflict`, `git_deploy`, `related`,
+  `resolution`. `available: false` and `url: null` when the event was purged
+  by retention (the summary is kept). `evidenceOmitted`: entries not listed.
+- `eventsPurged`: how many referenced events are no longer stored.
+- `latestEventId`, `details` (type-specific: images, override fields,
+  commits, the Git deploy compared with…), `journeys[]`
+  (`{repository, commitSha, url}` → `GET /api/journeys`).
+- `alert`: `{enabled, typeAlertsNow, openedNotifiedAt, resolvedNotifiedAt}`.
+- `detectedAt`, `updatedAt`.
+
+### `GET /api/drift/summary`
+
+Open findings for an environment matrix badge:
+
+```json
+{
+  "evaluatedAt": "…",
+  "open": 3,
+  "cells": [
+    {
+      "service": "shop-api",
+      "environment": "production",
+      "open": 1,
+      "maxSeverity": "high",
+      "byType": { "manual_override": 1 }
+    }
+  ],
+  "targets": [
+    {
+      "targetKey": "argocd:argocd/shop-api-production",
+      "open": 1,
+      "maxSeverity": "high",
+      "byType": { "manual_override": 1 }
+    }
+  ]
+}
+```
+
+`cells` use the same ids as `GET /api/environments/state` (`_unmapped` for
+unmapped); `targets` match its `targets[].key`.
+
+### `GET /api/drift/settings`, `PUT /api/drift/settings`
+
+```json
+{
+  "types": [
+    "manual_override",
+    "untracked_deploy",
+    "unknown_image",
+    "ambiguous_attribution",
+    "out_of_band_change"
+  ],
+  "severityLevels": ["info", "low", "medium", "high", "critical"],
+  "defaults": { "manual_override": "high", "...": "…" },
+  "alertTypes": ["manual_override", "untracked_deploy"],
+  "alertTypesSource": "environment",
+  "severityOverrides": {},
+  "severities": { "manual_override": "high", "...": "…" },
+  "updatedAt": null
+}
+```
+
+`PUT` (admin) takes `{"alertTypes": [...] | null, "severities": {type: severity}}`
+(both optional; `alertTypes: null` returns to `AFE_DRIFT_ALERTS`;
+`severities` replaces the overrides). Invalid types or severities answer
+`400`. Alerting applies to findings that open after the change; severities
+apply at the next evaluation (the next read).

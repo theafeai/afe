@@ -803,3 +803,26 @@ fieldset {
   align-items: center;
   gap: 0.75rem;
 }
+
+/* Drift findings (AFE-26) */
+.severity-critical,
+.severity-high {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-color: currentColor;
+}
+.severity-medium {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+.drift-status-open {
+  color: var(--warn);
+}
+.drift-status-resolved {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.drift-evidence li {
+  margin-bottom: 0.6rem;
+}
