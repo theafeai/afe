@@ -73,9 +73,8 @@ describe("API client", () => {
     expect(err.code).toBe("invalid_response");
   });
 
-  it("builds export URLs with the current filters", () => {
-    expect(api.exportUrl(new URLSearchParams("source=argocd"), "csv")).toBe(
-      "/api/export?source=argocd&format=csv",
-    );
+  it("has no export or audit endpoints (ADR 0008)", () => {
+    expect(Object.keys(api)).not.toContain("exportUrl");
+    expect(Object.keys(api)).not.toContain("verifyAuditLog");
   });
 });

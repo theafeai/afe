@@ -38,7 +38,7 @@ data:
 | Policy line         | Why Afe needs it                                                                                                           |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `applications, get` | List and watch applications; read sync status, operation state and history (who synced which revision). Required.          |
-| `projects, get`     | Resolve project names/destinations for the audit target. Optional; drop it if you do not want Afe to see project settings. |
+| `projects, get`     | Resolve project names/destinations for the event target. Optional; drop it if you do not want Afe to see project settings. |
 | `clusters, get`     | Map destination server URLs to cluster names. Optional; Afe falls back to the destination URL.                             |
 | `g, afe, role:...`  | Binds the account to the role.                                                                                             |
 
@@ -156,7 +156,9 @@ All are covered by `applications, get`. Nothing is written to ArgoCD.
 Both paths call the same `observeApplication(prev, app)`, serialised per
 application (Postgres advisory lock), and emit only what changed relative to
 the stored per-application state. Events that occurred before capture started
-for the connection (`baseline_at`) are recorded with method `backfill`.
+for the connection (`baseline_at`) are recorded with method `backfill`; history
+entries older than the event retention window (`AFE_EVENT_RETENTION_DAYS`) are not
+stored (ADR 0008).
 
 ### What is recorded
 

@@ -10,8 +10,15 @@ export {
   type SendOptions,
 } from "./jobs.ts";
 export * from "./health/index.ts";
-export * from "./anchoring/index.ts";
 export * from "./mapping/index.ts";
+export {
+  createRetentionModule,
+  retentionModule,
+  runRetentionPurge,
+  RETENTION_JOBS,
+  type RetentionModuleOptions,
+  type RetentionRunResult,
+} from "./retention.ts";
 export {
   createEventsApiModule,
   deploymentRow,

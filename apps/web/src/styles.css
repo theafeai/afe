@@ -378,34 +378,6 @@ fieldset {
   border-radius: 50%;
 }
 
-/* Menus */
-.menu {
-  position: relative;
-}
-.menu summary {
-  list-style: none;
-}
-.menu summary::-webkit-details-marker {
-  display: none;
-}
-.menu-body {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-  width: 17rem;
-  display: grid;
-  gap: 0.5rem;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 0.15);
-  z-index: 4;
-}
-.menu-body p {
-  margin: 0;
-}
-
 /* Callouts and states */
 .callout {
   border: 1px solid var(--border);
@@ -727,14 +699,6 @@ fieldset {
 }
 .hash {
   word-break: break-all;
-}
-.check-result.ok {
-  color: var(--ok);
-  font-weight: 600;
-}
-.check-result.bad {
-  color: var(--bad);
-  font-weight: 700;
 }
 .inline-list,
 .plain {

@@ -1,6 +1,6 @@
 # ADR 0003: Canonical event model and append-only audit log
 
-- Status: Accepted
+- Status: Superseded by ADR 0008 (append-only audit log, hash chain, verification and export removed; the event model and idempotent ingestion remain)
 - Date: 2026-10-26
 - Issue: AFE-4
 

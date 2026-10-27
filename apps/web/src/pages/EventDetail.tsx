@@ -14,14 +14,6 @@ import {
 import { formatBytes, formatDateTime, formatDuration, humanize } from "../format.ts";
 import { Link } from "../router.tsx";
 
-function Check({ ok, yes, no }: { ok: boolean; yes: string; no: string }) {
-  return (
-    <span className={`check-result ${ok ? "ok" : "bad"}`}>
-      <span aria-hidden="true">{ok ? "✓" : "✗"}</span> {ok ? yes : no}
-    </span>
-  );
-}
-
 function actorText(a: ActorRef | undefined) {
   if (!a) return null;
   const bits = [a.login, a.name && a.name !== a.login ? a.name : null, a.email].filter(Boolean);
@@ -66,7 +58,7 @@ export function EventDetailPage({ id }: { id: string }) {
       </div>
     );
   if (!data) return null;
-  const { event: e, provenance: p, rawPayload: raw, chain } = data;
+  const { event: e, provenance: p, rawPayload: raw } = data;
   const lag = new Date(e.observedAt).getTime() - new Date(e.occurredAt).getTime();
   const correlation = Object.entries(e.correlation ?? {}).filter(
     ([, v]) => Array.isArray(v) && v.length > 0,
@@ -184,66 +176,32 @@ export function EventDetailPage({ id }: { id: string }) {
       </div>
 
       <section className="card">
-        <h2>Integrity</h2>
-        <KeyValue
-          items={[
-            ["Chain position", `seq ${chain.seq}${chain.head ? ` of ${chain.head.seq}` : ""}`],
-            [
-              "Event hash",
-              <code key="h" className="hash">
-                {chain.hash}
-              </code>,
-            ],
-            [
-              "Hash check",
-              <Check
-                key="hc"
-                ok={chain.hashVerified}
-                yes="event re-hashes to its stored hash"
-                no="event content does not match its hash (modified)"
-              />,
-            ],
-            [
-              "Previous hash",
-              <code key="p" className="hash">
-                {chain.prevHash}
-              </code>,
-            ],
-            [
-              "Link check",
-              <Check
-                key="lc"
-                ok={chain.prevLinkVerified}
-                yes="linked to the previous event"
-                no="previous hash does not match (chain broken)"
-              />,
-            ],
-            [
-              "Raw payload",
-              raw ? (
-                <span key="r">
-                  <Check
-                    ok={raw.verified}
-                    yes="stored bytes match their SHA-256"
-                    no="stored bytes do NOT match their SHA-256"
-                  />
-                  <br />
-                  <code className="hash">{raw.sha256}</code>
-                  <br />
-                  {raw.contentType ?? "unknown type"}, {formatBytes(raw.sizeBytes)} ·{" "}
-                  <a href={raw.url} download>
-                    Download raw payload
-                  </a>
-                </span>
-              ) : (
-                "none (recorded by Afe itself)"
-              ),
-            ],
-          ]}
-        />
+        <h2>Raw payload</h2>
+        {raw ? (
+          <KeyValue
+            items={[
+              ["Content type", raw.contentType ?? "unknown type"],
+              ["Size", formatBytes(raw.sizeBytes)],
+              [
+                "SHA-256",
+                <code key="h" className="hash">
+                  {raw.sha256}
+                </code>,
+              ],
+              [
+                "Download",
+                <a key="d" href={raw.url} download>
+                  Download raw payload
+                </a>,
+              ],
+            ]}
+          />
+        ) : (
+          <p className="muted">None (recorded by Afe itself).</p>
+        )}
         <p className="small muted">
-          These checks cover this event only. Use “Verify audit log” on the Events page to check the
-          whole chain.
+          The payload as received from the source, kept for debugging. It is deleted together with
+          the event when the event leaves the retention window.
         </p>
       </section>
 

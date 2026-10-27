@@ -3,8 +3,9 @@
 - Status: Binding (AFE-5). New stored fields must be added here in the same PR
   (rule R8 in [`rules.md`](rules.md)).
 
-Afe answers "who deployed what, to where, and when". It stores what is needed to
-answer that with evidence, and deliberately nothing more.
+Afe answers "who deployed what, to where, and when" for the recent past. It
+stores what is needed to answer that, deliberately nothing more, and only for
+a limited time (see "Retention and deletion").
 
 ## What Afe stores
 
@@ -13,8 +14,7 @@ answer that with evidence, and deliberately nothing more.
 | Tenants                                  | id, name                                                                                                                                                                                                                             | `tenants`                                             | Low                                  |
 | Canonical deployment events              | source, event type, time, target environment/app/project, commit SHA, ref, status, actor                                                                                                                                             | `events`                                              | Confidential (business)              |
 | Actor identity as reported by the source | GitHub login and numeric id, Vercel user id/username, ArgoCD username/SSO subject                                                                                                                                                    | `events`                                              | Personal data                        |
-| Raw source payloads (evidence)           | webhook bodies and API responses for deployment-related resources                                                                                                                                                                    | `raw_payloads`                                        | Confidential; may hold personal data |
-| Hash chain values                        | per-event hash, previous hash                                                                                                                                                                                                        | `events`                                              | Low                                  |
+| Raw source payloads (debugging)          | webhook bodies and API responses for deployment-related resources                                                                                                                                                                    | `raw_payloads`                                        | Confidential; may hold personal data |
 | Connection configuration                 | tool kind, ArgoCD server URL, GitHub installation id, Vercel team id, custom CA certificate; ArgoCD version, account name and read-only check result                                                                                 | connection tables (connectors)                        | Confidential                         |
 | Encrypted credentials                    | ciphertext, wrapped data key, nonce, key id, kind, timestamps                                                                                                                                                                        | `credentials`                                         | Secret (encrypted)                   |
 | Webhook delivery ids                     | source, delivery id, received time, tenant id                                                                                                                                                                                        | `webhook_deliveries`                                  | Low                                  |
@@ -53,15 +53,32 @@ the paths they strip and test it.
 
 ## Retention and deletion
 
-- Open-source default: keep forever (`RetentionPolicy` extension point).
-- Credentials: deleted logically by revocation, which destroys the ciphertext;
-  the metadata row stays for the audit trail.
-- Webhook delivery ids: may be pruned after 30 days.
-- Hosted: per-plan retention with signed deletion records (paid repository).
+Afe keeps events for a fixed window and then deletes them (ADR 0008). This
+bounds how much personal data Afe holds and for how long, which is a privacy
+improvement over keeping an indefinite history.
+
+| Data                                           | Kept for                                                          | Deleted by                                                                                                                       |
+| ---------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Events (incl. actor identities, `data`)        | `AFE_EVENT_RETENTION_DAYS` after `occurredAt`: default 30, max 60 | `retention.purge` job, hourly; events already older are never stored                                                             |
+| Raw payloads                                   | as long as their event                                            | the same purge, in the same transaction as the event; unreferenced payloads older than the window too                            |
+| Observation gaps and alerts recorded as events | as events                                                         | the same purge (current health state stays in `connection_health`)                                                               |
+| Webhook delivery ids                           | replay window (may be pruned after 30 days)                       | `pruneWebhookDeliveries`                                                                                                         |
+| Credentials                                    | until revoked or rotated                                          | revocation destroys the ciphertext; the metadata row (kind, timestamps, no secret) stays so the connection shows when it changed |
+| Connection configuration and capture state     | while the connection exists                                       | not purged by retention (contains no event history)                                                                              |
+
+- The window is measured on the event's `occurredAt` (when it happened in the
+  source).
+- 60 days is the maximum of the open-source build; a larger value stops Afe
+  from starting.
+- Deleted rows remain in database backups until those expire; size backup
+  retention accordingly.
+- `RetentionPolicy` is an extension point: another build can supply its own.
 
 ## Personal data
 
-Actor identifiers are personal data. They are the point of an audit log, so
-they are kept for the retention period. Self-hosters are the controller; the
-hosted service acts as processor. Erasure requests are handled by the
-`RetentionPolicy` with a signed deletion record so the chain stays verifiable.
+Actor identifiers (logins, user ids, names, emails where the source only
+identifies the actor by email) are personal data. Afe needs them to show who
+deployed what, and keeps them only for the retention window. Self-hosters are
+the controller. An erasure request for a person can be met by waiting for the
+window to pass, or by deleting that person's events earlier with SQL; events
+have no hash chain, so nothing else needs to change.

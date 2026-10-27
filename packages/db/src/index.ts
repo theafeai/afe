@@ -25,12 +25,17 @@ export {
   getEvent,
   ingestEvent,
   listEvents,
-  verifyTenantChain,
   type EventPage,
+  type IngestOptions,
   type ListEventsOptions,
   type Queryable,
-  type VerifyTenantChainOptions,
 } from "./event-store.ts";
+export {
+  listTenantsWithEvents,
+  purgeEventsBefore,
+  type PurgeOptions,
+  type PurgeResult,
+} from "./retention.ts";
 export {
   attachConnectionCredential,
   findConnectionByExternalId,
@@ -75,26 +80,11 @@ export {
   type ObservationGapRecord,
 } from "./connection-health.ts";
 export {
-  getAnchorState,
-  getEventHashesBySeq,
-  getLatestAnchorReceipts,
-  insertAnchorReceipt,
-  listAnchorReceipts,
-  listChainHeadsAcrossTenants,
-  recordAnchorAttempt,
-  type ChainAnchorState,
-  type ListAnchorReceiptsOptions,
-  type StoredAnchorReceipt,
-} from "./chain-anchors.ts";
-export {
   eventFilterSql,
-  getChainHead,
-  getEventBySeq,
+  getLatestSeq,
   getRawPayload,
   InvalidCursorError,
-  openEventExport,
   queryEvents,
-  type EventExportSnapshot,
   type EventOrder,
   type QueryEventsOptions,
   type QueryEventsPage,

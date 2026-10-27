@@ -5,19 +5,25 @@ import type {
   ConnectorHealthHooks,
   EventSink,
   HealthReporter,
+  RetentionPolicy,
   TenantResolver,
 } from "@afe/core";
 import type { KeyProvider } from "@afe/core/security";
 import type { AfeConfig } from "./config.ts";
 import type { JobDefinition, JobQueue } from "./jobs.ts";
-import type { AnchorService } from "./anchoring/service.ts";
 import type { MappingService } from "./mapping/service.ts";
 
 /** Shared services handed to every connector module and server feature. */
 export interface ServerContext {
   pool: pg.Pool;
-  /** Append events to the audit log. Connectors never write events directly. */
+  /** Store events. Connectors never write events directly. */
   sink: EventSink;
+  /**
+   * How long events are kept (ADR 0008). The sink drops events outside the
+   * window; connectors clamp backfill/lookback windows to it; the
+   * `retention.purge` job deletes what falls out of it.
+   */
+  retention: RetentionPolicy;
   keys: KeyProvider;
   jobs: JobQueue;
   config: AfeConfig;
@@ -37,11 +43,6 @@ export interface ServerContext {
   auth: AuthProvider;
   /** Maps the authenticated principal to its tenant (ADR 0002). */
   tenantResolver: TenantResolver;
-  /**
-   * Chain anchoring (AFE-29), set when the anchor module is registered. Used by
-   * `/api/audit/verify` (anchor status) and exports (embedded receipts).
-   */
-  anchors?: Pick<AnchorService, "status" | "receiptsForExport">;
   /**
    * Environment/service mapping (AFE-19), set when the mapping module is
    * registered. Resolves events to a service and environment at read time.

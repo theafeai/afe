@@ -96,7 +96,7 @@ them are dropped.
 | User        | Read   | `GET /v2/user`: identify the account (personal accounts, actor ids)    |
 | Team        | Read   | `GET /v2/teams/{id}`: team name and health check                       |
 | Projects    | Read   | `GET /v9/projects`: project selection; mapping deployments to projects |
-| Deployments | Read   | `GET /v6/deployments`, `GET /v13/deployments/{id}`: the audited data   |
+| Deployments | Read   | `GET /v6/deployments`, `GET /v13/deployments/{id}`: the observed data  |
 
 Afe uses only two non-GET calls, both to manage its own access:
 
@@ -109,7 +109,7 @@ stripped from every API response and webhook payload.
 ## Event capture
 
 Afe records every way a Vercel deployment can happen, and who caused it, as
-canonical audit events ([event model](../event-model.md)). Code:
+canonical events ([event model](../event-model.md)). Code:
 `packages/connector-vercel/src/mapping.ts` (mapping), `capture.ts` (webhooks,
 promotion/rollback state), `polling.ts` (poll, backfill, reconciliation), wired
 in `apps/server/src/connectors/vercel.ts`; state in migration
@@ -121,7 +121,7 @@ in `apps/server/src/connectors/vercel.ts`; state in migration
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------- | -------------------- |
 | `vercel.webhook` job     | A signed deployment webhook arrived                                                                                     | `webhook`            |
 | `vercel.poll` job        | Every 3 minutes per active connection (`vercel.poll.dispatch` cron, `pollSchedule` option), and after selection changes | `reconciliation`     |
-| First poll / new project | History of the last 30 days (`backfillDays` option)                                                                     | `backfill`           |
+| First poll / new project | History of the last 30 days (`backfillDays` option), never more than the retention window (clamped, logged)             | `backfill`           |
 | Health `backfill` hook   | AFE-13 re-observes `[from, to]` after an observation gap                                                                | `reconciliation`     |
 
 Webhooks are for speed; correctness does not depend on them. With webhooks

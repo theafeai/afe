@@ -94,7 +94,7 @@ export function MappingPage() {
           <p className="lede">
             How deployments from GitHub, ArgoCD and Vercel are grouped into services (rows) and
             environments (columns). Rules apply when events are read: changing them never rewrites
-            the audit log, and every change is itself recorded in it.
+            recorded events, and every change is itself recorded as an event.
           </p>
         </div>
       </header>

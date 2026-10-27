@@ -267,7 +267,7 @@ describe("vercel event capture", () => {
     });
     expect(byKey("deployment:dpl_staging:created")!.target.environment).toBe("staging");
 
-    // Raw evidence is the API object, without env values.
+    // The raw payload is the API object, without env values.
     const raw = sink.rawPayloads.get(git.rawPayload!.id)!;
     expect(Buffer.from(raw.body).toString()).toContain("dpl_git");
     // Read-only and project-scoped.

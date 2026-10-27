@@ -1,8 +1,6 @@
 /**
- * Audit query filter (AFE-14): the one definition of "which events" shared by
- * the SQL query layer (`@afe/db` event-query.ts), the HTTP API, the export
- * manifest and the offline export verifier (which re-checks that every
- * exported event matches the filter stated in the manifest).
+ * Event query filter (AFE-14): the one definition of "which events" shared by
+ * the SQL query layer (`@afe/db` event-query.ts), the HTTP API and the web UI.
  *
  * Semantics: values within one field are OR-ed, fields are AND-ed. String
  * matching is exact unless documented otherwise. See docs/api.md.
@@ -10,7 +8,7 @@
 import { ACTION_PATTERN } from "./actions.ts";
 import { canonicalJson } from "./canonical-json.ts";
 import { repositoryKey, type CanonicalEvent } from "./event.ts";
-import { sha256Hex } from "./hash-chain.ts";
+import { sha256Hex } from "./digest.ts";
 
 /** A normalised filter. Every list is de-duplicated and sorted; absent = no constraint. */
 export interface EventFilter {
@@ -221,7 +219,7 @@ function normaliseTime(key: string, raw: string | Date): string {
 /**
  * Builds a filter from query-string parameters. Throws `EventFilterError` for
  * unknown parameters unless they are listed in `allowExtra` (so a typo can
- * never silently widen a query or an export).
+ * never silently widen a query).
  */
 export function parseEventFilterParams(
   query: Record<string, unknown>,
@@ -290,8 +288,7 @@ export function repositoryFilterKey(value: string): string | null {
 /**
  * Pure implementation of the filter semantics. The SQL query layer must
  * select exactly the events for which this returns true (tests check both
- * against each other); the export verifier uses it to check every exported
- * event against the manifest's filter.
+ * against each other).
  */
 export function eventMatchesFilter(event: CanonicalEvent, filter: EventFilter): boolean {
   const f = filter;

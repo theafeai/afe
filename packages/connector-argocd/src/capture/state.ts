@@ -20,7 +20,7 @@ export interface ConnectionCaptureState {
   lastReconciledAt?: string;
 }
 
-/** Display summary of the spec fields that matter for an audit record (no values of tool settings). */
+/** Display summary of the spec fields that matter for an event (no values of tool settings). */
 export interface SpecSummary {
   project?: string;
   repoURL?: string;

@@ -2,7 +2,6 @@ import type {
   ArgoCdConnectResult,
   ArgoCdConnection,
   ArgoCdTestResult,
-  AuditVerifyResult,
   ConnectionHealthDetail,
   ConnectionWithHealth,
   DeploymentRow,
@@ -170,12 +169,6 @@ export const api = {
     get<EventDetail>(`/api/events/${encodeURIComponent(id)}`, signal),
   deployments: (params: URLSearchParams, signal?: AbortSignal) =>
     get<Page<DeploymentRow>>(withQuery("/api/deployments", params), signal),
-  verifyAuditLog: (signal?: AbortSignal) => get<AuditVerifyResult>("/api/audit/verify", signal),
-  exportUrl: (params: URLSearchParams, format: "json" | "csv") => {
-    const q = new URLSearchParams(params);
-    q.set("format", format);
-    return withQuery("/api/export", q);
-  },
 
   connections: (signal?: AbortSignal) =>
     get<{ connections: ConnectionWithHealth[] }>("/api/connections", signal),

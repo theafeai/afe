@@ -5,7 +5,7 @@ import type pg from "pg";
 import type { FastifyInstance } from "fastify";
 import { DEFAULT_TENANT_ID, type Connection } from "@afe/core";
 import { EnvKeyProvider } from "@afe/core/security";
-import { getConnection, verifyTenantChain } from "@afe/db";
+import { getConnection } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import type { CaptureObservation } from "@afe/connector-argocd";
 import {
@@ -88,6 +88,9 @@ describe("ArgoCD capture jobs (database)", () => {
     jobs = new InlineJobQueue();
     const built = await buildAfe({
       authProvider: trustedTestAuth(),
+      // The fake applications' history has fixed 2026-01 dates; keep them
+      // regardless of the retention window (retention has its own tests).
+      retentionPolicy: { cutoff: () => null, maxWindowMs: null },
       pool,
       logLevel: "debug",
       logStream: new Writable({
@@ -205,10 +208,9 @@ describe("ArgoCD capture jobs (database)", () => {
     ).getConnectionState();
     expect(cursor?.resourceVersion).toMatch(/^\d+$/);
     expect(cursor?.lastReconciledAt).toBeDefined();
-    // Each source event is stored once and the chain is intact.
+    // Each source event is stored once.
     const keys = (await rows()).map((x) => x.source_event_id);
     expect(new Set(keys).size).toBe(keys.length);
-    expect((await verifyTenantChain(pool, DEFAULT_TENANT_ID)).ok).toBe(true);
   });
 
   it("backfill hook finds deletions that happened during a gap", async () => {

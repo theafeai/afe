@@ -1,7 +1,7 @@
 /**
  * Data minimisation for ArgoCD Application objects (docs/security/rules.md R8,
  * docs/security/data-inventory.md). Afe keeps the parts of an Application it
- * needs as audit evidence (identity, source/destination, sync policy, status,
+ * needs to show what happened (identity, source/destination, sync policy, status,
  * operation state, history) and drops everything that can carry configuration
  * values or secrets: Helm values/parameters, Kustomize/plugin/directory
  * settings, resource lists, managed fields and all other annotations.
@@ -84,7 +84,7 @@ function minimiseHistory(h: ArgoCdRevisionHistory): Json {
 }
 
 /**
- * The subset of an Application that Afe stores as raw evidence. Deterministic
+ * The subset of an Application that Afe stores as the raw payload. Deterministic
  * (same input, same output) so payloads hash stably.
  */
 export function minimiseApplication(app: ArgoCdApplication): Record<string, Json> {

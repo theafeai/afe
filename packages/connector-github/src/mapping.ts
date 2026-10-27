@@ -81,7 +81,7 @@ export interface ObservationContext {
   deliveryId?: string;
   jobId?: string;
   detail?: string;
-  /** Raw evidence (webhook body or REST object), already sanitised. */
+  /** Raw payload (webhook body or REST object), already sanitised. */
   rawPayload?: RawPayloadInput;
 }
 
@@ -656,7 +656,7 @@ export interface WebhookDelivery {
   /** X-GitHub-Event */
   event: string;
   payload: unknown;
-  /** Exact delivery body (raw evidence). */
+  /** Exact delivery body (raw payload). */
   rawBody: string;
   deliveryId: string;
   receivedAt: Date | string;

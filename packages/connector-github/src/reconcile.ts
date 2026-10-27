@@ -3,10 +3,10 @@
  *
  * Webhooks can be missed (delivery failures, Afe downtime, an App with
  * webhooks switched off), so every selected repository is also re-read
- * through the REST API and compared with what the audit log already holds.
+ * through the REST API and compared with what Afe already stored.
  * Anything missing is ingested with `observation.method = "reconciliation"`
  * (routine passes and gap backfills) or `"backfill"` (history imported when
- * an installation is connected), so the gap stays visible in the audit trail.
+ * an installation is connected), so the gap stays visible in the timeline.
  *
  * Every object is mapped with the AFE-7 builders (`workflowRunEvent`,
  * `deploymentEvent`, ...), which derive `sourceEventId` from the object

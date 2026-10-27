@@ -429,7 +429,7 @@ describe("mapping API (AFE-19)", () => {
     // B's preview and unmapped values see none of A's events.
     expect((await call("POST", "/api/mapping/preview", B, {})).json().sampleSize).toBe(0);
     expect((await call("GET", "/api/mapping/unmapped", B)).json().values).toEqual([]);
-    // A's own rule is intact, and B's changes land in B's audit log only.
+    // A's own rule is intact, and B's changes are recorded as B's events only.
     expect((await call("POST", "/api/mapping/services", B, { name: "Payments" })).statusCode).toBe(
       201,
     );

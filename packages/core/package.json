@@ -7,8 +7,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./security": "./src/security/index.ts",
-    "./export": "./src/export/index.ts",
-    "./anchoring": "./src/anchoring/index.ts",
     "./correlation": "./src/correlation/index.ts",
     "./mapping": "./src/mapping/index.ts",
     "./types": "./src/types.ts"
