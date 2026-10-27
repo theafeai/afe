@@ -123,7 +123,14 @@ function foreignOrigin(req: FastifyRequest, publicUrl: string | undefined): bool
     return true; // includes "null" (sandboxed/opaque origins)
   }
   if (publicUrl) return o.origin !== new URL(publicUrl).origin;
-  return o.host !== headerString(req.headers.host);
+  // No public URL: the browser's origin must name the host it sent the request to.
+  const host = headerString(req.headers.host);
+  if (!host) return true;
+  try {
+    return o.host !== new URL(`${o.protocol}//${host}`).host;
+  } catch {
+    return true;
+  }
 }
 
 function wantsHtml(req: FastifyRequest): boolean {
