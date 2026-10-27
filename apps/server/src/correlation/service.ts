@@ -30,7 +30,8 @@ export interface CorrelationServiceOptions {
   /**
    * While events keep arriving, recompute a tenant's graph at most this
    * often; in between, responses reflect the previous graph (`asOfSeq`).
-   * Default 2000 ms. 0 recomputes whenever something changed.
+   * The interval also grows to twice the last compute time. Default 2000 ms.
+   * 0 recomputes whenever something changed (tests).
    */
   minRecomputeMs?: number;
   /** Events kept per tenant; beyond it the oldest are dropped (`truncated`). Default 250 000. */
@@ -75,6 +76,7 @@ interface TenantWindow {
   dirty: boolean;
   snapshot?: Snapshot;
   computedAtMs: number;
+  lastComputeMs: number;
   refreshing?: Promise<Snapshot>;
 }
 
@@ -126,6 +128,7 @@ export class CorrelationService {
         truncated: false,
         dirty: true,
         computedAtMs: 0,
+        lastComputeMs: 0,
       };
       this.#tenants.set(tenantId, w);
       while (this.#tenants.size > this.#maxTenants) {
@@ -183,14 +186,19 @@ export class CorrelationService {
       );
     }
 
+    // Adaptive throttle: at most every max(minRecomputeMs, 2 × last compute
+    // time), so a busy tenant spends at most about a third of a core on it.
     const elapsed = Date.now() - w.computedAtMs;
-    if (!w.snapshot || (w.dirty && elapsed >= this.#minRecomputeMs)) {
+    const interval =
+      this.#minRecomputeMs === 0 ? 0 : Math.max(this.#minRecomputeMs, 2 * w.lastComputeMs);
+    if (!w.snapshot || (w.dirty && elapsed >= interval)) {
       const started = Date.now();
       const events = [...w.events.values()];
       const graph = buildCorrelationGraph(events, this.#graphOptions);
       w.dirty = false;
       w.computedAtMs = Date.now();
       const ms = w.computedAtMs - started;
+      w.lastComputeMs = ms;
       if (ms > 1000) {
         this.log.info({ tenantId, events: events.length, ms }, "correlation: graph recomputed");
       }
