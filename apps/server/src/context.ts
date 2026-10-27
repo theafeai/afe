@@ -11,6 +11,7 @@ import type { KeyProvider } from "@afe/core/security";
 import type { AfeConfig } from "./config.ts";
 import type { JobDefinition, JobQueue } from "./jobs.ts";
 import type { AnchorService } from "./anchoring/service.ts";
+import type { MappingService } from "./mapping/service.ts";
 
 /** Shared services handed to every connector module and server feature. */
 export interface ServerContext {
@@ -41,6 +42,11 @@ export interface ServerContext {
    * `/api/audit/verify` (anchor status) and exports (embedded receipts).
    */
   anchors?: Pick<AnchorService, "status" | "receiptsForExport">;
+  /**
+   * Environment/service mapping (AFE-19), set when the mapping module is
+   * registered. Resolves events to a service and environment at read time.
+   */
+  mapping?: Pick<MappingService, "placements">;
 }
 
 /**

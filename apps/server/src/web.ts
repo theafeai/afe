@@ -36,7 +36,13 @@ async function listFiles(dir: string, prefix = ""): Promise<string[]> {
  * Top-level client-side routes of the web UI (apps/web/src/routes.ts). Deep
  * links below these get `index.html`; everything else keeps the normal 404.
  */
-export const CLIENT_ROUTE_ROOTS = ["events", "deployments", "connections", "login"] as const;
+export const CLIENT_ROUTE_ROOTS = [
+  "events",
+  "deployments",
+  "connections",
+  "login",
+  "settings",
+] as const;
 
 /**
  * True for a GET/HEAD of a client-side route (e.g. `/events/<id>`,

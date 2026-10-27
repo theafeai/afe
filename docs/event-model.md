@@ -146,6 +146,7 @@ here. Never rename or remove one: stored events keep their names.
 | `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).                                                         |
 | `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                                                                       |
 | `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).                                                               |
+| `config.mapping.changed`                               | afe            | Environment/service mapping changed; who, and before/after ([mapping](environment-mapping.md)).                                       |
 
 The validator accepts any action that matches the pattern, so connectors can
 ship a new action before the shared list is updated; `isKnownAction()` tells
@@ -322,6 +323,7 @@ state transition of one source object. Keys below are written as
 | vercel | production promotion / rollback     | `production_alias`, `<project id>`, `<previous dpl_ id or none>`, `<new dpl_ id>`, `<occurrence ms>` (AFE-30)            |
 | afe    | observation gap                     | `observation_gap`, `<gapId>`, `opened\|closed`                                                                           |
 | afe    | connection alert                    | `connection_alert`, `<alertId>`, `opened\|resolved`                                                                      |
+| afe    | mapping change                      | `config_mapping`, `<mapping revision>`                                                                                   |
 
 GitHub keys are built by `packages/connector-github/src/event-ids.ts` and listed,
 with AFE-7's refinements (run attempt in review keys, `repository_dispatch`), in

@@ -24,3 +24,17 @@ export type {
 } from "./event.ts";
 export type { ConnectionStatus, HealthFailureReason } from "./connection.ts";
 export type { EventAction } from "./actions.ts";
+export type {
+  DimensionMatch,
+  Environment as MappingEnvironment,
+  EnvironmentKind,
+  MappingConfig,
+  MappingField,
+  MappingRule,
+  MatchType,
+  Observations,
+  PlacementConfidence,
+  PlacementResolution,
+  RuleKind,
+  Service as MappingService,
+} from "./mapping/types.ts";

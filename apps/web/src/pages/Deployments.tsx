@@ -121,6 +121,17 @@ export function Deployments() {
                           </>
                         )}
                         {w.cluster && <span className="muted"> ({w.cluster})</span>}
+                        {r.placement && (
+                          <div className="small">
+                            <span className={r.placement.service ? undefined : "muted"}>
+                              {r.placement.service?.name ?? "unmapped service"}
+                            </span>{" "}
+                            ·{" "}
+                            <span className={r.placement.environment ? undefined : "muted"}>
+                              {r.placement.environment?.name ?? "unmapped environment"}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td>
                         <ToolBadge source={r.source} /> {humanize(r.how.type)}

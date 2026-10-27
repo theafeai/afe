@@ -12,6 +12,7 @@ import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
 import { EventDetailPage } from "./pages/EventDetail.tsx";
 import { LoginPage } from "./pages/Login.tsx";
+import { MappingPage } from "./pages/Mapping.tsx";
 import { Timeline } from "./pages/Timeline.tsx";
 import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx";
 
@@ -33,6 +34,7 @@ export function Routes() {
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
   if (matchPath("/connections", pathname)) return <Connections />;
+  if (matchPath("/settings/mapping", pathname)) return <MappingPage />;
   if (matchPath("/connections/github", pathname)) return <ConnectGitHub />;
   if (matchPath("/connections/argocd", pathname)) return <ConnectArgoCD />;
   if (matchPath("/connections/vercel", pathname)) return <ConnectVercel />;
@@ -55,6 +57,7 @@ const NAV = [
   { to: "/events", label: "Events" },
   { to: "/deployments", label: "Deployments" },
   { to: "/connections", label: "Connections" },
+  { to: "/settings/mapping", label: "Mapping" },
 ];
 
 function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () => void }) {

@@ -110,6 +110,11 @@ export const ACTIONS = {
   CONNECTION_SUSPENDED: "connection.suspended",
   /** A suspended connection was resumed at the source. */
   CONNECTION_RESUMED: "connection.resumed",
+  /**
+   * The tenant's environment/service mapping changed (AFE-19): who changed how
+   * deployments are classified. `data` holds the change with before/after.
+   */
+  CONFIG_MAPPING_CHANGED: "config.mapping.changed",
 } as const;
 
 export type KnownAction = (typeof ACTIONS)[keyof typeof ACTIONS];

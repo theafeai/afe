@@ -193,8 +193,15 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
           const page = pageParams(q);
           const filter = deploymentsFilter(parseEventFilterParams(q, PAGE_PARAMS));
           const result = await queryEvents(ctx.pool, tenantId, { filter, ...page });
+          // Service/environment from the tenant's mapping (AFE-19), resolved at read time.
+          const placements = ctx.mapping
+            ? await ctx.mapping.placements(tenantId, result.events)
+            : null;
           return {
-            items: result.events.map(deploymentRow),
+            items: result.events.map((e) => ({
+              ...deploymentRow(e),
+              ...(placements ? { placement: placements.get(e.id) ?? null } : {}),
+            })),
             nextCursor: result.nextCursor,
             snapshotSeq: result.snapshotSeq,
           };
