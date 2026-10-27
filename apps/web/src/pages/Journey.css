@@ -1,0 +1,493 @@
+/* Commit journey (AFE-25): page, diagram, timeline highlight. */
+:root {
+  --conf-certain: #17703a;
+  --conf-strong: #2448c4;
+  --conf-probable: #8a5200;
+  --conf-weak: #b3261e;
+  --conf-conflict: #b3261e;
+  --conf-certain-bg: #e6f4ea;
+  --conf-strong-bg: #e8edfc;
+  --conf-probable-bg: #fff4dc;
+  --conf-weak-bg: #fbe9e7;
+  --highlight: #2448c4;
+  --highlight-bg: #eef2fd;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --conf-certain: #7fd49a;
+    --conf-strong: #8aa4ff;
+    --conf-probable: #f3c46b;
+    --conf-weak: #ff9a8f;
+    --conf-conflict: #ff9a8f;
+    --conf-certain-bg: #16301f;
+    --conf-strong-bg: #1b2340;
+    --conf-probable-bg: #33270f;
+    --conf-weak-bg: #3a1714;
+    --highlight: #8aa4ff;
+    --highlight-bg: #1b2340;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.mono-wrap {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+  margin: 0.15rem 0 0;
+}
+.journey-sha {
+  font-size: 0.95em;
+}
+
+/* Confidence badges */
+.conf {
+  border-color: transparent;
+  text-transform: lowercase;
+}
+.conf-certain {
+  color: var(--conf-certain);
+  background: var(--conf-certain-bg);
+}
+.conf-strong {
+  color: var(--conf-strong);
+  background: var(--conf-strong-bg);
+}
+.conf-probable {
+  color: var(--conf-probable);
+  background: var(--conf-probable-bg);
+  border: 1px dashed var(--conf-probable);
+}
+.conf-weak {
+  color: var(--conf-weak);
+  background: var(--conf-weak-bg);
+  border: 1px dotted var(--conf-weak);
+}
+.conf-conflict {
+  color: var(--conf-conflict);
+  background: var(--conf-weak-bg);
+  border: 1px solid var(--conf-conflict);
+}
+.conf-none {
+  color: var(--muted);
+}
+
+.journey-flow-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.journey-flow-head h2 {
+  margin: 0;
+}
+.segmented {
+  display: inline-flex;
+}
+.segmented .btn {
+  border-radius: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+}
+.segmented .btn:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.segmented .btn:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.segmented .btn + .btn {
+  border-left: none;
+}
+.segmented .btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* Where it went */
+.where-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.where {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(9rem, 14rem) 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.where-status {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.where-status-live {
+  color: var(--ok);
+}
+.where-status-was_live {
+  color: var(--muted);
+}
+.where-status-not_yet {
+  color: var(--warn);
+}
+.where-status-unknown {
+  color: var(--recon);
+}
+.where-live {
+  box-shadow: inset 4px 0 0 var(--ok);
+}
+.where-unknown {
+  box-shadow: inset 4px 0 0 var(--recon);
+}
+.where-not_yet {
+  box-shadow: inset 4px 0 0 var(--warn);
+}
+.where-detail {
+  font-size: 0.9rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.badge.where-status-live {
+  background: var(--ok-bg);
+  border-color: transparent;
+}
+
+/* Diagram */
+.journey-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  align-items: center;
+}
+.journey-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.journey-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 0.5rem;
+}
+.journey-canvas {
+  position: relative;
+  min-width: 100%;
+}
+.journey-col-head {
+  position: absolute;
+  top: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.journey-edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+.edge .edge-line {
+  fill: none;
+  stroke-width: 2;
+}
+.edge .edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+}
+.edge {
+  cursor: help;
+}
+.edge:focus {
+  outline: none;
+}
+.edge:focus-visible .edge-line,
+.edge.is-active .edge-line {
+  stroke-width: 3.5;
+}
+.edge.is-dim {
+  opacity: 0.25;
+}
+.edge-certain .edge-line {
+  stroke: var(--conf-certain);
+}
+.edge-strong .edge-line {
+  stroke: var(--conf-strong);
+}
+.edge-probable .edge-line {
+  stroke: var(--conf-probable);
+  stroke-dasharray: 7 4;
+}
+.edge-weak .edge-line {
+  stroke: var(--conf-weak);
+  stroke-dasharray: 2 4;
+}
+.edge-conflict .edge-line {
+  stroke: var(--conf-conflict);
+  stroke-dasharray: 10 3 2 3;
+  stroke-width: 2.5;
+}
+.arrow-certain path {
+  fill: var(--conf-certain);
+}
+.arrow-strong path {
+  fill: var(--conf-strong);
+}
+.arrow-probable path {
+  fill: var(--conf-probable);
+}
+.arrow-weak path {
+  fill: var(--conf-weak);
+}
+.arrow-conflict path {
+  fill: var(--conf-conflict);
+}
+.edge-label {
+  font-size: 10px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.edge-certain .edge-label {
+  fill: var(--conf-certain);
+}
+.edge-strong .edge-label {
+  fill: var(--conf-strong);
+}
+.edge-probable .edge-label {
+  fill: var(--conf-probable);
+}
+.edge-weak .edge-label,
+.edge-conflict .edge-label {
+  fill: var(--conf-weak);
+}
+
+.journey-card {
+  position: absolute;
+  display: grid;
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
+  gap: 0.15rem;
+  padding: 0.4rem 0.55rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--muted);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  overflow: hidden;
+  font-size: 0.8rem;
+  z-index: 1;
+  transition: opacity 0.12s;
+}
+.journey-card:hover,
+.journey-card.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.15);
+}
+.journey-card.is-dim {
+  opacity: 0.45;
+}
+.tool-edge-github {
+  border-left-color: var(--github);
+}
+.tool-edge-argocd {
+  border-left-color: var(--argocd);
+}
+.tool-edge-vercel {
+  border-left-color: var(--vercel);
+}
+.conf-edge-weak {
+  border-style: dashed;
+}
+.jc-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+.jc-action {
+  font-family: var(--mono);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jc-meta {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jc-meta .badge {
+  font-size: 0.68rem;
+  padding: 0 0.35rem;
+}
+.journey-inspector {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  min-height: 3.5rem;
+}
+.journey-inspector h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.95rem;
+}
+.journey-inspector p {
+  margin: 0.2rem 0;
+}
+.evidence {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.evidence li {
+  margin-bottom: 0.2rem;
+}
+
+/* Step list (text alternative) */
+.step-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.step-list h3 {
+  margin: 0.75rem 0 0.3rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.step-list ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+.step-item {
+  display: grid;
+  gap: 0.1rem;
+  margin-bottom: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.excluded-list li,
+.continues-list li {
+  padding: 0.3rem 0;
+  overflow-wrap: anywhere;
+}
+.excluded-list li + li,
+.continues-list li + li {
+  border-top: 1px solid var(--border);
+}
+.callout-conflict {
+  border-left: 5px solid var(--conf-conflict);
+}
+
+/* Journey links on the event detail page */
+.journey-links ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+.journey-links li {
+  margin-bottom: 0.3rem;
+  overflow-wrap: anywhere;
+}
+
+/* Timeline: highlight a journey */
+.highlight-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  border-color: var(--highlight);
+  background: var(--highlight-bg);
+}
+.highlight-banner .button-row {
+  margin-left: auto;
+}
+.event-row.has-action {
+  display: flex;
+  align-items: stretch;
+}
+.event-row.has-action > .row-link {
+  flex: 1;
+  min-width: 0;
+}
+.row-action {
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  border-left: 1px solid var(--border);
+}
+.row-action .btn {
+  font-size: 0.8rem;
+  min-height: 1.9rem;
+  padding: 0.25rem 0.55rem;
+  white-space: nowrap;
+}
+.row-hl-on {
+  box-shadow: inset 4px 0 0 var(--highlight);
+  background: var(--highlight-bg);
+}
+.row-hl-excluded {
+  box-shadow: inset 4px 0 0 var(--conf-weak);
+}
+.row-hl-dim > .row-link {
+  opacity: 0.4;
+}
+.row-hl-dim > .row-link:hover,
+.row-hl-dim > .row-link:focus-visible {
+  opacity: 1;
+}
+.hl-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--highlight);
+}
+.row-hl-excluded .hl-tag {
+  color: var(--conf-weak);
+}
+
+@media (max-width: 640px) {
+  .where {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+  .journey-scroll {
+    max-height: none;
+  }
+  .event-row.has-action {
+    flex-direction: column;
+  }
+  .row-action {
+    border-left: none;
+    padding: 0 0.8rem 0.5rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journey-card {
+    transition: none;
+  }
+}

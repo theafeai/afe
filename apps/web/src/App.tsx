@@ -11,6 +11,7 @@ import {
 import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
 import { EventDetailPage } from "./pages/EventDetail.tsx";
+import { JourneyPage } from "./pages/Journey.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { MappingPage } from "./pages/Mapping.tsx";
 import { Timeline } from "./pages/Timeline.tsx";
@@ -33,6 +34,7 @@ export function Routes() {
   if (pathname === "/" || matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
+  if (matchPath("/journeys", pathname)) return <JourneyPage />;
   if (matchPath("/connections", pathname)) return <Connections />;
   if (matchPath("/settings/mapping", pathname)) return <MappingPage />;
   if (matchPath("/connections/github", pathname)) return <ConnectGitHub />;
