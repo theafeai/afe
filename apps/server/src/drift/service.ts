@@ -123,7 +123,8 @@ export class DriftService {
   async settings(tenantId: string): Promise<DriftSettings> {
     const row = await getDriftSettings(this.pool, tenantId);
     const overrides: Partial<Record<string, DriftSeverity>> = {};
-    for (const [k, v] of Object.entries(row?.severities ?? {})) if (isDriftSeverity(v)) overrides[k] = v;
+    for (const [k, v] of Object.entries(row?.severities ?? {}))
+      if (isDriftSeverity(v)) overrides[k] = v;
     const severities: Record<string, DriftSeverity> = {};
     for (const t of DRIFT_FINDING_TYPES) severities[t] = severityOf(t, overrides);
     return {
@@ -234,7 +235,14 @@ export class DriftService {
       for (const { d, id } of plan) {
         const existing = byId.get(id);
         const severity = severityOf(d.type, settings.severityOverrides);
-        const write = this.#derived(d, id, severity, mapping.get(d.latestEventId) ?? null, existing, snap);
+        const write = this.#derived(
+          d,
+          id,
+          severity,
+          mapping.get(d.latestEventId) ?? null,
+          existing,
+          snap,
+        );
         if (!existing) {
           await insertDriftFinding(client, tenantId, {
             ...write,
@@ -256,7 +264,8 @@ export class DriftService {
         else summary.updated++;
         await updateDriftFinding(client, tenantId, id, patch);
       }
-      if (cutoff) summary.purged = await purgeDriftFindingsBefore(client, tenantId, cutoff, [...detectedIds]);
+      if (cutoff)
+        summary.purged = await purgeDriftFindingsBefore(client, tenantId, cutoff, [...detectedIds]);
       await client.query("COMMIT");
     } catch (err) {
       await client.query("ROLLBACK").catch(() => {});
@@ -264,7 +273,12 @@ export class DriftService {
     } finally {
       client.release();
     }
-    this.#fresh.set(tenantId, { graph: snap.graph, settingsVersion: version, at: Date.now(), summary });
+    this.#fresh.set(tenantId, {
+      graph: snap.graph,
+      settingsVersion: version,
+      at: Date.now(),
+      summary,
+    });
     // Transition events are local and cheap: record them right away.
     await this.deliver(tenantId, { alerts: false });
     return summary;
@@ -447,8 +461,7 @@ export class DriftService {
     f: DriftFindingRecord,
     status: "opened" | "resolved",
   ): Promise<AlertNotification> {
-    const connectionId =
-      typeof f.details.connectionId === "string" ? f.details.connectionId : "";
+    const connectionId = typeof f.details.connectionId === "string" ? f.details.connectionId : "";
     const connection = connectionId
       ? await getConnection(this.pool, f.tenantId, connectionId).catch(() => null)
       : null;

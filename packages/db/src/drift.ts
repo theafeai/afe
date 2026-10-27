@@ -51,7 +51,10 @@ export interface DriftFindingRecord {
 }
 
 /** Fields written on insert/update (everything derived, plus side-effect state). */
-export type DriftFindingWrite = Omit<DriftFindingRecord, "tenantId" | "notifyAttempts" | "lastNotifyError">;
+export type DriftFindingWrite = Omit<
+  DriftFindingRecord,
+  "tenantId" | "notifyAttempts" | "lastNotifyError"
+>;
 
 const COLUMNS: [keyof DriftFindingWrite, string][] = [
   ["id", "id"],
@@ -236,7 +239,9 @@ export async function listDriftFindings(
   const { params, where } = filters(tenantId, o);
   if (o.before) {
     params.push(o.before.lastSeenAt, o.before.id);
-    where.push(`(last_seen_at, id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`);
+    where.push(
+      `(last_seen_at, id) < ($${params.length - 1}::timestamptz, $${params.length}::uuid)`,
+    );
   }
   params.push(Math.min(Math.max(Math.trunc(o.limit ?? 50), 1), 500));
   const { rows } = await db.query<Row>(
@@ -385,7 +390,9 @@ export async function getDriftSettings(
     tenantId,
   ]);
   const r = rows[0];
-  return r ? { alertTypes: r.alert_types, severities: r.severities, updatedAt: r.updated_at } : null;
+  return r
+    ? { alertTypes: r.alert_types, severities: r.severities, updatedAt: r.updated_at }
+    : null;
 }
 
 export async function putDriftSettings(

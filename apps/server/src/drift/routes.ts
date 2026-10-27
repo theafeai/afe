@@ -61,9 +61,9 @@ function sendError(reply: FastifyReply, err: unknown) {
 }
 
 function encodeCursor(f: DriftFindingRecord): string {
-  return Buffer.from(
-    JSON.stringify({ v: 1, a: f.lastSeenAt.toISOString(), i: f.id }),
-  ).toString("base64url");
+  return Buffer.from(JSON.stringify({ v: 1, a: f.lastSeenAt.toISOString(), i: f.id })).toString(
+    "base64url",
+  );
 }
 function decodeCursor(c: string): { lastSeenAt: string; id: string } {
   try {
@@ -306,7 +306,13 @@ export function registerDriftRoutes(app: FastifyInstance, service: DriftService)
         const s = c.serviceId ?? UNMAPPED;
         const e = c.environmentId ?? UNMAPPED;
         const k = `${s}\u0000${e}`;
-        const cell = cells.get(k) ?? { service: s, environment: e, open: 0, maxSeverity: null, byType: {} };
+        const cell = cells.get(k) ?? {
+          service: s,
+          environment: e,
+          open: 0,
+          maxSeverity: null,
+          byType: {},
+        };
         bump(cell, c);
         cells.set(k, cell);
         const t = targets.get(c.targetKey) ?? {
@@ -364,7 +370,9 @@ export function registerDriftRoutes(app: FastifyInstance, service: DriftService)
         else if (
           Array.isArray(v) &&
           v.length <= DRIFT_FINDING_TYPES.length &&
-          v.every((x) => typeof x === "string" && (DRIFT_FINDING_TYPES as readonly string[]).includes(x))
+          v.every(
+            (x) => typeof x === "string" && (DRIFT_FINDING_TYPES as readonly string[]).includes(x),
+          )
         )
           alertTypes = [...new Set(v as string[])].sort();
         else

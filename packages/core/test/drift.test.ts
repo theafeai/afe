@@ -243,7 +243,12 @@ describe("untracked_deploy, unknown_image, out_of_band_change", () => {
       {
         source: "vercel",
         action: "deployment.status_updated",
-        target: { type: "deployment", id: `dpl_${minute}`, project: "web", environment: "production" },
+        target: {
+          type: "deployment",
+          id: `dpl_${minute}`,
+          project: "web",
+          environment: "production",
+        },
         trigger: { type: trigger as "push" },
         correlation: {
           deploymentIds: [`vercel:dpl_${minute}`],
