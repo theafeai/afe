@@ -20,6 +20,7 @@ import {
   putVercelProductionState,
   saveVercelPollState,
 } from "../src/connectors/vercel-state.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const MIN = 60_000;
 const T0 = 1_800_000_000_000;
@@ -93,6 +94,7 @@ describe("vercel event capture (server wiring)", () => {
       },
     });
     const built = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       keys,
       jobs,
@@ -283,6 +285,7 @@ describe("vercel event capture (server wiring)", () => {
     const reports: unknown[][] = [];
     const defaultModule = createVercelModule({ fetch: api.fetch, now: () => clock });
     const built = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       keys,
       jobs: new InlineJobQueue(),

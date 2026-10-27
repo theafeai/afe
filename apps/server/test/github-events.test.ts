@@ -27,6 +27,7 @@ import {
 } from "../../../packages/connector-github/test/fixtures/webhooks.ts";
 import { buildAfe, InlineJobQueue, type AfeApp } from "../src/index.ts";
 import { createGitHubModule } from "../src/connectors/github.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const WEBHOOK_SECRET = "whsec-AFE7-TEST-SECRET";
 const { privatePem } = testKeyPair();
@@ -80,6 +81,7 @@ describe("GitHub repository events (AFE-7)", () => {
     sink = createMemoryEventSink();
     logLines = [];
     afe = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       jobs,
       sink: eventSink ?? sink,

@@ -21,7 +21,10 @@ export class StartupAuthError extends Error {
 
 /** True for `localhost`, 127.0.0.0/8 and ::1 (IPv4-mapped included). */
 export function isLoopbackHost(host: string): boolean {
-  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const h = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
   if (h === "localhost") return true;
   if (isIP(h) === 4) return h.startsWith("127.");
   if (isIP(h) === 6) {

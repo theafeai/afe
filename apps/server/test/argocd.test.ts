@@ -15,6 +15,7 @@ import {
 import { TEST_CA_PEM, startFakeArgoCd, type FakeArgoCd } from "@afe/connector-argocd/testing";
 import { buildAfe, loadConfig, type ServerContext } from "../src/index.ts";
 import { createArgoCdModule } from "../src/connectors/argocd.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const TOKEN = "afe-readonly-token-SECRET";
 const ADMIN = "admin-token-SECRET";
@@ -30,6 +31,7 @@ describe("ArgoCD connector module", () => {
   async function build(allowPrivate: boolean) {
     const keys = new EnvKeyProvider({ keys: { default: randomBytes(32) } });
     return buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "debug",
       logStream: new Writable({

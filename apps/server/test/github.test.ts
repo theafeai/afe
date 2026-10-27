@@ -15,6 +15,7 @@ import {
 } from "../../../packages/connector-github/test/fixtures.ts";
 import { buildAfe, InlineJobQueue, type AfeApp } from "../src/index.ts";
 import { createGitHubModule, type GitHubModuleOptions } from "../src/connectors/github.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const WEBHOOK_SECRET = "whsec-TEST-SECRET";
 const { privatePem } = testKeyPair();
@@ -80,6 +81,7 @@ describe("GitHub connector module", () => {
       },
     });
     afe = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       jobs,
       sink,
@@ -579,6 +581,7 @@ describe("GitHub connector module", () => {
       });
       jobs = new InlineJobQueue();
       afe = await buildAfe({
+        authProvider: trustedTestAuth(),
         pool,
         jobs,
         sink,

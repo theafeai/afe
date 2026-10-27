@@ -173,8 +173,13 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
         ? (req.routeOptions.config.access ?? defaultRouteAccess(req.method, routeUrl))
         : defaultRouteAccess(req.method, path);
     if (path.startsWith("/api/") && isMutating(req.method) && foreignOrigin(req, publicUrl)) {
-      req.log.warn({ origin: headerString(req.headers.origin)?.slice(0, 200) }, "cross-origin API request rejected");
-      return reply.code(403).send({ error: "forbidden", message: "Cross-origin request rejected." });
+      req.log.warn(
+        { origin: headerString(req.headers.origin)?.slice(0, 200) },
+        "cross-origin API request rejected",
+      );
+      return reply
+        .code(403)
+        .send({ error: "forbidden", message: "Cross-origin request rejected." });
     }
     if (access === "public") return;
 
@@ -273,7 +278,10 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
       req.log.info({ principal: principal.id, tenantId: principal.tenantId }, "session started");
       return reply
         .code(201)
-        .header("set-cookie", cookieHeaders(req, { session: issued.cookie, csrf: issued.payload.csrf }))
+        .header(
+          "set-cookie",
+          cookieHeaders(req, { session: issued.cookie, csrf: issued.payload.csrf }),
+        )
         .send({
           principal: principalView(sessionPrincipal(issued.payload)),
           csrfToken: issued.payload.csrf,
@@ -286,7 +294,8 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
   app.get(SESSION_ROUTE, { config: { access: "viewer" } }, async (req, reply) => {
     reply.header("cache-control", "no-store");
     const cookies = parseCookies(req.headers.cookie);
-    const session = req.principal?.kind === "session" ? sessions.verify(cookies[SESSION_COOKIE]) : null;
+    const session =
+      req.principal?.kind === "session" ? sessions.verify(cookies[SESSION_COOKIE]) : null;
     return {
       principal: principalView(req.principal!),
       csrfToken: session?.csrf ?? null,

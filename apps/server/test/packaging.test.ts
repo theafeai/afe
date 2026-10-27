@@ -7,6 +7,7 @@ import type pg from "pg";
 import { MIGRATIONS_DIR } from "@afe/db";
 import { createAfe, loadConfig } from "../src/index.ts";
 import { resolveMigrationsDir } from "../src/migrations-dir.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 let tmp: string;
 beforeAll(async () => {
@@ -68,6 +69,7 @@ describe("web UI (AFE_WEB_DIR)", () => {
     await writeFile(path.join(web, "weird:name.js"), "ignored");
 
     const app = await createAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       config: { ...loadConfig({ DATABASE_URL: "unused" }), webDir: web },
@@ -103,6 +105,7 @@ describe("web UI (AFE_WEB_DIR)", () => {
     await writeFile(path.join(web, "index.html"), "<!doctype html><title>Afe SPA</title>");
 
     const app = await createAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       config: { ...loadConfig({ DATABASE_URL: "unused" }), webDir: web },
@@ -137,7 +140,7 @@ describe("web UI (AFE_WEB_DIR)", () => {
   });
 
   it("serves no UI when AFE_WEB_DIR is unset", async () => {
-    const app = await createAfe({ pool, logLevel: "silent" });
+    const app = await createAfe({ authProvider: trustedTestAuth(), pool, logLevel: "silent" });
     expect((await app.inject({ method: "GET", url: "/" })).statusCode).toBe(404);
     await app.close();
   });
