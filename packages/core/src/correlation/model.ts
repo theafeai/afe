@@ -326,3 +326,11 @@ export class ShaPrefixIndex {
     return list[lo + 1]?.startsWith(prefix) ? undefined : first;
   }
 }
+
+/** Events in time order; returns the input itself when it is already sorted. */
+export function sortedByTime<T extends CorrelationEvent>(events: readonly T[]): readonly T[] {
+  for (let i = 1; i < events.length; i++) {
+    if (byTime(events[i - 1]!, events[i]!) > 0) return [...events].sort(byTime);
+  }
+  return events;
+}

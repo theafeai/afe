@@ -77,7 +77,10 @@ export function generateWorkload(options: WorkloadOptions = {}): Workload {
 
   const emit = (
     t: number,
-    e: Omit<CanonicalEventInputLike, "observedAt" | "observation" | "sourceEventId"> & {
+    e: Omit<
+      CanonicalEventInputLike,
+      "observedAt" | "observation" | "sourceEventId" | "occurredAt"
+    > & {
       method?: "webhook" | "poll" | "stream";
     },
   ) => {
@@ -104,7 +107,6 @@ export function generateWorkload(options: WorkloadOptions = {}): Workload {
     const mutable = kind === "gitops" && r % 10 === 0;
     const deployRepo = deployRepos[r % 2]!;
     const pushes = Math.max(1, Math.round(days * rate * (0.5 + rnd())));
-    let parent = sha1(`${name}:root`);
     let argoHistory = 0;
     let lastProd: { sha: string; dpl: string } | null = null;
     let prevProd: { sha: string; dpl: string } | null = null;
@@ -123,10 +125,9 @@ export function generateWorkload(options: WorkloadOptions = {}): Workload {
         target: { type: "ref", id: `${short}:${ref}`, repository: short, ref },
         trigger: { type: "push" },
         outcome: "none",
-        correlation: { commitShas: [sha, parent], refs: [ref], repositories: [repo] },
+        correlation: { commitShas: [sha], refs: [ref], repositories: [repo] },
         data: { headCommit: sha },
       });
-      if (toMain) parent = sha;
       // CI
       const run = `github:${++runId}`;
       const failed = rnd() < 0.1;
