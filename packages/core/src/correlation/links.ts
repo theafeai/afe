@@ -107,7 +107,7 @@ export function buildLinks(events: CorrelationEvent[], options: LinkOptions = {}
   // 4. References: a commit message or PR (e.g. a GitOps bump) names a SHA or digest.
   for (const e of events) {
     const h = hintsOf(e);
-    for (const sha of h.mentionedCommitShas)
+    for (const sha of h.upstreamCommitShas)
       for (const other of commitIndex.get(sha) ?? [])
         add(e.id, other, "reference", `commit:${sha}`);
     for (const d of h.mentionedImageDigests)

@@ -15,6 +15,7 @@ import {
   type Outcome,
   type TriggerType,
   ACTIONS,
+  deploymentUrlKey,
   jsonRawPayload,
   repositoryKey,
   sourceEventId,
@@ -383,6 +384,7 @@ export function deploymentCorrelation(d: DeploymentInfo, extraDeploymentIds: str
     environments: [d.environment],
     deploymentIds: [d.id, ...extraDeploymentIds].filter(Boolean).map((id) => `vercel:${id}`),
     pullRequests: repo && git?.pullRequest ? [`${repo}#${git.pullRequest}`] : null,
+    deploymentUrls: d.url ? [deploymentUrlKey(d.url)].filter((h) => h !== undefined) : null,
   };
 }
 
@@ -401,7 +403,6 @@ export function deploymentData(d: DeploymentInfo, trigger: DeploymentTrigger): J
   if (d.state) out.state = d.state;
   out.target = d.target ?? "preview";
   if (d.aliasAssigned !== null) out.aliasAssigned = d.aliasAssigned;
-  if (d.url) out.correlationHints = { deploymentUrls: [d.url.toLowerCase()] };
   if (d.source) out.vercelSource = d.source;
   if (d.creator) {
     out.creator = {
@@ -685,10 +686,7 @@ export function productionChangeEvent(input: {
   };
   if (change.fromDeploymentId) data.fromDeploymentId = change.fromDeploymentId;
   if (d.name) data.projectName = d.name;
-  if (d.url) {
-    data.deploymentUrl = `https://${d.url}`;
-    data.correlationHints = { deploymentUrls: [d.url.toLowerCase()] };
-  }
+  if (d.url) data.deploymentUrl = `https://${d.url}`;
   // The deployment now holds the production domains (AFE-15 placement hint).
   data.aliasAssigned = true;
   const git = deploymentGit(d);

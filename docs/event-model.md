@@ -130,6 +130,7 @@ here. Never rename or remove one: stored events keep their names.
 | `pull_request.synchronized`                            | github         | New commits pushed to a pull request's head branch.                                |
 | `repository_dispatch.received`                         | github         | A `repository_dispatch` was sent to a repository (API only).                       |
 | `release.published`                                    | github         | Release published.                                                                 |
+| `artifact.published`                                   | github         | A build artifact (container image) was published; `imageRefs`/`imageDigests`.      |
 | `argocd.sync.started`                                  | argocd         | Sync operation started (`operationState.phase` Running).                           |
 | `argocd.sync.succeeded`                                | argocd         | Sync operation finished with phase Succeeded.                                      |
 | `argocd.sync.failed`                                   | argocd         | Sync operation finished with phase Failed or Error.                                |
@@ -177,20 +178,47 @@ them apart.
 and Vercel deployment it caused. Each key is a list of strings; lists are
 de-duplicated and sorted, and lower-cased where noted. Set every key you know.
 
-| Key             | Format                                                                                                   |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| `commitShas`    | Full 40 (SHA-1) or 64 (SHA-256) hex, lower-cased. Short SHAs are rejected: resolve them first.           |
-| `refs`          | Fully qualified when known: `refs/heads/main`, `refs/tags/v1.2.3`.                                       |
-| `repositories`  | `host/owner/name`, lower-cased. Build with `repositoryKey(urlOrName)`.                                   |
-| `environments`  | Environment names, lower-cased (GitHub environment, Vercel `production`/`preview`, Argo label).          |
-| `imageRefs`     | Image with tag, `registry/repo:tag`.                                                                     |
-| `imageDigests`  | `sha256:<hex>`, lower-cased.                                                                             |
-| `deploymentIds` | Source-qualified: `github:<deployment id>`, `vercel:<dpl_ id>`, `argocd:<namespace>/<app>:<history id>`. |
-| `runIds`        | Source-qualified CI run ids: `github:<run id>`.                                                          |
-| `pullRequests`  | `host/owner/name#<number>`, lower-cased.                                                                 |
+| Key                  | Format                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `commitShas`         | Full 40 (SHA-1) or 64 (SHA-256) hex, lower-cased. Short SHAs are rejected: resolve them first.                          |
+| `refs`               | Fully qualified when known: `refs/heads/main`, `refs/tags/v1.2.3`.                                                      |
+| `repositories`       | `host/owner/name`, lower-cased. Build with `repositoryKey(urlOrName)`.                                                  |
+| `environments`       | Environment names, lower-cased (GitHub environment, Vercel `production`/`preview`, Argo label).                         |
+| `imageRefs`          | `registry/repo:tag`, or digest-pinned `registry/repo@sha256:<hex>` / `registry/repo:tag@sha256:<hex>`.                  |
+| `imageDigests`       | `sha256:<hex>`, lower-cased.                                                                                            |
+| `deploymentIds`      | Source-qualified: `github:<deployment id>`, `vercel:<dpl_ id>`, `argocd:<namespace>/<app>:<history id>`.                |
+| `runIds`             | Source-qualified CI run ids: `github:<run id>`.                                                                         |
+| `pullRequests`       | `host/owner/name#<number>`, lower-cased.                                                                                |
+| `upstreamCommitShas` | Full SHAs a change refers to in _another_ repository (GitOps bump message, PR body). As `commitShas`.                   |
+| `deploymentUrls`     | Lower-case **hosts** of deployment URLs (Vercel `url`, GitHub status `target_url`). Build with `deploymentUrlKey(url)`. |
 
 Query: `WHERE tenant_id = $1 AND correlation @> '{"commitShas":["<sha>"]}'`
 (GIN-indexed).
+
+Notes on individual keys:
+
+- `imageRefs`: the digest-pinned form keeps a digest paired with its image
+  when an event carries several images (`imageRefs` and `imageDigests` are
+  otherwise unpaired lists). The digest part is lower-cased; the name and tag
+  are kept as given. A bare name without tag (implicit `latest`) is still
+  accepted so that events recorded before it was validated stay valid.
+  Connectors that know the digest also put it in `imageDigests`.
+- `upstreamCommitShas`: only the SHAs are stored, never the message or body
+  text they were found in (R8). Same validation as `commitShas` (full length,
+  lower-cased).
+- `deploymentUrls`: only the host is kept, never scheme, port, path, query or
+  fragment. Preview and share URLs can carry tokens in their query string
+  (e.g. Vercel `?_vercel_share=…`, protection bypass links) and the event log is
+  append-only, so a token stored there could never be removed. The schema
+  rejects anything that is not a bare host; `deploymentUrlKey()` reduces a URL
+  to its host.
+- Empty lists are dropped (absent and `[]` are the same), so adding a key does
+  not change the canonical form, and therefore the hash, of an event that does
+  not use it.
+- Events recorded before AFE-18 carried `upstreamCommitShas`/`deploymentUrls`
+  as `data.correlationHints.{mentionedCommitShas,deploymentUrls}`. Stored
+  events are immutable, so readers (the correlation prototype) read the
+  `correlation` keys first and fall back to those hints.
 
 ## Observation gaps
 

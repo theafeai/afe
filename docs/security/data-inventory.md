@@ -31,7 +31,7 @@ the paths they strip and test it.
   removed from webhook bodies; commit messages, deployment review comments and
   the caller-supplied `deployment.payload` / `repository_dispatch.client_payload`
   are kept in the raw payload only (never in `events.data`). Events hold commit
-  SHAs mentioned in commit messages / PR bodies (`data.correlationHints`), not
+  SHAs mentioned in commit messages / PR bodies (`correlation.upstreamCommitShas`), not
   the text. See docs/connectors/github.md "Raw payloads".
 
 ## What Afe deliberately does not store

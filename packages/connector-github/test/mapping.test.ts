@@ -237,12 +237,16 @@ describe("deployments", () => {
       action: "deployment.status_updated",
       outcome: "succeeded",
       actor: { type: "bot", login: "github-actions[bot]", triggeredBy: { login: "alice" } },
-      correlation: { deploymentIds: ["github:880001"], runIds: ["github:9100001"] },
+      correlation: {
+        deploymentIds: ["github:880001"],
+        runIds: ["github:9100001"],
+        deploymentUrls: ["api.acme.example", "github.com"],
+      },
       data: {
         status: { state: "success", environmentUrl: "https://API.acme.example/" },
-        correlationHints: { deploymentUrls: ["api.acme.example", "github.com"] },
       },
     });
+    expect(e.data.correlationHints).toBeUndefined();
   });
 
   it("maps every deployment status state", () => {
@@ -339,14 +343,15 @@ describe("source control events", () => {
         commitShas: ["2b2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d", SHA],
         refs: ["refs/heads/main"],
         repositories: ["github.com/acme/api"],
+        upstreamCommitShas: ["0123456789abcdef0123456789abcdef01234567"],
       },
       data: {
         headCommit: SHA,
         commitCount: 2,
         forced: false,
-        correlationHints: { mentionedCommitShas: ["0123456789abcdef0123456789abcdef01234567"] },
       },
     });
+    expect(e.data.correlationHints).toBeUndefined();
     // Commit messages and emails stay out of the event (R8).
     expect(JSON.stringify(e.data)).not.toMatch(/Bump API version|@example\.com/);
   });
@@ -389,11 +394,10 @@ describe("source control events", () => {
       correlation: {
         pullRequests: ["github.com/acme/api#77"],
         refs: ["refs/heads/feature/login", "refs/heads/main"],
-      },
-      data: {
-        correlationHints: { mentionedCommitShas: ["0123456789abcdef0123456789abcdef01234567"] },
+        upstreamCommitShas: ["0123456789abcdef0123456789abcdef01234567"],
       },
     });
+    expect(opened.data.correlationHints).toBeUndefined();
     expect(JSON.stringify(opened.data)).not.toMatch(/Implements login|bob@example/);
 
     const sync = one("pull_request.synchronize");

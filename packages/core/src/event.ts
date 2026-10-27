@@ -214,6 +214,36 @@ const keyList = (item: z.ZodType<string>) =>
 
 const lower = (max: number) => str(max).transform((s) => s.toLowerCase());
 
+const commitSha = z
+  .string()
+  .regex(/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/, "commit SHA must be full length hex")
+  .transform((s) => s.toLowerCase());
+
+/**
+ * Container image reference: a name (no whitespace or "@"), an optional tag,
+ * and an optional digest "<algorithm>:<hex>". A bare name (implicit tag) is
+ * accepted so references recorded before AFE-18 still validate.
+ */
+export const IMAGE_REF_PATTERN = /^[^\s@]+(@[a-zA-Z0-9]+:[0-9a-fA-F]{32,128})?$/;
+
+const imageRef = str(1024)
+  .regex(IMAGE_REF_PATTERN, "image ref must be name[:tag][@<algorithm>:<hex>]")
+  .transform((s) => {
+    const at = s.indexOf("@");
+    return at < 0 ? s : s.slice(0, at) + s.slice(at).toLowerCase();
+  });
+
+/** DNS host name (or IPv4 address), lower case, max 253 characters. */
+const HOST_PATTERN =
+  /^(?=.{1,253}$)[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9])?(?:\.[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9])?)*$/;
+
+const deploymentHost = z
+  .string()
+  .transform((s) => s.toLowerCase())
+  .pipe(
+    z.string().regex(HOST_PATTERN, "deployment URL must be a bare host (no scheme, path or query)"),
+  );
+
 /**
  * Structured keys used to correlate events across tools (AFE-15). Each list
  * is normalised: de-duplicated and sorted (so it hashes stably), and
@@ -222,20 +252,20 @@ const lower = (max: number) => str(max).transform((s) => s.toLowerCase());
  */
 export const correlationSchema = z.strictObject({
   /** Full commit SHAs (40 hex for SHA-1, 64 for SHA-256 repositories). */
-  commitShas: keyList(
-    z
-      .string()
-      .regex(/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/, "commit SHA must be full length hex")
-      .transform((s) => s.toLowerCase()),
-  ),
+  commitShas: keyList(commitSha),
   /** Git refs, fully qualified when known: "refs/heads/main", "refs/tags/v1.2.3". */
   refs: keyList(str(512)),
   /** Repositories as "host/owner/name", lower case. Use `repositoryKey()` to build. */
   repositories: keyList(lower(512)),
   /** Environment names as used by the source (lower-cased). */
   environments: keyList(lower(256)),
-  /** Container image references with tag, e.g. "ghcr.io/acme/api:1.4.2". */
-  imageRefs: keyList(str(1024)),
+  /**
+   * Container image references: "registry/repo:tag", digest-pinned
+   * "registry/repo@sha256:<hex>" or "registry/repo:tag@sha256:<hex>" (keeps a
+   * digest paired with its image when an event has several). The digest part
+   * is lower-cased. See `IMAGE_REF_PATTERN`.
+   */
+  imageRefs: keyList(imageRef),
   /** Image digests "sha256:<hex>", lower case. */
   imageDigests: keyList(
     z
@@ -249,6 +279,20 @@ export const correlationSchema = z.strictObject({
   runIds: keyList(str(512)),
   /** Pull requests as "host/owner/name#number", lower case. */
   pullRequests: keyList(lower(512)),
+  /**
+   * Full commit SHAs that a change refers to in *another* repository (a GitOps
+   * bump commit message, a PR body, Renovate/Image Updater trailers). Same
+   * format as `commitShas`. Only the SHAs are stored, never the text.
+   */
+  upstreamCommitShas: keyList(commitSha),
+  /**
+   * Hosts of deployment URLs, lower case, e.g. "my-app-git-main-acme.vercel.app"
+   * (Vercel `url`, GitHub deployment status `target_url`/`environment_url`).
+   * Host only: no scheme, port, path, query or fragment, because preview URLs
+   * can carry tokens (share/bypass links) in their query string. Build with
+   * `deploymentUrlKey()`.
+   */
+  deploymentUrls: keyList(deploymentHost),
 });
 
 const jsonValueSchema = z.json() as unknown as z.ZodType<JsonValue, JsonValue>;
@@ -437,6 +481,8 @@ export interface Correlation {
   deploymentIds?: string[];
   runIds?: string[];
   pullRequests?: string[];
+  upstreamCommitShas?: string[];
+  deploymentUrls?: string[];
 }
 export type RawPayloadInput = z.output<typeof rawPayloadInputSchema>;
 export type RawPayloadRef = z.output<typeof rawPayloadRefSchema>;
@@ -572,6 +618,26 @@ export function repositoryKey(repo: string, defaultHost = "github.com"): string 
     .replace(/\/+$/, "")
     .replace(/\.git$/i, "")
     .toLowerCase();
+}
+
+/**
+ * The `correlation.deploymentUrls` key of a deployment URL: its lower-case
+ * host, or undefined if it is not an http(s) URL or host. Accepts a full URL
+ * ("https://x.vercel.app/path?token=…") or a bare host ("x.vercel.app"). Path,
+ * query, fragment, port and credentials are dropped (they can carry tokens).
+ */
+export function deploymentUrlKey(url: unknown): string | undefined {
+  if (typeof url !== "string") return undefined;
+  const s = url.trim();
+  if (s.length === 0) return undefined;
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
+    const host = u.hostname.toLowerCase();
+    return HOST_PATTERN.test(host) ? host : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Raw payload from an already-parsed JSON value (re-serialised; prefer the exact bytes). */

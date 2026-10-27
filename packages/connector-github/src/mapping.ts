@@ -10,6 +10,7 @@
  */
 import {
   ACTIONS,
+  deploymentUrlKey,
   repositoryKey,
   type ActorRef,
   type CanonicalEventInputLike,
@@ -170,17 +171,6 @@ function fullNameFromApiUrl(url: unknown): string | undefined {
   return m?.[1];
 }
 
-/** Lower-case host of an http(s) URL, or undefined. */
-function urlHost(url: unknown): string | undefined {
-  if (typeof url !== "string" || url.length === 0) return undefined;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:" ? u.hostname.toLowerCase() : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Full commit SHAs mentioned in free text (commit messages, PR bodies),
  * excluding `exclude`. Only the identifiers are kept, never the text (R8).
@@ -197,13 +187,6 @@ export function mentionedCommitShas(texts: unknown[], exclude: Iterable<string> 
     }
   }
   return [...found].sort();
-}
-
-function hints(h: { mentionedCommitShas?: string[]; deploymentUrls?: string[] }): JsonObject {
-  const out: JsonObject = {};
-  if (h.mentionedCommitShas?.length) out.mentionedCommitShas = h.mentionedCommitShas;
-  if (h.deploymentUrls?.length) out.deploymentUrls = [...new Set(h.deploymentUrls)].sort();
-  return Object.keys(out).length > 0 ? { correlationHints: out } : {};
 }
 
 function list(...values: (string | undefined | null)[]): string[] | undefined {
@@ -630,7 +613,14 @@ export function deploymentStatusEvent(
     trigger: deploymentTrigger(deployment, run),
     outcome: STATUS_OUTCOMES[status.state] ?? "unknown",
     occurredAt: timestamp(status.created_at) ?? ctx.observedAt,
-    correlation: { ...corr, environments: list(deployment.environment, environment) },
+    correlation: {
+      ...corr,
+      environments: list(deployment.environment, environment),
+      deploymentUrls: list(
+        deploymentUrlKey(status.environment_url),
+        deploymentUrlKey(status.target_url),
+      ),
+    },
     data: {
       status: {
         id: status.id,
@@ -643,11 +633,6 @@ export function deploymentStatusEvent(
       },
       deployment: deploymentSummary(deployment),
       run: run ? runSummary(run) : null,
-      ...hints({
-        deploymentUrls: [urlHost(status.environment_url), urlHost(status.target_url)].filter(
-          (h): h is string => Boolean(h),
-        ),
-      }),
     },
   };
 }
@@ -1062,6 +1047,7 @@ export function pushEvent(
       commitShas: shas ?? null,
       refs: [ref],
       repositories: [repositoryKey(repo.full_name)],
+      upstreamCommitShas: mentionedCommitShas(messages, shas ?? []),
     },
     data: {
       ref,
@@ -1074,7 +1060,6 @@ export function pushEvent(
       baseRef: optString(p.base_ref) ?? null,
       commitCount: commits.length,
       pusher: optString(pusher?.name) ?? null,
-      ...hints({ mentionedCommitShas: mentionedCommitShas(messages, shas ?? []) }),
     },
   };
 }
@@ -1162,6 +1147,8 @@ function mapPullRequest(
       ),
       repositories: list(repositoryKey(repo.full_name), headRepo && repositoryKey(headRepo)),
       pullRequests: [pullRequestKey(repo.full_name, number)],
+      // The body itself is never stored (R8); only commit SHAs it mentions.
+      upstreamCommitShas: mentionedCommitShas([pr.body], shas ?? []),
     },
     data: {
       number,
@@ -1175,8 +1162,6 @@ function mapPullRequest(
       mergedBy: (mergedBy as JsonObject | null) ?? null,
       author: (githubActor(pr.user as GitHubUser | undefined) as JsonObject | null) ?? null,
       ...(transition === "synchronize" && isSha(p.before) ? { before: p.before as string } : {}),
-      // The body itself is never stored (R8); only commit SHAs it mentions.
-      ...hints({ mentionedCommitShas: mentionedCommitShas([pr.body], shas ?? []) }),
     },
   });
 }
