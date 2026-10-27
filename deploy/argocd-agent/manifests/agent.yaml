@@ -1,0 +1,151 @@
+# Afe in-cluster ArgoCD agent (AFE-28). Plain Kubernetes manifests; a Helm
+# chart with the same objects is in ../helm/afe-argocd-agent.
+# Docs: docs/connectors/argocd.md "In-cluster agent".
+#
+# Before applying:
+#   1. Register the agent in Afe (POST /api/connections/argocd/agents) and note
+#      the agent id and the secret (shown once).
+#   2. Set AFE_URL and AFE_AGENT_ID below.
+#   3. kubectl create namespace afe-argocd-agent
+#      kubectl -n afe-argocd-agent create secret generic afe-argocd-agent \
+#        --from-literal=secret='<the secret>'
+#   4. Edit networkpolicy.yaml (Afe and API server addresses), then
+#      kubectl apply -k deploy/argocd-agent/manifests
+#
+# Applications are read in the `argocd` namespace (Role below). For
+# "applications in any namespace", use rbac-cluster-wide.yaml instead of the
+# Role/RoleBinding and set AFE_AGENT_NAMESPACES to "*".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: afe-argocd-agent
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: afe-argocd-agent
+  namespace: afe-argocd-agent
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+---
+# Read-only: get/list/watch Applications, and get/list Events (actor
+# attribution, optional: remove the second rule to disable it). No write verb,
+# no Secrets, no other resource.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: afe-argocd-agent-read
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: afe-argocd-agent-read
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: afe-argocd-agent-read
+subjects:
+  - kind: ServiceAccount
+    name: afe-argocd-agent
+    namespace: afe-argocd-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: afe-argocd-agent
+  namespace: afe-argocd-agent
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+spec:
+  # Exactly one agent per registration: two would interleave runs.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: afe-argocd-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: afe-argocd-agent
+    spec:
+      serviceAccountName: afe-argocd-agent
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: ghcr.io/theafeai/afe-argocd-agent:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AFE_URL
+              value: "https://afe.example.com"
+            - name: AFE_AGENT_ID
+              value: "00000000-0000-0000-0000-000000000000"
+            - name: AFE_AGENT_SECRET_FILE
+              value: /var/run/secrets/afe/secret
+            - name: AFE_AGENT_NAMESPACES
+              value: "argocd"
+            - name: AFE_AGENT_ATTRIBUTE_WITH_EVENTS
+              value: "true"
+          ports:
+            - name: health
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: agent-secret
+              mountPath: /var/run/secrets/afe
+              readOnly: true
+      volumes:
+        - name: agent-secret
+          secret:
+            secretName: afe-argocd-agent
+            defaultMode: 0440
+            items:
+              - key: secret
+                path: secret

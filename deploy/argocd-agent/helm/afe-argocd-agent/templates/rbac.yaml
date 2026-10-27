@@ -1,0 +1,72 @@
+{{- /*
+Read-only access: get/list/watch Applications, and get/list Events when
+attribution is on. No write verb, no Secrets, nothing else.
+*/ -}}
+{{- if .Values.argocd.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "afe-argocd-agent.fullname" . }}-read
+  labels:
+    {{- include "afe-argocd-agent.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  {{- if .Values.argocd.attributeWithEvents }}
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "afe-argocd-agent.fullname" . }}-read
+  labels:
+    {{- include "afe-argocd-agent.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "afe-argocd-agent.fullname" . }}-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "afe-argocd-agent.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+{{- range .Values.argocd.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "afe-argocd-agent.fullname" $ }}-read
+  namespace: {{ . }}
+  labels:
+    {{- include "afe-argocd-agent.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  {{- if $.Values.argocd.attributeWithEvents }}
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "afe-argocd-agent.fullname" $ }}-read
+  namespace: {{ . }}
+  labels:
+    {{- include "afe-argocd-agent.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "afe-argocd-agent.fullname" $ }}-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "afe-argocd-agent.fullname" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

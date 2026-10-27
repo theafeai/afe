@@ -58,18 +58,14 @@ function bool(env: NodeJS.ProcessEnv, name: string, def: boolean): boolean {
   throw new ConfigError(`${name} must be true or false`);
 }
 
-function readOptional(path: string | undefined, name: string): string | undefined {
-  if (!path) return undefined;
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    throw new ConfigError(`${name}: cannot read the file`);
-  }
+
+export interface ConfigFiles {
+  exists(path: string): boolean;
+  read(path: string): string;
 }
 
-export function loadConfig(
-  env: NodeJS.ProcessEnv = process.env,
-  fileExists: (p: string) => boolean = (p) => {
+const realFiles: ConfigFiles = {
+  exists(p) {
     try {
       readFileSync(p);
       return true;
@@ -77,7 +73,22 @@ export function loadConfig(
       return false;
     }
   },
+  read: (p) => readFileSync(p, "utf8"),
+};
+
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  files: ConfigFiles = realFiles,
 ): AgentConfig {
+  const fileExists = (p: string) => files.exists(p);
+  const readOptional = (path: string | undefined, name: string): string | undefined => {
+    if (!path) return undefined;
+    try {
+      return files.read(path);
+    } catch {
+      throw new ConfigError(`${name}: cannot read the file`);
+    }
+  };
   const afeUrl = env.AFE_URL?.replace(/\/+$/, "");
   if (!afeUrl) throw new ConfigError("AFE_URL is required (Afe's public URL)");
   let u: URL;

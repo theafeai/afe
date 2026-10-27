@@ -1,0 +1,32 @@
+# Optional, instead of the Role/RoleBinding in agent.yaml: read Applications
+# in every namespace (ArgoCD "applications in any namespace"). Set
+# AFE_AGENT_NAMESPACES to "*". Still read-only: get/list/watch Applications,
+# get/list Events. Not included by kustomization.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: afe-argocd-agent-read
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: afe-argocd-agent-read
+  labels:
+    app.kubernetes.io/name: afe-argocd-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: afe-argocd-agent-read
+subjects:
+  - kind: ServiceAccount
+    name: afe-argocd-agent
+    namespace: afe-argocd-agent
