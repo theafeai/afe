@@ -141,7 +141,7 @@ function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () 
     return (
       <p className="muted">
         Disconnected{c.statusReason ? ` (${c.statusReason})` : ""}. Afe has deleted its credentials;
-        events recorded before stay in the audit log.
+        events recorded before are kept until they leave the retention window.
       </p>
     );
   }
@@ -150,7 +150,7 @@ function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () 
       <p>
         To disconnect, uninstall the Afe GitHub App from <strong>{c.name}</strong> on GitHub (
         <em>Settings → GitHub Apps</em> for an organization or your account). Afe records the
-        uninstall and marks this connection revoked. Events recorded before stay in the audit log.
+        uninstall and marks this connection revoked. Events recorded before are kept until they leave the retention window.
       </p>
     );
   }

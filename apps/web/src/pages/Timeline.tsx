@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { api } from "../api/client.ts";
-import type { AuditVerifyResult, CanonicalEvent, EventItem, ObservationGap } from "../api/types.ts";
+import type { CanonicalEvent, EventItem, ObservationGap } from "../api/types.ts";
 import {
   Empty,
   ErrorBox,
@@ -22,7 +21,7 @@ import {
   parseFilters,
   type Filters,
 } from "../filters.ts";
-import { dayKey, formatDateTime, formatDay, formatTime, humanize, shortHash } from "../format.ts";
+import { dayKey, formatDateTime, formatDay, formatTime, humanize } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import { usePaged } from "../usePaged.ts";
 
@@ -161,37 +160,6 @@ export function EventList({ items }: { items: EventItem[] }) {
   );
 }
 
-function VerifyResult({ result }: { result: AuditVerifyResult }) {
-  const v = result.verification;
-  if (result.ok) {
-    return (
-      <div className="callout callout-ok" role="status">
-        <strong>Audit log intact.</strong> {v.count} event{v.count === 1 ? "" : "s"} verified (hash
-        chain, links and raw payloads). Chain head: seq {result.head?.seq ?? v.lastSeq}, hash{" "}
-        <code title={result.head?.hash ?? v.lastHash}>
-          {shortHash(result.head?.hash ?? v.lastHash, 16)}
-        </code>
-        . Write the head down to check later that history was not rewritten.
-      </div>
-    );
-  }
-  return (
-    <div className="callout callout-error" role="alert">
-      <strong>Audit log verification FAILED.</strong>{" "}
-      {v.break
-        ? `${humanize(v.break.kind)} at seq ${v.break.seq ?? "?"}: ${v.break.message}`
-        : "The chain head does not match."}{" "}
-      {v.count} event(s) before the break verified.
-      {v.break?.eventId && (
-        <>
-          {" "}
-          <Link to={`/events/${v.break.eventId}`}>Open the event</Link>
-        </>
-      )}
-    </div>
-  );
-}
-
 export function Timeline() {
   useDocumentTitle("Events");
   const [params, setParams] = useSearchParams();
@@ -204,20 +172,6 @@ export function Timeline() {
     () => filtersToApiParams(parseFilters(new URLSearchParams(key))),
     (p, s) => api.events(p, s),
   );
-  const [verify, setVerify] = useState<{
-    running: boolean;
-    result: AuditVerifyResult | null;
-    error: Error | null;
-  }>({ running: false, result: null, error: null });
-
-  const runVerify = () => {
-    setVerify({ running: true, result: null, error: null });
-    api.verifyAuditLog().then(
-      (result) => setVerify({ running: false, result, error: null }),
-      (error: Error) => setVerify({ running: false, result: null, error }),
-    );
-  };
-  const exportParams = filtersToApiParams(filters);
   const filtered = activeFilterCount(filters) > 0;
 
   return (
@@ -225,38 +179,12 @@ export function Timeline() {
       <header className="page-header">
         <div>
           <h1>Events</h1>
-          <p className="lede">Everything Afe recorded across your connected tools, newest first.</p>
-        </div>
-        <div className="toolbar">
-          <details className="menu">
-            <summary className="btn">Export</summary>
-            <div className="menu-body" role="menu">
-              <p className="small muted">
-                Exports {filtered ? "the events matching the current filters" : "all events"}, with
-                an integrity manifest (verify with <code>afe verify-export</code>).
-              </p>
-              <a
-                role="menuitem"
-                className="btn"
-                href={api.exportUrl(exportParams, "json")}
-                download
-              >
-                JSON Lines
-              </a>
-              <a role="menuitem" className="btn" href={api.exportUrl(exportParams, "csv")} download>
-                CSV
-              </a>
-            </div>
-          </details>
-          <button type="button" className="btn" onClick={runVerify} disabled={verify.running}>
-            {verify.running ? "Verifying…" : "Verify audit log"}
-          </button>
+          <p className="lede">
+            Recent activity across your connected tools, newest first. Events older than the
+            retention window are deleted.
+          </p>
         </div>
       </header>
-
-      {verify.running && <Loading label="Verifying every event in the hash chain…" />}
-      {verify.result && <VerifyResult result={verify.result} />}
-      {verify.error && <ErrorBox title="Could not verify the audit log" error={verify.error} />}
 
       {connections.data && <GapBanners connections={connections.data.connections} />}
       {connections.error && (
