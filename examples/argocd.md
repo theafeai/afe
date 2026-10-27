@@ -13,6 +13,8 @@ kind create cluster --name afe-demo --wait 120s
 kubectl --context kind-afe-demo create namespace argocd
 kubectl --context kind-afe-demo apply --server-side -n argocd \
   -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml
+kubectl --context kind-afe-demo -n argocd set image deployment/argocd-redis redis=redis:8.2.3-alpine
+kubectl --context kind-afe-demo -n argocd rollout status deployment/argocd-redis --timeout=180s
 kubectl --context kind-afe-demo -n argocd rollout status deployment/argocd-server --timeout=300s
 kubectl --context kind-afe-demo -n argocd rollout status statefulset/argocd-application-controller --timeout=300s
 ```
@@ -20,6 +22,9 @@ kubectl --context kind-afe-demo -n argocd rollout status statefulset/argocd-appl
 All following `kubectl` commands target `kind-afe-demo` explicitly. Do not point
 them at an existing shared cluster. If readiness times out, inspect pods and
 image-pull events before continuing.
+
+The Redis command uses the same official Redis release from Docker Hub; the
+upstream install manifest uses an ECR mirror that can rate-limit anonymous pulls.
 
 For this isolated lab, serve the ArgoCD API over private HTTP so both the host
 CLI and a containerized Afe can reach it without a custom certificate setup:

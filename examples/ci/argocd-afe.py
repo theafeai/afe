@@ -145,7 +145,7 @@ def main(scratch):
     print("PASS: Afe accepted the read-only ArgoCD connection", flush=True)
     apply({"apiVersion": "argoproj.io/v1alpha1", "kind": "Application",
            "metadata": {"name": "afe-demo", "namespace": "argocd"}, "spec": {"project": "default",
-               "source": {"repoURL": "http://git.afe-demo-git.svc.cluster.local:8080/demo.git", "targetRevision": "main", "path": "."},
+               "source": {"repoURL": "http://git.afe-demo-git.svc.cluster.local:8080/demo.git", "targetRevision": first_sha, "path": "."},
                "destination": {"server": "https://kubernetes.default.svc", "namespace": "afe-demo"},
                "syncPolicy": {"syncOptions": ["CreateNamespace=true"]}}})
 
@@ -162,14 +162,21 @@ def main(scratch):
     results = []
 
     def sync(sha, version):
+        # Pin desired state as well as the operation. The small HTTP Git remote
+        # supports commit fetches; it does not implement smart branch-ref RPCs.
+        kube("-n", "argocd", "patch", "application", "afe-demo", "--type", "merge",
+             "-p", json.dumps({"spec": {"source": {"targetRevision": sha}}}))
         until(lambda: request("http://127.0.0.1:8091/api/v1/applications/afe-demo?refresh=hard", token=admin), "Git source refreshed")
         until(lambda: request("http://127.0.0.1:8091/api/v1/applications/afe-demo/sync",
                               {"revision": sha, "prune": True}, admin), f"Version {version} sync requested")
 
         def healthy():
             status = app().get("status", {})
+            phase = status.get("operationState", {}).get("phase")
+            if phase in ("Failed", "Error"):
+                raise AssertionError(f"ArgoCD sync ended with {phase}")
             return (status.get("sync", {}).get("revision") == sha
-                    and status.get("operationState", {}).get("phase") == "Succeeded"
+                    and phase == "Succeeded"
                     and status.get("health", {}).get("status") == "Healthy")
 
         until(healthy, f"ArgoCD Version {version} synced and healthy", 240)
