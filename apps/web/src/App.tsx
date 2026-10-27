@@ -10,6 +10,7 @@ import {
 } from "./pages/Connect.tsx";
 import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
+import { DriftFindingPage, DriftPage } from "./pages/Drift.tsx";
 import { EventDetailPage } from "./pages/EventDetail.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { MappingPage } from "./pages/Mapping.tsx";
@@ -33,6 +34,8 @@ export function Routes() {
   if (pathname === "/" || matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
+  if (matchPath("/drift", pathname)) return <DriftPage />;
+  if ((m = matchPath("/drift/:id", pathname))) return <DriftFindingPage key={m.id} id={m.id!} />;
   if (matchPath("/connections", pathname)) return <Connections />;
   if (matchPath("/settings/mapping", pathname)) return <MappingPage />;
   if (matchPath("/connections/github", pathname)) return <ConnectGitHub />;
@@ -56,6 +59,7 @@ export function Routes() {
 const NAV = [
   { to: "/events", label: "Events" },
   { to: "/deployments", label: "Deployments" },
+  { to: "/drift", label: "Drift" },
   { to: "/connections", label: "Connections" },
   { to: "/settings/mapping", label: "Mapping" },
 ];
