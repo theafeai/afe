@@ -19,12 +19,17 @@ on:
       - apps/server/package.json
       - apps/server/tsup.config.ts
       - .github/workflows/release.yml
+      # In-cluster ArgoCD agent image (AFE-28)
+      - apps/argocd-agent/**
+      - packages/connector-argocd/src/agent-protocol.ts
+      - packages/connector-argocd/src/sse.ts
 
 permissions:
   contents: read
 
 env:
   IMAGE: ghcr.io/theafeai/afe
+  AGENT_IMAGE: ghcr.io/theafeai/afe-argocd-agent
 
 jobs:
   smoke:
@@ -120,5 +125,87 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  # In-cluster ArgoCD agent (AFE-28): a separate, minimal image.
+  agent-smoke:
+    name: Build the ArgoCD agent image
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/argocd-agent/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: afe-argocd-agent:ci
+          cache-from: type=gha,scope=argocd-agent
+          cache-to: type=gha,mode=max,scope=argocd-agent
+      - name: Runs non-root on a read-only root filesystem and validates its config
+        run: |
+          test "$(docker inspect --format '{{.Config.User}}' afe-argocd-agent:ci)" = "65532:65532"
+          set +e
+          docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+            afe-argocd-agent:ci > out.txt 2>&1
+          code=$?
+          set -e
+          cat out.txt
+          test "$code" = 2
+          grep -q "AFE_URL is required" out.txt
+
+  agent-release:
+    name: Build and push the ArgoCD agent image
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.AGENT_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+          flavor: |
+            latest=auto
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/argocd-agent/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=argocd-agent
+          cache-to: type=gha,mode=max,scope=argocd-agent
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.AGENT_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true

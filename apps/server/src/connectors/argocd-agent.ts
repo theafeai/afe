@@ -227,7 +227,14 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
       { source: CONNECTOR_SOURCE, connectionId, reason: loss.reason, detail: loss.detail },
       "argocd agent: observations may be missing",
     );
-    await health(ctx)?.reportFailure(tenantId, connectionId, loss.reason, loss.detail, undefined, at);
+    await health(ctx)?.reportFailure(
+      tenantId,
+      connectionId,
+      loss.reason,
+      loss.detail,
+      undefined,
+      at,
+    );
   }
 
   // ---- agent authentication ------------------------------------------------
@@ -284,7 +291,10 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
       return null;
     }
     if (check !== "ok") {
-      req.log.warn({ source: CONNECTOR_SOURCE, connectionId, check }, "argocd agent: bad signature");
+      req.log.warn(
+        { source: CONNECTOR_SOURCE, connectionId, check },
+        "argocd agent: bad signature",
+      );
       return unauthorized();
     }
     const parsed = req.body as { agentId?: unknown; sentAt?: unknown } | undefined;
@@ -407,9 +417,7 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
         const runChanged = row.runId !== batch.runId;
         await updateAgentRow(client, tenantId, connectionId, {
           runId: batch.runId,
-          lastSequence: runChanged
-            ? batch.sequence
-            : Math.max(row.lastSequence, batch.sequence),
+          lastSequence: runChanged ? batch.sequence : Math.max(row.lastSequence, batch.sequence),
           droppedTotal: runChanged
             ? batch.droppedTotal
             : Math.max(row.droppedTotal, batch.droppedTotal),
@@ -450,11 +458,10 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
       events ? { appEvents: async () => events } : {};
     for (const item of batch.items) {
       if (item.kind === "watch") {
-        await capture.handleWatchEvent(
-          { type: item.type, application: item.application },
-          counts,
-          { observedAt: observed(item.observedAt), ...eventsOf(item.events) },
-        );
+        await capture.handleWatchEvent({ type: item.type, application: item.application }, counts, {
+          observedAt: observed(item.observedAt),
+          ...eventsOf(item.events),
+        });
       } else if (item.kind === "snapshot") {
         await capture.observe(item.application, "reconciliation", counts, undefined, {
           observedAt: observed(item.observedAt),
@@ -591,22 +598,18 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
     routes(app: FastifyInstance, ctx: ServerContext) {
       // ---- admin API (ADR 0006: admin only, tenant from the principal) ----
 
-      app.get(
-        "/api/connections/argocd/agents",
-        { config: { access: "admin" } },
-        async (req) => {
-          const tenantId = requestTenant(req);
-          const rows = new Map(
-            (await listAgentRows(ctx.pool, tenantId)).map((r) => [r.connectionId, r]),
-          );
-          const out = [];
-          for (const id of rows.keys()) {
-            const c = await getConnection(ctx.pool, tenantId, id);
-            if (c && isAgentConnection(c)) out.push(agentView(c, rows.get(id)!));
-          }
-          return { agents: out };
-        },
-      );
+      app.get("/api/connections/argocd/agents", { config: { access: "admin" } }, async (req) => {
+        const tenantId = requestTenant(req);
+        const rows = new Map(
+          (await listAgentRows(ctx.pool, tenantId)).map((r) => [r.connectionId, r]),
+        );
+        const out = [];
+        for (const id of rows.keys()) {
+          const c = await getConnection(ctx.pool, tenantId, id);
+          if (c && isAgentConnection(c)) out.push(agentView(c, rows.get(id)!));
+        }
+        return { agents: out };
+      });
 
       app.post<{ Body: { instanceId: string; name?: string } }>(
         "/api/connections/argocd/agents",

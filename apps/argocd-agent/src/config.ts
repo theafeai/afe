@@ -58,7 +58,6 @@ function bool(env: NodeJS.ProcessEnv, name: string, def: boolean): boolean {
   throw new ConfigError(`${name} must be true or false`);
 }
 
-
 export interface ConfigFiles {
   exists(path: string): boolean;
   read(path: string): string;
@@ -99,15 +98,23 @@ export function loadConfig(
   }
   if (u.username || u.password || u.search || u.hash)
     throw new ConfigError("AFE_URL must not contain credentials, a query or a fragment");
-  if (u.protocol !== "https:" && !(u.protocol === "http:" && bool(env, "AFE_AGENT_ALLOW_INSECURE_HTTP", false)))
-    throw new ConfigError("AFE_URL must use https (AFE_AGENT_ALLOW_INSECURE_HTTP=true for labs only)");
+  if (
+    u.protocol !== "https:" &&
+    !(u.protocol === "http:" && bool(env, "AFE_AGENT_ALLOW_INSECURE_HTTP", false))
+  )
+    throw new ConfigError(
+      "AFE_URL must use https (AFE_AGENT_ALLOW_INSECURE_HTTP=true for labs only)",
+    );
 
   const agentId = env.AFE_AGENT_ID ?? "";
-  if (!UUID_RE.test(agentId)) throw new ConfigError("AFE_AGENT_ID must be the agent id (a UUID) shown at registration");
+  if (!UUID_RE.test(agentId))
+    throw new ConfigError("AFE_AGENT_ID must be the agent id (a UUID) shown at registration");
   const secretFile = env.AFE_AGENT_SECRET_FILE || undefined;
   const secret = env.AFE_AGENT_SECRET || undefined;
   if (!!secretFile === !!secret)
-    throw new ConfigError("set exactly one of AFE_AGENT_SECRET_FILE (recommended) or AFE_AGENT_SECRET");
+    throw new ConfigError(
+      "set exactly one of AFE_AGENT_SECRET_FILE (recommended) or AFE_AGENT_SECRET",
+    );
   if (secretFile && !fileExists(secretFile))
     throw new ConfigError("AFE_AGENT_SECRET_FILE: cannot read the file");
 
@@ -119,8 +126,13 @@ export function loadConfig(
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
-  if (namespaces && (!namespaces.length || namespaces.some((n) => !/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(n))))
-    throw new ConfigError('AFE_AGENT_NAMESPACES must be "*" or a comma-separated list of namespaces');
+  if (
+    namespaces &&
+    (!namespaces.length || namespaces.some((n) => !/^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/.test(n)))
+  )
+    throw new ConfigError(
+      'AFE_AGENT_NAMESPACES must be "*" or a comma-separated list of namespaces',
+    );
 
   const host = env.KUBERNETES_SERVICE_HOST;
   const port = env.KUBERNETES_SERVICE_PORT ?? "443";
@@ -128,7 +140,9 @@ export function loadConfig(
     env.AFE_AGENT_KUBE_URL?.replace(/\/+$/, "") ||
     (host ? `https://${host.includes(":") ? `[${host}]` : host}:${port}` : "");
   if (!kubeUrl)
-    throw new ConfigError("not running in a cluster (KUBERNETES_SERVICE_HOST unset); set AFE_AGENT_KUBE_URL");
+    throw new ConfigError(
+      "not running in a cluster (KUBERNETES_SERVICE_HOST unset); set AFE_AGENT_KUBE_URL",
+    );
 
   const kubeCaFile = env.AFE_AGENT_KUBE_CA_FILE ?? `${SERVICE_ACCOUNT_DIR}/ca.crt`;
   const logLevel = (env.AFE_AGENT_LOG_LEVEL ?? "info") as AgentConfig["logLevel"];
@@ -136,7 +150,9 @@ export function loadConfig(
     throw new ConfigError("AFE_AGENT_LOG_LEVEL must be debug, info, warn or error");
 
   const afeCa = readOptional(env.AFE_AGENT_CA_FILE, "AFE_AGENT_CA_FILE");
-  const kubeCa = fileExists(kubeCaFile) ? readOptional(kubeCaFile, "AFE_AGENT_KUBE_CA_FILE") : undefined;
+  const kubeCa = fileExists(kubeCaFile)
+    ? readOptional(kubeCaFile, "AFE_AGENT_KUBE_CA_FILE")
+    : undefined;
   return {
     afeUrl,
     agentId: agentId.toLowerCase(),
@@ -151,7 +167,13 @@ export function loadConfig(
     bufferMaxItems: int(env, "AFE_AGENT_BUFFER_MAX_ITEMS", 10_000, 10, 1_000_000),
     bufferMaxBytes: int(env, "AFE_AGENT_BUFFER_MAX_BYTES", 64 * 1024 * 1024, 1024 * 1024, 2 ** 31),
     batchMaxItems: int(env, "AFE_AGENT_BATCH_MAX_ITEMS", 200, 1, 1000),
-    batchMaxBytes: int(env, "AFE_AGENT_BATCH_MAX_BYTES", 2 * 1024 * 1024, 64 * 1024, 7 * 1024 * 1024),
+    batchMaxBytes: int(
+      env,
+      "AFE_AGENT_BATCH_MAX_BYTES",
+      2 * 1024 * 1024,
+      64 * 1024,
+      7 * 1024 * 1024,
+    ),
     listPageSize: int(env, "AFE_AGENT_LIST_PAGE_SIZE", 250, 1, 5000),
     watchTimeoutSeconds: int(env, "AFE_AGENT_WATCH_TIMEOUT_SECONDS", 300, 10, 3600),
     healthPort: int(env, "AFE_AGENT_HEALTH_PORT", 8081, 0, 65535),

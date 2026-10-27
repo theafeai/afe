@@ -8,6 +8,10 @@ import type { AddressInfo } from "node:net";
 import { verifyAgentSignature } from "@afe/connector-argocd/agent-protocol";
 import type { ArgoCdApplication, ArgoCdKubeEvent } from "@afe/connector-argocd";
 
+/** Parsed JSON as received, read freely in assertions. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Loose = Record<string, any>;
+
 export const KUBE_TOKEN = "fake-serviceaccount-token";
 
 export class FakeKube {
@@ -113,7 +117,7 @@ export class FakeKube {
 
 export interface Received {
   path: string;
-  body: Record<string, any>;
+  body: Loose;
   raw: string;
 }
 
@@ -149,7 +153,11 @@ export class FakeAfe {
           res.writeHead(401).end('{"error":"unauthorized"}');
           return;
         }
-        const r: Received = { path: req.url!, body: JSON.parse(raw.toString()), raw: raw.toString() };
+        const r: Received = {
+          path: req.url!,
+          body: JSON.parse(raw.toString()),
+          raw: raw.toString(),
+        };
         this.received.push(r);
         const custom = this.respond?.(r);
         if (custom) {
@@ -178,13 +186,13 @@ export class FakeAfe {
     await new Promise((r) => this.server.close(r));
   }
 
-  batches(): Record<string, any>[] {
+  batches(): Loose[] {
     return this.received.filter((r) => r.path.endsWith("/batches")).map((r) => r.body);
   }
-  items(): Record<string, any>[] {
+  items(): Loose[] {
     return this.batches().flatMap((b) => b.items);
   }
-  heartbeats(): Record<string, any>[] {
+  heartbeats(): Loose[] {
     return this.received.filter((r) => r.path.endsWith("/heartbeat")).map((r) => r.body);
   }
 }

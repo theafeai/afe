@@ -1,6 +1,6 @@
 # ADR 0004: ArgoCD connection model
 
-- Status: Accepted
+- Status: Accepted (agent section updated by AFE-28)
 - Date: 2026-10-26
 - Issue: AFE-9
 
@@ -103,10 +103,97 @@ triggers such as `on-sync-succeeded`, `on-sync-failed`, `on-deployed`.
    Private targets need `AFE_ALLOW_PRIVATE_NETWORK_TARGETS=true` (self-host
    only). Redirects are never followed. Timeouts, bounded retries and a
    response size limit apply.
-7. **Agent (option B) is deferred** to a follow-up issue; its protocol is
-   fixed below so the server side can accept it without changing the model.
+7. **Agent (option B) was deferred** to a follow-up issue and built in
+   AFE-28; see "Agent protocol" below for the protocol as built and the
+   changes from the original design.
 
-## Agent protocol (design, not implemented)
+## Agent protocol (implemented in AFE-28)
+
+The agent was built in AFE-28 (`apps/argocd-agent`, Afe side
+`apps/server/src/connectors/argocd-agent.ts`, wire format
+`packages/connector-argocd/src/agent-protocol.ts`, migration
+`0018_argocd_agents.sql`; operator docs in
+[docs/connectors/argocd.md](../connectors/argocd.md#in-cluster-agent)). The
+original design (kept below for the record) was followed with the changes
+listed under "Changes from the original design".
+
+### As built (protocol v1)
+
+- **Registration** (admin, `POST /api/connections/argocd/agents`
+  `{instanceId, name?}`): creates a `connections` row with `source = "argocd"`,
+  `externalId = agent:<instanceId>`, `config.mode = "agent"` (and
+  `config.transport = "agent"`), and a per-agent secret (32 random bytes,
+  `afeag_` prefix) stored as a credential (kind `argocd_agent_secret`, role
+  `agent_secret`), returned once. The agent id is the connection id.
+  Rotation: `POST /api/connections/argocd/agents/:id/rotate-secret`
+  (optional grace period: the previous secret stays valid, role
+  `agent_secret_previous`). Disconnecting uses the existing
+  `DELETE /api/connections/argocd/:id`.
+- **Reading**: the agent lists and watches `applications.argoproj.io` through
+  the Kubernetes API with a ServiceAccount bound to `get/list/watch
+applications` (+ `get/list events` for attribution), in the ArgoCD namespace
+  (Role) or all namespaces (ClusterRole). No ArgoCD token. Reading through the
+  ArgoCD API from inside the cluster remains possible later (`mode:
+"argocd-api"` is reserved in the protocol) but is not built.
+- **What is sent**: raw Application objects (minus managed fields, unused
+  annotations, `status.resources/conditions`), never canonical events. Afe
+  runs the AFE-10 capture on them (`ArgoCdCapture` without an API client:
+  `handleWatchEvent` for watch items with method `stream`, `observe(...,
+"reconciliation")` for snapshot items, `reconcileFromSnapshot` for the end
+  of a snapshot). Mapping and its versioning stay in Afe; keys equal pull
+  mode's, so observations of the same application by pull and agent dedupe.
+- **Transport**: `POST /agent/argocd/v1/batches` and
+  `POST /agent/argocd/v1/heartbeat` with headers `X-Afe-Agent-Id`,
+  `X-Afe-Timestamp` (unix seconds) and `X-Afe-Signature: v1=<hex
+HMAC-SHA256(secret, "v1:" + timestamp + ":" + raw body)>`. Afe rejects a
+  timestamp or body `sentAt` more than 5 minutes from its clock, and records
+  every `batchId` / `heartbeatId` with `recordDelivery(source
+"argocd-agent")`. Batch body: `{protocol: 1, agentId, runId, batchId,
+sequence, sentAt, agentVersion, mode, droppedTotal, items}`; items are
+  `watch {type, observedAt, application, events?}`, `snapshot {snapshotId,
+observedAt, application, events?}` and `snapshot_end {snapshotId, listedAt,
+droppedTotalAtStart, uids}`.
+- **Processing**: the endpoint verifies, stages the body
+  (`argocd_agent_batches`, same transaction as the replay record), enqueues
+  `argocd-agent.process` and answers 202. The job processes a connection's
+  batches strictly in arrival order under an advisory lock and deletes each
+  when done. More than 500 waiting batches → 429 with `Retry-After`.
+- **Heartbeats** every 30 s (interval set by Afe in the response). Missing
+  for 90 s → `reportFailure(unreachable)` (gap opened by AFE-13 rules).
+  Dropped observations, a sequence gap, an agent restart, or a batch that
+  cannot be processed also report a failure. Such a gap is closed only when a
+  full snapshot that started after the loss has been processed; the
+  heartbeat response asks the agent for one (`resync: true`).
+- **Backpressure in the agent**: bounded buffer (items and bytes); when full,
+  the oldest waiting observations are dropped and counted in
+  `droppedTotal`, and the agent lists again once there is room.
+
+### Changes from the original design, and why
+
+1. **Endpoints are outside `/api/`** (`/agent/argocd/v1/...` instead of
+   `/api/agents/argocd/v1/...`): since ADR 0006 every `/api/*` route
+   requires a user principal; agents are not users and authenticate each
+   request themselves, like webhooks.
+2. **No bearer token; HMAC only, with a timestamp in the signed input.** The
+   original design sent the token as `Authorization: Bearer` and signed with
+   a key derived from it. Sending it adds nothing (the HMAC already proves
+   possession) and exposes it to every TLS-terminating proxy; signing the
+   timestamp bounds replay even after delivery records are pruned.
+3. **Explicit `snapshot_end` with all uids, plus `runId`, `sequence` and
+   `droppedTotal`.** Afe cannot ask the cluster whether an application is
+   gone (pull mode uses a GET), so the end of a full list carries the uids;
+   the counters let Afe detect lost data honestly.
+4. **Gaps close on a covering full snapshot, not on the next heartbeat.** A
+   resumed heartbeat proves liveness, not that nothing was missed.
+5. **Heartbeat 30 s** instead of 60 s, so a silent agent is noticed within
+   about two minutes; still cheap (one small request).
+6. **Kubernetes API as the primary read path** (the design allowed either):
+   no ArgoCD credential exists at all, it works with SSO-only ArgoCD and
+   without argocd-server, and the RBAC is the narrowest available.
+7. **`config.mode = "agent"`** is the discriminator used in code (the
+   original `config.transport = "agent"` is also set).
+
+### Original design (AFE-9, superseded by the above)
 
 - Registration: an admin creates an "agent" ArgoCD connection in Afe; Afe
   returns a one-time **agent token** (32 random bytes, stored as a credential,
@@ -137,8 +224,9 @@ triggers such as `on-sync-succeeded`, `on-sync-failed`, `on-deployed`.
 
 - Self-hosters next to ArgoCD connect with a URL and a token; nothing to
   install in the cluster.
-- The hosted service can only reach public or allow-listed ArgoCD instances
-  until the agent exists; that is the trigger to build it.
+- The hosted service reaches private ArgoCD instances through the in-cluster
+  agent (AFE-28); pull mode remains the simplest option for self-hosters next
+  to ArgoCD.
 - The admin API (`/api/connections/argocd`) has no authentication yet; it
   depends on the `AuthProvider` (ADR 0002) and acts on the default tenant
   until then. Do not expose Afe's API publicly before auth lands.

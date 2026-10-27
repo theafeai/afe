@@ -75,7 +75,13 @@ describe("message validation", () => {
       sequence: 1,
       items: [
         { kind: "watch", type: "MODIFIED", observedAt: env.sentAt, application: app },
-        { kind: "snapshot", snapshotId: randomUUID(), observedAt: env.sentAt, application: app, events: [] },
+        {
+          kind: "snapshot",
+          snapshotId: randomUUID(),
+          observedAt: env.sentAt,
+          application: app,
+          events: [],
+        },
         {
           kind: "snapshot_end",
           snapshotId: randomUUID(),
@@ -95,7 +101,12 @@ describe("message validation", () => {
       { ...env, batchId: "x", sequence: 1, items: [] },
       { ...env, batchId: randomUUID(), sequence: 0, items: [] },
       { ...env, batchId: randomUUID(), sequence: 1, items: [{ kind: "watch", type: "BOOKMARK" }] },
-      { ...env, batchId: randomUUID(), sequence: 1, items: [{ kind: "watch", type: "ADDED", observedAt: env.sentAt, application: {} }] },
+      {
+        ...env,
+        batchId: randomUUID(),
+        sequence: 1,
+        items: [{ kind: "watch", type: "ADDED", observedAt: env.sentAt, application: {} }],
+      },
       { ...env, batchId: randomUUID(), sequence: 1, items: new Array(1001).fill({}) },
       { ...env, droppedTotal: -1, batchId: randomUUID(), sequence: 1, items: [] },
     ];

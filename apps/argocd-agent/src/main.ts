@@ -32,7 +32,12 @@ export function metricsText(agent: ArgoCdAgent): string {
   const lines = [
     ["afe_agent_buffered_items", "gauge", "Observations waiting to be sent", s.buffered],
     ["afe_agent_inflight_items", "gauge", "Observations in the batch being sent", s.inFlight],
-    ["afe_agent_dropped_total", "counter", "Observations dropped (buffer full or batch rejected)", s.droppedTotal],
+    [
+      "afe_agent_dropped_total",
+      "counter",
+      "Observations dropped (buffer full or batch rejected)",
+      s.droppedTotal,
+    ],
     ["afe_agent_batches_accepted_total", "counter", "Batches accepted by Afe", s.batchesAccepted],
     ["afe_agent_snapshots_total", "counter", "Full snapshots taken", s.snapshots],
     ["afe_agent_watch_events_total", "counter", "Watch events received", s.watchEvents],

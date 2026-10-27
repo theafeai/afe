@@ -92,7 +92,10 @@ export class KubeClient {
     const res = await this.#get(path);
     if (res.status !== 200) {
       res.discard();
-      throw new KubeError(`kubernetes API answered ${res.status} for GET ${pathOnly(path)}`, res.status);
+      throw new KubeError(
+        `kubernetes API answered ${res.status} for GET ${pathOnly(path)}`,
+        res.status,
+      );
     }
     try {
       return JSON.parse(await res.text()) as T;

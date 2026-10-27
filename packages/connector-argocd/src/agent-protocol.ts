@@ -156,11 +156,7 @@ function signingInput(timestamp: string, body: Buffer | string): Buffer {
 }
 
 /** `X-Afe-Signature` value for a request body signed at `timestamp` (unix seconds). */
-export function signAgentRequest(
-  secret: string,
-  timestamp: string,
-  body: Buffer | string,
-): string {
+export function signAgentRequest(secret: string, timestamp: string, body: Buffer | string): string {
   return `v1=${createHmac("sha256", secret).update(signingInput(timestamp, body)).digest("hex")}`;
 }
 

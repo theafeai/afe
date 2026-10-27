@@ -28,12 +28,16 @@ function app(name: string, extra: Record<string, unknown> = {}) {
     metadata: {
       ...a.metadata,
       managedFields: [{ manager: "kubectl" }],
-      annotations: {
+      annotations: <Record<string, string>>{
         "kubectl.kubernetes.io/last-applied-configuration": '{"spec":{"helm":"values"}}',
         "argocd.argoproj.io/tracking-id": "parent:argoproj.io/Application:argocd/x",
       },
     },
-    status: { ...a.status, resources: [{ kind: "Secret", name: "x" }], conditions: [{ message: "m" }] },
+    status: {
+      ...a.status,
+      resources: [{ kind: "Secret", name: "x" }],
+      conditions: [{ message: "m" }],
+    },
     ...extra,
   };
 }
@@ -100,8 +104,18 @@ describe("ArgoCD agent (fake Kubernetes API and fake Afe)", () => {
 
     // Watch: an operation starts; the agent attaches the app's Events.
     kube.events.push({
-      ...auditEvent("alice", "initiated sync to main (aaaaaaa)", "2026-10-27T10:00:00Z", "OperationStarted"),
-      involvedObject: { kind: "Application", name: "guestbook", namespace: "argocd", uid: a.metadata.uid },
+      ...auditEvent(
+        "alice",
+        "initiated sync to main (aaaaaaa)",
+        "2026-10-27T10:00:00Z",
+        "OperationStarted",
+      ),
+      involvedObject: {
+        kind: "Application",
+        name: "guestbook",
+        namespace: "argocd",
+        uid: a.metadata.uid,
+      },
     });
     const synced = {
       ...a,
@@ -124,7 +138,10 @@ describe("ArgoCD agent (fake Kubernetes API and fake Afe)", () => {
 
     // An unchanged status-only update does not fetch Events again.
     const eventCalls = kube.requests.filter((r) => r.includes("/events")).length;
-    kube.emit("MODIFIED", { ...synced, status: { ...synced.status, reconciledAt: "2026-10-27T10:05:00Z" } });
+    kube.emit("MODIFIED", {
+      ...synced,
+      status: { ...synced.status, reconciledAt: "2026-10-27T10:05:00Z" },
+    });
     await waitFor(() => afe.items().filter((i) => i.kind === "watch").length === 2, "2nd watch");
     expect(kube.requests.filter((r) => r.includes("/events")).length).toBe(eventCalls);
 
@@ -190,12 +207,16 @@ describe("ArgoCD agent (fake Kubernetes API and fake Afe)", () => {
     const a = app("guestbook");
     kube.put(a);
     let down = false;
-    afe.respond = (r) => (down && r.path.endsWith("/batches") ? [503, { error: "down" }] : undefined);
+    afe.respond = (r) =>
+      down && r.path.endsWith("/batches") ? [503, { error: "down" }] : undefined;
     await start({ bufferMaxItems: 4, batchMaxItems: 1 });
     await waitFor(() => kube.watchFrom.length === 1 && snapshotEnds().length === 1, "watching");
     down = true;
     for (let i = 0; i < 12; i++) {
-      kube.emit("MODIFIED", { ...a, status: { ...a.status, reconciledAt: `2026-10-27T10:00:${10 + i}Z` } });
+      kube.emit("MODIFIED", {
+        ...a,
+        status: { ...a.status, reconciledAt: `2026-10-27T10:00:${10 + i}Z` },
+      });
     }
     await waitFor(() => agent.snapshotStats().droppedTotal > 0, "drops");
     expect(logs.some((l) => l.msg.startsWith("buffer full"))).toBe(true);
@@ -283,8 +304,10 @@ describe("loadConfig", () => {
       expect(() => loadConfig(env, exists)).toThrow(ConfigError);
     }
     expect(
-      loadConfig({ ...base, AFE_URL: "http://afe:8080", AFE_AGENT_ALLOW_INSECURE_HTTP: "true" }, exists)
-        .afeUrl,
+      loadConfig(
+        { ...base, AFE_URL: "http://afe:8080", AFE_AGENT_ALLOW_INSECURE_HTTP: "true" },
+        exists,
+      ).afeUrl,
     ).toBe("http://afe:8080");
   });
 });

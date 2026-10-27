@@ -59,7 +59,10 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
   beforeAll(async () => {
     pool = await createTestPool();
     await pool.query("INSERT INTO tenants (id, name) VALUES ('other', 'Other')");
-    fake = await startFakeArgoCd({ accounts: { [ARGOCD_TOKEN]: { username: "afe" } }, applications: [] });
+    fake = await startFakeArgoCd({
+      accounts: { [ARGOCD_TOKEN]: { username: "afe" } },
+      applications: [],
+    });
     jobs = new InlineJobQueue();
     const built = await buildAfe({
       authProvider: tokenMapAuth({
@@ -121,7 +124,12 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     opts: { secret?: string; at?: Date; mutate?: (raw: string) => string } = {},
   ) {
     const raw = JSON.stringify(body);
-    const headers = agentRequestHeaders(agent.id, opts.secret ?? agent.secret, raw, opts.at ?? now());
+    const headers = agentRequestHeaders(
+      agent.id,
+      opts.secret ?? agent.secret,
+      raw,
+      opts.at ?? now(),
+    );
     return app.inject({
       method: "POST",
       url: path,
@@ -167,14 +175,12 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
   function snapshotItems(apps: FakeApplication[], listedAt = now()): AgentItem[] {
     const snapshotId = randomUUID();
     return [
-      ...apps.map(
-        (a): AgentItem => ({
-          kind: "snapshot",
-          snapshotId,
-          observedAt: now().toISOString(),
-          application: a.snapshot(),
-        }),
-      ),
+      ...apps.map((a): AgentItem => ({
+        kind: "snapshot",
+        snapshotId,
+        observedAt: now().toISOString(),
+        application: a.snapshot(),
+      })),
       {
         kind: "snapshot_end",
         snapshotId,
@@ -219,13 +225,21 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
       payload: { instanceId: "prod-eu-1" },
     });
     expect(again.statusCode).toBe(409);
-    const list = await app.inject({ method: "GET", url: "/api/connections/argocd/agents", headers: A });
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/connections/argocd/agents",
+      headers: A,
+    });
     expect(list.json().agents.map((a: { id: string }) => a.id)).toContain(agent.id);
     expect(list.body).not.toContain(agent.secret);
     const stored = await pool.query("SELECT kind FROM credentials WHERE tenant_id = 'default'");
     expect(stored.rows.map((r) => r.kind)).toContain("argocd_agent_secret");
     // Other tenant: not listed, cannot rotate.
-    const other = await app.inject({ method: "GET", url: "/api/connections/argocd/agents", headers: B });
+    const other = await app.inject({
+      method: "GET",
+      url: "/api/connections/argocd/agents",
+      headers: B,
+    });
     expect(other.json().agents).toEqual([]);
     const rot = await app.inject({
       method: "POST",
@@ -244,8 +258,12 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     const agent = await register();
     const body = batchBody(agent, []);
     const unknown = { ...agent, id: randomUUID() };
-    expect((await post(unknown, AGENT_PATHS.batches, { ...body, agentId: unknown.id })).statusCode).toBe(401);
-    expect((await post(agent, AGENT_PATHS.batches, body, { secret: "afeag_wrong" })).statusCode).toBe(401);
+    expect(
+      (await post(unknown, AGENT_PATHS.batches, { ...body, agentId: unknown.id })).statusCode,
+    ).toBe(401);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, body, { secret: "afeag_wrong" })).statusCode,
+    ).toBe(401);
     const tampered = await post(agent, AGENT_PATHS.batches, body, {
       mutate: (raw) => raw.replace('"items":[]', '"items":[ ]'),
     });
@@ -264,7 +282,9 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
       payload: JSON.stringify(body),
     });
     expect(noHeaders.statusCode).toBe(401);
-    expect((await post(agent, AGENT_PATHS.batches, { ...body, items: [{ kind: "nope" }] })).statusCode).toBe(400);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, { ...body, items: [{ kind: "nope" }] })).statusCode,
+    ).toBe(400);
     // Valid one is accepted; the same batchId again is a duplicate, staged once.
     expect((await post(agent, AGENT_PATHS.batches, body)).statusCode).toBe(202);
     const replay = await post(agent, AGENT_PATHS.batches, body);
@@ -295,13 +315,26 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     const old = agent.secret;
     const r1 = await rotate(600);
     expect(r1.previousSecretValidUntil).not.toBeNull();
-    expect((await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: old })).statusCode).toBe(202);
-    expect((await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: r1.secret })).statusCode).toBe(202);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: old })).statusCode,
+    ).toBe(202);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: r1.secret }))
+        .statusCode,
+    ).toBe(202);
     advance(11 * MIN);
-    expect((await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: old })).statusCode).toBe(401);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: old })).statusCode,
+    ).toBe(401);
     const r2 = await rotate();
-    expect((await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: r1.secret })).statusCode).toBe(401);
-    expect((await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: r2.secret })).statusCode).toBe(202);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: r1.secret }))
+        .statusCode,
+    ).toBe(401);
+    expect(
+      (await post(agent, AGENT_PATHS.batches, batchBody(agent, []), { secret: r2.secret }))
+        .statusCode,
+    ).toBe(202);
     await jobs.drain();
   });
 
@@ -310,7 +343,9 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
   it("maps snapshots (reconciliation) and watch events (stream) with the AFE-10 code", async () => {
     const agent = await register();
     const guestbook = new FakeApplication({ name: "guestbook-agent", createdAt: iso(-60 * MIN) });
-    guestbook.startSync({ at: iso(-30 * MIN), by: "alice", revision: SHA1 }).finishSync({ at: iso(-29 * MIN) });
+    guestbook
+      .startSync({ at: iso(-30 * MIN), by: "alice", revision: SHA1 })
+      .finishSync({ at: iso(-29 * MIN) });
     await sendBatch(agent, snapshotItems([guestbook]));
     const first = await events(agent.id);
     expect(first.length).toBeGreaterThan(0);
@@ -343,7 +378,9 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     const late = new FakeApplication({ name: "late", createdAt: iso(0) });
     await sendBatch(agent, [watch("ADDED", late)]);
     await sendBatch(agent, snapshotItems([keep], listedAt));
-    const deleted = (await events(agent.id)).filter((e) => e.action === "argocd.application.deleted");
+    const deleted = (await events(agent.id)).filter(
+      (e) => e.action === "argocd.application.deleted",
+    );
     expect(deleted).toHaveLength(1);
     expect(deleted[0]!.data).toMatchObject({ confidence: "certain" });
     expect(deleted[0]!.data.evidence).toContain("in-cluster agent");
@@ -403,7 +440,9 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     const app1 = new FakeApplication({ name: "hb-app", createdAt: iso(-60 * MIN) });
     expect((await heartbeat(agent)).resync).toBe(false);
     await sendBatch(agent, snapshotItems([app1]));
-    expect(await probeAgentConnection(pool, (await getConnection(pool, "default", agent.id))!, { now })).toEqual({
+    expect(
+      await probeAgentConnection(pool, (await getConnection(pool, "default", agent.id))!, { now }),
+    ).toEqual({
       ok: true,
     });
 
@@ -420,7 +459,11 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     const hb = await heartbeat(agent);
     expect(hb.resync).toBe(true); // Afe asks for a full snapshot
     expect(await gaps(agent.id)).toEqual(["observation_gap.opened"]); // not closed by a heartbeat
-    const probe = await probeAgentConnection(pool, (await getConnection(pool, "default", agent.id))!, { now });
+    const probe = await probeAgentConnection(
+      pool,
+      (await getConnection(pool, "default", agent.id))!,
+      { now },
+    );
     expect(probe).toMatchObject({ ok: false, reason: "error" });
 
     advance(1000);

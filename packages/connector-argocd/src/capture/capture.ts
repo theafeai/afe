@@ -19,11 +19,7 @@ import {
 } from "@afe/core";
 import type { ArgoCdClient } from "../client.ts";
 import { ArgoCdError } from "../errors.ts";
-import type {
-  ArgoCdApplication,
-  ArgoCdApplicationWatchEvent,
-  ArgoCdKubeEvent,
-} from "../types.ts";
+import type { ArgoCdApplication, ArgoCdApplicationWatchEvent, ArgoCdKubeEvent } from "../types.ts";
 import {
   observeApplication,
   observeDeletion,
@@ -255,15 +251,15 @@ export class ArgoCdCapture {
       ...(opts.appEvents
         ? { appEvents: opts.appEvents }
         : this.#o.attributeWithEvents !== false && name && client
-        ? {
-            appEvents: async () =>
-              (
-                await client.listApplicationEvents(name, {
-                  ...(appNamespace ? { appNamespace } : {}),
-                })
-              ).items ?? [],
-          }
-        : {}),
+          ? {
+              appEvents: async () =>
+                (
+                  await client.listApplicationEvents(name, {
+                    ...(appNamespace ? { appNamespace } : {}),
+                  })
+                ).items ?? [],
+            }
+          : {}),
     };
   }
 

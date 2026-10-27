@@ -30,7 +30,12 @@ export class AfeClient {
   /** POSTs a JSON body. Network errors throw `HttpError`; HTTP errors are returned. */
   async post(path: string, body: string): Promise<AfeResult> {
     const secret = await this.o.secret();
-    const headers = agentRequestHeaders(this.o.agentId, secret, body, (this.o.now ?? (() => new Date()))());
+    const headers = agentRequestHeaders(
+      this.o.agentId,
+      secret,
+      body,
+      (this.o.now ?? (() => new Date()))(),
+    );
     const res = await request({
       url: new URL(path, this.o.baseUrl).toString(),
       method: "POST",

@@ -51,7 +51,15 @@ export function sanitizeApplication(app: ArgoCdApplication): ArgoCdApplication {
           sr.resources = sr.resources.map((r) => {
             if (!isObj(r)) return {};
             const keep: Obj = {};
-            for (const k of ["group", "version", "kind", "namespace", "name", "status", "hookPhase"])
+            for (const k of [
+              "group",
+              "version",
+              "kind",
+              "namespace",
+              "name",
+              "status",
+              "hookPhase",
+            ])
               if (typeof r[k] === "string") keep[k] = r[k];
             return keep;
           });

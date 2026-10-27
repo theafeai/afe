@@ -7,6 +7,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseAllDocuments } from "yaml";
+import type { Loose } from "./fakes.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../deploy/argocd-agent");
 const READ_VERBS = new Set(["get", "list", "watch"]);
@@ -79,7 +80,7 @@ describe("agent manifests (plain YAML)", () => {
   it("runs the agent locked down", async () => {
     const docs = await plainDocs();
     const dep = docs.find((d) => d.kind === "Deployment") as {
-      spec: { replicas: number; strategy: { type: string }; template: { spec: any } };
+      spec: { replicas: number; strategy: { type: string }; template: { spec: Loose } };
     };
     expect(dep.spec.replicas).toBe(1);
     expect(dep.spec.strategy.type).toBe("Recreate");
@@ -103,7 +104,7 @@ describe("agent manifests (plain YAML)", () => {
 
   it("limits egress with a NetworkPolicy", async () => {
     const docs = await plainDocs();
-    const np = docs.find((d) => d.kind === "NetworkPolicy") as { spec: any };
+    const np = docs.find((d) => d.kind === "NetworkPolicy") as { spec: Loose };
     expect(np.spec.policyTypes.sort()).toEqual(["Egress", "Ingress"]);
     expect(np.spec.ingress).toEqual([]);
     expect(np.spec.egress).toHaveLength(3);
@@ -111,7 +112,8 @@ describe("agent manifests (plain YAML)", () => {
 });
 
 describe("agent Helm chart", () => {
-  const tpl = (f: string) => readFile(path.join(root, "helm/afe-argocd-agent/templates", f), "utf8");
+  const tpl = (f: string) =>
+    readFile(path.join(root, "helm/afe-argocd-agent/templates", f), "utf8");
 
   it("RBAC templates contain only read verbs and only applications/events", async () => {
     const text = await tpl("rbac.yaml");
