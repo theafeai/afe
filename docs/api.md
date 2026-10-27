@@ -48,14 +48,18 @@ resources answer `404`.
 
 ## Endpoints
 
-| Method and path           | Purpose                                                                                  |
-| ------------------------- | ---------------------------------------------------------------------------------------- |
-| `GET /api/events`         | Filtered, paginated event list, each with provenance                                     |
-| `GET /api/events/:id`     | One event: full canonical event, provenance, raw payload                                 |
-| `GET /api/events/:id/raw` | The raw source payload bytes (download, for debugging)                                   |
-| `GET /api/deployments`    | "Who deployed what to where, and when" view across tools                                 |
-| `/api/mapping/...`        | Environment and service mapping (see [below](#environment-and-service-mapping))          |
-| `GET /api/containment`    | Is commit X included in what is live, per environment (see [below](#commit-containment)) |
+| Method and path                                       | Purpose                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `GET /api/events`                                     | Filtered, paginated event list, each with provenance                                       |
+| `GET /api/events/:id`                                 | One event: full canonical event, provenance, raw payload                                   |
+| `GET /api/events/:id/raw`                             | The raw source payload bytes (download, for debugging)                                     |
+| `GET /api/deployments`                                | "Who deployed what to where, and when" view across tools                                   |
+| `/api/mapping/...`                                    | Environment and service mapping (see [below](#environment-and-service-mapping))            |
+| `GET /api/containment`                                | Is commit X included in what is live, per environment (see [below](#commit-containment))   |
+| `GET /api/environments/state`                         | What is live where: service × environment matrix (see [below](#environments-and-journeys)) |
+| `GET /api/environments/:service/:environment/history` | Placements of one matrix cell over time, with their causes                                 |
+| `GET /api/journeys`                                   | Where a commit went: change → CI → artifact → config → deploy → runtime                    |
+| `GET /api/events/:id/links`                           | Events related to one event, with typed evidence and confidence                            |
 
 Errors: `400 {"error":"bad_request","message":...}` for invalid parameters
 (including unknown parameters: a typo never silently widens a query),
@@ -262,3 +266,326 @@ is `commit` included in the live commit? Details, permissions and limits:
 - `404 {"error":"not_found"}` when the tenant has neither recent placements
   of the repository nor a GitHub connection covering it (also for another
   tenant's repository). `400` for invalid parameters.
+
+## Environments and journeys
+
+Correlation (AFE-20, viewer access, tenant of the caller). How it works, the
+confidence model and the measurements: [correlation.md](correlation.md).
+Every response has `window`: `{from, to, events, asOfSeq, stale, truncated,
+computedAt}`: the retention window the answer is computed from, the newest
+event `seq` it reflects, and whether newer events are not reflected yet
+(recompute is throttled for busy tenants). Unknown query parameters answer
+`400`. Confidence is one of `certain`, `strong`, `probable`, `weak`, always
+shown with its evidence (`via`, `evidence[]`, `notes`).
+
+### `GET /api/environments/state`
+
+The environment matrix. Query: `service`, `environment` (an id, or
+`_unmapped`), `source` (`github`, `argocd`, `vercel`), `targets` (targets per
+cell, 1–100, default 20).
+
+```json
+{
+  "asOf": "2026-10-27T10:00:00.000Z",
+  "window": { "from": "2026-09-27T10:00:00.000Z", "asOfSeq": 4182, "stale": false, "...": "..." },
+  "services": [
+    { "id": "shop-api", "name": "Shop API", "unmapped": false },
+    { "id": "_unmapped", "name": "Unmapped", "unmapped": true }
+  ],
+  "environments": [
+    {
+      "id": "production",
+      "name": "Production",
+      "kind": "production",
+      "order": 10,
+      "unmapped": false
+    }
+  ],
+  "cells": [
+    {
+      "service": "shop-api",
+      "environment": "staging",
+      "unmapped": false,
+      "status": "attributed",
+      "confidence": "probable",
+      "since": "2026-10-21T14:05:40.000Z",
+      "contentSince": "2026-10-21T14:05:40.000Z",
+      "consistent": true,
+      "gap": { "flagged": false, "evidenceInGap": false, "possiblyStale": false },
+      "live": {
+        "targetKey": "argocd:argocd/shop-api-staging",
+        "label": "shop-api-staging",
+        "eventId": "…",
+        "at": "2026-10-21T14:05:40.000Z",
+        "source": "argocd",
+        "action": "argocd.sync.succeeded",
+        "kind": "deploy",
+        "how": "auto_sync",
+        "actor": null,
+        "deploymentIds": ["argocd:argocd/shop-api-staging:12"],
+        "deploymentUrls": [],
+        "configRevision": { "repository": "github.com/acme/shop-deploy", "commitSha": "…" },
+        "images": [
+          {
+            "ref": "ghcr.io/acme/shop-api:4f2c9b8",
+            "builds": [
+              {
+                "eventId": "…",
+                "commitSha": "…",
+                "repository": "github.com/acme/shop",
+                "confidence": "probable"
+              }
+            ]
+          }
+        ],
+        "commits": [
+          {
+            "repository": "github.com/acme/shop",
+            "commitSha": "…",
+            "confidence": "probable",
+            "via": "ghcr.io/acme/shop-api:4f2c9b8 built by … (tag match)"
+          }
+        ],
+        "attribution": { "status": "attributed", "confidence": "probable" },
+        "notes": [],
+        "evidenceEventIds": ["…"],
+        "gaps": []
+      },
+      "targets": [
+        {
+          "key": "argocd:argocd/shop-api-staging",
+          "source": "argocd",
+          "label": "shop-api-staging",
+          "toolEnvironment": "staging",
+          "mapping": {
+            "confidence": "default",
+            "matchedRuleIds": ["…", "builtin:…"]
+          },
+          "current": { "...": "placement as in live" },
+          "since": "…",
+          "contentSince": "…",
+          "history": {
+            "placements": 2,
+            "byKind": { "deploy": 2 },
+            "previous": { "eventId": "…", "at": "…", "kind": "deploy", "commits": ["…"] }
+          }
+        }
+      ],
+      "targetsOmitted": 0,
+      "historyUrl": "/api/environments/shop-api/staging/history"
+    }
+  ]
+}
+```
+
+- Rows/columns are the tenant's services and environments (all of them, in
+  mapping order) plus `_unmapped` when a target is not mapped. Only cells
+  with placements are listed.
+- `status`: `attributed`, `ambiguous` (several candidate commits, mutable
+  tag), `guess` (no Git metadata, weak time-proximity guess), `unknown`
+  (nothing traces to a commit, e.g. a manually overridden image).
+- `kind`: `deploy`, `promotion`, `rollback`, `redeploy`, `manual`.
+- `gaps[]` per placement: `{gapId, source, connectionId, startedAt, endedAt,
+reason, relation, eventId}`, `relation` `evidence_in_gap` or
+  `after_placement` (possibly stale).
+
+### `GET /api/environments/:service/:environment/history`
+
+Placements of one cell (all its targets), newest first. `:service` and
+`:environment` are mapping ids or `_unmapped`; unknown ids answer `404`.
+Query: `limit` (1–200, default 50), `cursor` (from `nextCursor`; bound to the
+cell), `target` (one target key).
+
+```json
+{
+  "service": { "id": "web", "name": "Web", "unmapped": false },
+  "environment": {
+    "id": "production",
+    "name": "Production",
+    "kind": "production",
+    "order": 10,
+    "unmapped": false
+  },
+  "targets": [
+    {
+      "key": "vercel:web:production",
+      "source": "vercel",
+      "label": "web",
+      "toolEnvironment": "production",
+      "currentEventId": "…",
+      "placements": 7
+    }
+  ],
+  "total": 8,
+  "items": [
+    {
+      "target": { "key": "vercel:web:production", "source": "vercel", "label": "web" },
+      "current": false,
+      "change": "new_content",
+      "previousEventId": "…",
+      "placement": { "kind": "rollback", "...": "as in the matrix" },
+      "event": {
+        "id": "…",
+        "source": "vercel",
+        "action": "deployment.rolled_back",
+        "at": "…",
+        "outcome": "succeeded",
+        "actor": "alice",
+        "trigger": "rollback",
+        "target": { "type": "project", "id": "prj_…", "label": "web" },
+        "url": "/api/events/…"
+      },
+      "causes": [
+        {
+          "event": { "...": "…" },
+          "stage": "deploy",
+          "confidence": "certain",
+          "evidence": [{ "kind": "same_deployment", "key": "deployment:vercel:dpl_…" }]
+        }
+      ]
+    }
+  ],
+  "nextCursor": "…"
+}
+```
+
+`change`: `first`, `new_content` or `same_content` (a restart/redeploy of the
+same commits and images). `causes`: up to 8 linked earlier events that are
+changes, config edits, artifacts or the same deployment (e.g. the PR that
+bumped the GitOps repository, the deployment a rollback made live again).
+
+### `GET /api/journeys?repository=&commit=`
+
+The journey of one commit. `repository`: `owner/name`, `host/owner/name` or a
+URL; `commit`: 7–64 hex characters (a prefix must be unique within the
+repository in the window, else `400` with `candidates`). Optional:
+`include=containment`, `maxSteps` (1–2000, default 300). `404` when no event
+in the window carries the commit in that repository.
+
+```json
+{
+  "window": { "...": "…" },
+  "journey": {
+    "id": "github.com/acme/shop@…",
+    "repository": "github.com/acme/shop",
+    "commitSha": "…",
+    "ref": "refs/heads/main",
+    "startedAt": "…",
+    "root": { "id": "…", "action": "ref.pushed", "...": "…" },
+    "stages": [
+      { "stage": "change", "steps": ["<event id>"] },
+      { "stage": "ci", "steps": ["…"] }
+    ],
+    "steps": [
+      {
+        "eventId": "…",
+        "stage": "artifact",
+        "confidence": "certain",
+        "reachedFrom": "…",
+        "via": [{ "kind": "same_run", "confidence": "certain", "key": "run:github:…" }],
+        "event": { "...": "…" }
+      }
+    ],
+    "edges": [
+      {
+        "from": "…",
+        "to": "…",
+        "confidence": "probable",
+        "evidence": [
+          {
+            "kind": "same_image_tag",
+            "confidence": "probable",
+            "key": "image:ghcr.io/acme/shop-api:4f2c9b8"
+          }
+        ]
+      }
+    ],
+    "environments": [
+      {
+        "environmentKey": "argocd:argocd/shop-api-production",
+        "placementEventId": "…",
+        "at": "…",
+        "confidence": "strong",
+        "current": false,
+        "via": "attribution",
+        "target": {
+          "key": "argocd:argocd/shop-api-production",
+          "source": "argocd",
+          "label": "shop-api-production"
+        },
+        "service": "shop-api",
+        "environment": "production",
+        "event": { "...": "…" }
+      }
+    ],
+    "excluded": [
+      {
+        "eventId": "…",
+        "reason": "deployed images do not trace to this commit (e.g. image overridden outside Git)",
+        "event": { "...": "…" }
+      }
+    ],
+    "continuesAs": [
+      {
+        "journeyId": "github.com/acme/web@…",
+        "repository": "github.com/acme/web",
+        "commitSha": "…",
+        "relation": "merged_as",
+        "eventId": "…"
+      }
+    ],
+    "conflicts": [],
+    "gaps": [],
+    "truncated": false,
+    "containment": null
+  }
+}
+```
+
+- `stages` are in flow order (`change`, `ci`, `artifact`, `config`,
+  `deploy`, `runtime`, `other`), only those with steps.
+- `environments[].via`: `attribution`, `config_revision` (the GitOps revision
+  synced), `reached` (unattributed placement reached through links) or
+  `containment`.
+- `continuesAs[].relation`: `merged_as`, `included_in` (pushed together, the
+  other commit is the head), `later_commit`.
+- `include=containment`: checks (at most 5) whether the commit is included in
+  the live commit of current placements of the same repository
+  ([commit containment](#commit-containment)); `containment` then lists
+  `{placementEventId, liveCommitSha, contained, reason, environmentKey}` and
+  included ones appear in `environments` with `via: "containment"`. Without
+  it `containment` is `null` and no GitHub call is made.
+
+### `GET /api/events/:id/links`
+
+Events linked to one event, strongest first. Query: `limit` (1–200,
+default 50).
+
+```json
+{
+  "eventId": "…",
+  "inWindow": true,
+  "window": { "...": "…" },
+  "total": 12,
+  "links": [
+    {
+      "direction": "earlier",
+      "confidence": "certain",
+      "evidence": [
+        { "kind": "same_deployment", "confidence": "certain", "key": "deployment:vercel:dpl_…" }
+      ],
+      "event": { "...": "…" }
+    }
+  ],
+  "conflicts": [],
+  "placement": null
+}
+```
+
+`direction`: whether the other event is `earlier` or `later`. Hot keys (more
+than 24 events share a commit, digest, tag, …) are linked as a chain plus
+the first event, so an event in such a bucket lists its neighbours, not every
+member (see [correlation.md](correlation.md#linking-core)). `placement` is
+set when the event put something live (as in the matrix, plus its `target`
+and whether it is `current`). `404` for unknown ids and other tenants'
+events; `inWindow: false` for events without correlation keys.
