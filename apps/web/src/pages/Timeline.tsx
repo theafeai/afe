@@ -178,15 +178,15 @@ export function Timeline() {
   const [params, setParams] = useSearchParams();
   const filters = parseFilters(params);
   const key = filtersToSearch(filters).toString();
-  const highlight = useJourneyHighlight(params, setParams);
-  const setFilters = (f: Filters) =>
-    setParams(highlight.keep(filtersToSearch(f)), { replace: true });
   const connections = useAsync((s) => api.connections(s), []);
   const page = usePaged(
     key,
     () => filtersToApiParams(parseFilters(new URLSearchParams(key))),
     (p, s) => api.events(p, s),
   );
+  const highlight = useJourneyHighlight(params, setParams, page.items);
+  const setFilters = (f: Filters) =>
+    setParams(highlight.keep(filtersToSearch(f)), { replace: true });
   const filtered = activeFilterCount(filters) > 0;
 
   return (

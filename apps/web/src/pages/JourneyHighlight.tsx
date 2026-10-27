@@ -51,9 +51,26 @@ export function journeyEventIds(j: Journey): { on: Set<string>; excluded: Map<st
   return { on, excluded };
 }
 
+/** First and last event time of a journey (steps, placements, excluded), widened by a minute. */
+export function journeySpan(j: Journey): { from: string; to: string } {
+  const times = [
+    ...j.steps.map((s) => s.event.at),
+    ...j.environments.map((e) => e.event.at),
+    ...j.excluded.map((x) => x.event.at),
+  ].map((t) => Date.parse(t));
+  const min = Math.min(...times);
+  const max = Math.max(...times);
+  return {
+    from: new Date(min - 60_000).toISOString(),
+    to: new Date(max + 60_000).toISOString(),
+  };
+}
+
 export function useJourneyHighlight(
   params: URLSearchParams,
   setParams: (next: URLSearchParams, options?: { replace?: boolean }) => void,
+  /** Events loaded on the page, to say how many of the journey's are visible. */
+  loaded: EventItem[] = [],
 ): {
   banner: ReactNode;
   decorate: (item: EventItem) => RowDecoration;
@@ -117,12 +134,30 @@ export function useJourneyHighlight(
             <>
               Highlighting the journey of {label}: {ids.on.size} related event
               {ids.on.size === 1 ? "" : "s"}
-              {ids.excluded.size > 0 && `, ${ids.excluded.size} ruled out`}. Other events are
-              dimmed.
+              {ids.excluded.size > 0 && `, ${ids.excluded.size} ruled out`} (
+              {loaded.filter((it) => ids.on.has(it.event.id)).length} loaded below). Other events
+              are dimmed.
             </>
           ) : null}
         </span>
         <span className="button-row">
+          {res.data && (
+            <button
+              type="button"
+              className="btn"
+              title="Limit the timeline to the time between the journey's first and last event"
+              onClick={() => {
+                const span = journeySpan(res.data!.journey);
+                const next = new URLSearchParams(params);
+                next.delete("range");
+                next.set("from", span.from);
+                next.set("to", span.to);
+                setParams(next, { replace: true });
+              }}
+            >
+              Show its time span
+            </button>
+          )}
           <Link className="btn" to={journeyPath(subject.repository, fullSha ?? subject.commit)}>
             View journey
           </Link>

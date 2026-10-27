@@ -73,15 +73,25 @@ export function weakest(a: Confidence, b: Confidence): Confidence {
 
 // --- Layout ------------------------------------------------------------------
 
-export const CARD_W = 208;
+export const CARD_W = 200;
+export const MIN_CARD_W = 156;
+export const MAX_CARD_W = 232;
 export const CARD_H = 92;
-export const GAP_X = 64;
-export const GAP_Y = 14;
-export const HEAD_H = 30;
+export const GAP_X = 48;
+export const GAP_Y = 22;
+export const HEAD_H = 34;
+
+/** Card width that fits `columns` stage columns into `available` pixels (clamped). */
+export function fitCardWidth(columns: number, available: number | null): number {
+  if (!available || columns === 0) return CARD_W;
+  const w = Math.floor((available - (columns - 1) * GAP_X) / columns);
+  return Math.max(MIN_CARD_W, Math.min(MAX_CARD_W, w));
+}
 
 export interface CardBox {
   step: JourneyStep;
   column: number;
+  row: number;
   x: number;
   y: number;
 }
@@ -89,9 +99,8 @@ export interface CardBox {
 export interface EdgePath {
   edge: JourneyEdge;
   d: string;
-  /** Label anchor. */
-  lx: number;
-  ly: number;
+  /** Confidence label anchor (in the gutter before the target), or null when another label says it. */
+  label: { x: number; y: number } | null;
   /** A conflict between two steps (not a link). */
   conflict?: { kind: string; key: string; detail: string };
 }
@@ -100,6 +109,7 @@ export interface Layout {
   columns: { stage: Stage; x: number; count: number }[];
   cards: Map<string, CardBox>;
   edges: EdgePath[];
+  cardW: number;
   width: number;
   height: number;
 }
@@ -107,71 +117,95 @@ export interface Layout {
 const byTime = (a: JourneyStep, b: JourneyStep) =>
   a.event.at < b.event.at ? -1 : a.event.at > b.event.at ? 1 : a.eventId < b.eventId ? -1 : 1;
 
-function path(a: CardBox, b: CardBox): { d: string; lx: number; ly: number } {
-  if (a.column === b.column) {
-    // Same column: a loop on the right side.
-    const x = a.x + CARD_W;
-    const y1 = a.y + CARD_H / 2;
-    const y2 = b.y + CARD_H / 2;
-    const bulge = x + Math.min(GAP_X - 8, 24 + Math.abs(y2 - y1) / 8);
-    return {
-      d: `M ${x} ${y1} C ${bulge} ${y1}, ${bulge} ${y2}, ${x} ${y2}`,
-      lx: bulge - 4,
-      ly: (y1 + y2) / 2,
-    };
-  }
-  const forward = a.column < b.column;
-  const x1 = forward ? a.x + CARD_W : a.x;
-  const x2 = forward ? b.x : b.x + CARD_W;
+/**
+ * Edge routing. Neighbouring columns: a curve through the gutter. Edges that
+ * skip columns, go backwards or stay in a column never pass under a card:
+ * they leave through the gutter after the source, run along the free channel
+ * between two rows, and enter through the gutter before the target.
+ */
+function route(a: CardBox, b: CardBox, w: number, lane: number): string {
   const y1 = a.y + CARD_H / 2;
   const y2 = b.y + CARD_H / 2;
-  const dx = Math.max(24, Math.abs(x2 - x1) / 2);
-  const c1 = forward ? x1 + dx : x1 - dx;
-  const c2 = forward ? x2 - dx : x2 + dx;
-  return {
-    d: `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`,
-    lx: (x1 + x2) / 2,
-    ly: (y1 + y2) / 2,
-  };
+  const x1 = a.x + w;
+  if (b.column === a.column + 1) {
+    const x2 = b.x;
+    const dx = (x2 - x1) / 2;
+    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  }
+  const off = ((lane % 5) - 2) * 3;
+  const gx1 = x1 + GAP_X / 2 + off;
+  // Enter from the left (forward) or, for a target in the same/earlier column, from its right.
+  const enterLeft = b.column > a.column;
+  const x2 = enterLeft ? b.x : b.x + w;
+  const gx2 = enterLeft ? b.x - GAP_X / 2 + off : b.x + w + GAP_X / 2 + off;
+  if (b.column === a.column) {
+    return `M ${x1} ${y1} L ${gx1} ${y1} L ${gx1} ${y2} L ${x2} ${y2}`;
+  }
+  // Channel above row k: between row k-1 and k (k = 0: under the headers).
+  const rowY = (k: number) => HEAD_H + k * (CARD_H + GAP_Y) - GAP_Y / 2;
+  const mid = (y1 + y2) / 2;
+  const k = Math.max(0, Math.round((mid - HEAD_H + GAP_Y / 2) / (CARD_H + GAP_Y)));
+  const cy = rowY(k) + off / 3;
+  return `M ${x1} ${y1} L ${gx1} ${y1} L ${gx1} ${cy} L ${gx2} ${cy} L ${gx2} ${y2} L ${x2} ${y2}`;
 }
 
-/** Stage columns (flow order), cards in time order per column, edge paths. */
-export function layoutJourney(j: Journey): Layout {
+/** Stage columns (flow order), cards in time order per column, routed edges. */
+export function layoutJourney(j: Journey, cardW: number = CARD_W): Layout {
+  const w = cardW;
   const byId = new Map(j.steps.map((s) => [s.eventId, s]));
   const cards = new Map<string, CardBox>();
   const columns: Layout["columns"] = [];
   let maxRows = 0;
   j.stages.forEach((st, column) => {
-    const x = column * (CARD_W + GAP_X);
+    const x = column * (w + GAP_X);
     const steps = st.steps.flatMap((id) => byId.get(id) ?? []).sort(byTime);
     steps.forEach((step, row) => {
-      cards.set(step.eventId, { step, column, x, y: HEAD_H + row * (CARD_H + GAP_Y) });
+      cards.set(step.eventId, { step, column, row, x, y: HEAD_H + row * (CARD_H + GAP_Y) });
     });
     maxRows = Math.max(maxRows, steps.length);
     columns.push({ stage: st.stage, x, count: steps.length });
   });
-  const edges: EdgePath[] = [];
+
+  const raw: { edge: JourneyEdge; a: CardBox; b: CardBox; conflict?: EdgePath["conflict"] }[] = [];
   for (const edge of j.edges) {
     const a = cards.get(edge.from);
     const b = cards.get(edge.to);
-    if (!a || !b) continue;
-    edges.push({ edge, ...path(a, b) });
+    if (a && b) raw.push({ edge, a, b });
   }
   for (const c of j.conflicts) {
     const a = cards.get(c.events[0]);
     const b = cards.get(c.events[1]);
     if (!a || !b) continue;
-    edges.push({
+    raw.push({
       edge: { from: c.events[0], to: c.events[1], confidence: "weak", evidence: [] },
-      ...path(a, b),
+      a,
+      b,
       conflict: { kind: c.kind, key: c.key, detail: c.detail },
     });
   }
+  // One label per target and confidence, stacked in the gutter before the target.
+  const labelled = new Map<string, number>();
+  const edges: EdgePath[] = raw.map(({ edge, a, b, conflict }, lane) => {
+    const tag = conflict ? "conflict" : edge.confidence;
+    const key = `${edge.to}:${tag}`;
+    let label: EdgePath["label"] = null;
+    if (!labelled.has(key)) {
+      const stack = [...labelled.keys()].filter((k) => k.startsWith(`${edge.to}:`)).length;
+      labelled.set(key, stack);
+      const enterLeft = b.column > a.column;
+      label = {
+        x: enterLeft ? b.x - GAP_X / 2 : b.x + w + GAP_X / 2,
+        y: b.y + CARD_H / 2 - 6 - stack * 12,
+      };
+    }
+    return { edge, d: route(a, b, w, lane), label, ...(conflict ? { conflict } : {}) };
+  });
   return {
     columns,
     cards,
     edges,
-    width: Math.max(0, columns.length * (CARD_W + GAP_X) - GAP_X + 32),
+    cardW: w,
+    width: Math.max(0, columns.length * (w + GAP_X) - GAP_X + GAP_X / 2),
     height: HEAD_H + maxRows * (CARD_H + GAP_Y),
   };
 }

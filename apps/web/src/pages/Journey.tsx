@@ -6,7 +6,7 @@
  * (`view=diagram|list|placements`, `containment=1` to ask GitHub whether
  * later live commits include this one). Data: `GET /api/journeys`.
  */
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { ApiError } from "../api/client.ts";
 import {
   CONFIDENCE_ORDER,
@@ -36,13 +36,14 @@ import { formatDateTime, formatRelative, humanize } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import {
   CARD_H,
-  CARD_W,
+  GAP_X,
   CONFIDENCE_HELP,
   RELATION_LABEL,
   STAGE_LABEL,
   VIA_LABEL,
   WHERE_LABEL,
   evidenceText,
+  fitCardWidth,
   layoutJourney,
   prefersPlacementList,
   shortSha,
@@ -78,6 +79,22 @@ function When({ at }: { at: string }) {
       {formatDateTime(at)}
     </time>
   );
+}
+
+/** True on narrow screens (max-width 640px); false where matchMedia is unavailable. */
+function useNarrow(): boolean {
+  const query = "(max-width: 640px)";
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia?.(query).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return narrow;
 }
 
 // --- Page ----------------------------------------------------------------------
@@ -290,7 +307,9 @@ export function JourneyContent({
 }) {
   const j = data.journey;
   const manyPlacements = prefersPlacementList(j);
-  const current: JourneyView = view ?? (manyPlacements ? "placements" : "diagram");
+  const narrow = useNarrow();
+  const current: JourneyView =
+    view ?? (manyPlacements ? "placements" : narrow ? "list" : "diagram");
   const where = useMemo(() => whereItWent(j, state), [j, state]);
   const repo = displayRepository(j.repository);
   const timelineLink = `/events?${new URLSearchParams({ journey: `${repo}@${j.commitSha}` }).toString()}`;
@@ -387,6 +406,11 @@ export function JourneyContent({
           <p className="small muted" role="note">
             This commit was deployed {j.environments.length} times; a list of placements reads
             better than a diagram here.
+          </p>
+        )}
+        {!manyPlacements && narrow && !view && (
+          <p className="small muted" role="note">
+            On a narrow screen the steps are listed; the diagram is one tap away.
           </p>
         )}
         {current === "diagram" ? (
@@ -501,11 +525,29 @@ function edgeLabel(p: EdgePath, byId: Map<string, JourneyStep>): string {
   const from = byId.get(p.edge.from)?.event.action ?? "step";
   const to = byId.get(p.edge.to)?.event.action ?? "step";
   if (p.conflict) return `Conflict between ${from} and ${to}: ${p.conflict.detail}`;
-  return `${p.edge.confidence} link from ${from} to ${to}: ${p.edge.evidence.map(evidenceText).join("; ")}`;
+  return `${from} to ${to}, path confidence ${p.edge.confidence}: ${p.edge.evidence.map(evidenceText).join("; ")}`;
+}
+
+/** Width of the element, tracked with ResizeObserver (null where unavailable, e.g. jsdom). */
+function useWidth(): [(el: HTMLElement | null) => void, number | null] {
+  const [width, setWidth] = useState<number | null>(null);
+  const [el, setEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setWidth(Math.round(w));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el]);
+  return [setEl, width];
 }
 
 export function JourneyDiagram({ journey }: { journey: Journey }) {
-  const layout = useMemo(() => layoutJourney(journey), [journey]);
+  const [ref, available] = useWidth();
+  const cardW = fitCardWidth(journey.stages.length, available ? available - GAP_X / 2 : null);
+  const layout = useMemo(() => layoutJourney(journey, cardW), [journey, cardW]);
   const byId = useMemo(() => new Map(journey.steps.map((s) => [s.eventId, s])), [journey]);
   const [active, setActive] = useState<Active>(null);
   const activeStep = active?.kind === "step" ? active.id : null;
@@ -519,17 +561,66 @@ export function JourneyDiagram({ journey }: { journey: Journey }) {
   return (
     <div className="journey-diagram-wrap">
       <Legend />
-      <div className="journey-scroll" tabIndex={-1}>
+      <div className="journey-scroll" ref={ref}>
         <div
           className="journey-canvas"
           style={{ width: layout.width, height: layout.height }}
           onMouseLeave={() => setActive(null)}
         >
           {layout.columns.map((c) => (
-            <div key={c.stage} className="journey-col-head" style={{ left: c.x, width: CARD_W }}>
+            <div
+              key={c.stage}
+              className="journey-col-head"
+              style={{ left: c.x, width: layout.cardW }}
+            >
               {STAGE_LABEL[c.stage]} <span className="muted">({c.count})</span>
             </div>
           ))}
+          {[...layout.cards.values()].map(({ step, x, y }) => {
+            const e = step.event;
+            const dim =
+              activeStep !== null &&
+              activeStep !== step.eventId &&
+              !journey.edges.some(
+                (ed) =>
+                  (ed.from === activeStep && ed.to === step.eventId) ||
+                  (ed.to === activeStep && ed.from === step.eventId),
+              );
+            return (
+              <Link
+                key={step.eventId}
+                to={`/events/${e.id}`}
+                className={`journey-card tool-edge-${e.source} conf-edge-${step.confidence}${dim ? " is-dim" : ""}${activeStep === step.eventId ? " is-active" : ""}`}
+                style={{ left: x, top: y, width: layout.cardW, height: CARD_H }}
+                data-testid="journey-card"
+                aria-label={`${STAGE_LABEL[step.stage]}: ${e.action} on ${e.target.label}, ${humanize(e.outcome)}, ${formatDateTime(e.at)}, ${step.reachedFrom ? `${step.confidence} link` : "carries the commit"}`}
+                onMouseEnter={() => setActive({ kind: "step", id: step.eventId })}
+                onFocus={() => setActive({ kind: "step", id: step.eventId })}
+              >
+                <span className="jc-top">
+                  <ToolBadge source={e.source} />
+                  {step.reachedFrom ? (
+                    <ConfidenceBadge value={step.confidence} />
+                  ) : (
+                    <span className="badge seed" title="Carries the commit itself">
+                      commit
+                    </span>
+                  )}
+                </span>
+                <span className="jc-action">{e.action}</span>
+                <span className="jc-meta">
+                  {e.target.label}
+                  {e.actor ? ` · ${e.actor}` : ""}
+                </span>
+                <span className="jc-meta">
+                  <time dateTime={e.at} title={formatDateTime(e.at)}>
+                    {formatDateTime(e.at).slice(5, 16)}
+                  </time>{" "}
+                  <OutcomeBadge outcome={e.outcome} />
+                </span>
+              </Link>
+            );
+          })}
           <svg
             className="journey-edges"
             width={layout.width}
@@ -572,50 +663,15 @@ export function JourneyDiagram({ journey }: { journey: Journey }) {
                   <title>{edgeLabel(p, byId)}</title>
                   <path className="edge-hit" d={p.d} />
                   <path className="edge-line" d={p.d} markerEnd={`url(#arrow-${cls})`} />
-                  <text x={p.lx} y={p.ly - 4} textAnchor="middle" className="edge-label">
-                    {p.conflict ? "conflict" : p.edge.confidence}
-                  </text>
+                  {p.label && (
+                    <text x={p.label.x} y={p.label.y} textAnchor="middle" className="edge-label">
+                      {p.conflict ? "conflict" : p.edge.confidence}
+                    </text>
+                  )}
                 </g>
               );
             })}
           </svg>
-          {[...layout.cards.values()].map(({ step, x, y }) => {
-            const e = step.event;
-            const dim =
-              activeStep !== null &&
-              activeStep !== step.eventId &&
-              !journey.edges.some(
-                (ed) =>
-                  (ed.from === activeStep && ed.to === step.eventId) ||
-                  (ed.to === activeStep && ed.from === step.eventId),
-              );
-            return (
-              <Link
-                key={step.eventId}
-                to={`/events/${e.id}`}
-                className={`journey-card tool-edge-${e.source} conf-edge-${step.confidence}${dim ? " is-dim" : ""}${activeStep === step.eventId ? " is-active" : ""}`}
-                style={{ left: x, top: y, width: CARD_W, height: CARD_H }}
-                data-testid="journey-card"
-                aria-label={`${STAGE_LABEL[step.stage]}: ${e.action} on ${e.target.label}, ${humanize(e.outcome)}, ${formatDateTime(e.at)}, ${step.confidence}`}
-                onMouseEnter={() => setActive({ kind: "step", id: step.eventId })}
-                onFocus={() => setActive({ kind: "step", id: step.eventId })}
-              >
-                <span className="jc-top">
-                  <ToolBadge source={e.source} />
-                  <ConfidenceBadge value={step.confidence} />
-                </span>
-                <span className="jc-action">{e.action}</span>
-                <span className="jc-meta">
-                  {e.target.label}
-                  {e.actor ? ` · ${e.actor}` : ""}
-                </span>
-                <span className="jc-meta">
-                  <time dateTime={e.at}>{formatDateTime(e.at)}</time>{" "}
-                  <OutcomeBadge outcome={e.outcome} />
-                </span>
-              </Link>
-            );
-          })}
         </div>
       </div>
       <Inspector journey={journey} layout={layout.edges} active={active} byId={byId} />
@@ -699,6 +755,10 @@ function Inspector({
             <code>{from?.action}</code> → <code>{to?.action}</code>{" "}
             <ConfidenceBadge value={p.edge.confidence} />
           </h3>
+          <p className="small muted">
+            The label is the path confidence: the weakest link from the commit to this step.
+            Evidence of this link:
+          </p>
           <EvidenceList evidence={p.edge.evidence} />
         </>
       );
