@@ -48,13 +48,14 @@ resources answer `404`.
 
 ## Endpoints
 
-| Method and path           | Purpose                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| `GET /api/events`         | Filtered, paginated event list, each with provenance                            |
-| `GET /api/events/:id`     | One event: full canonical event, provenance, raw payload                        |
-| `GET /api/events/:id/raw` | The raw source payload bytes (download, for debugging)                          |
-| `GET /api/deployments`    | "Who deployed what to where, and when" view across tools                        |
-| `/api/mapping/...`        | Environment and service mapping (see [below](#environment-and-service-mapping)) |
+| Method and path           | Purpose                                                                                  |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| `GET /api/events`         | Filtered, paginated event list, each with provenance                                     |
+| `GET /api/events/:id`     | One event: full canonical event, provenance, raw payload                                 |
+| `GET /api/events/:id/raw` | The raw source payload bytes (download, for debugging)                                   |
+| `GET /api/deployments`    | "Who deployed what to where, and when" view across tools                                 |
+| `/api/mapping/...`        | Environment and service mapping (see [below](#environment-and-service-mapping))          |
+| `GET /api/containment`    | Is commit X included in what is live, per environment (see [below](#commit-containment)) |
 
 Errors: `400 {"error":"bad_request","message":...}` for invalid parameters
 (including unknown parameters: a typo never silently widens a query),
@@ -211,3 +212,53 @@ curl "$AFE/api/deployments?source=argocd&application=payments&trigger=manual,api
 # Deployments Afe only learned about through reconciliation (missed webhooks)
 curl "$AFE/api/events?action=deployment.*&method=reconciliation"
 ```
+
+## Commit containment
+
+`GET /api/containment?repository=<owner/name>&commit=<sha>` (viewer, AFE-22):
+for every environment where the GitHub repository is live (latest successful
+deployment, promotion, rollback or ArgoCD sync within the retention window),
+is `commit` included in the live commit? Details, permissions and limits:
+[containment.md](containment.md).
+
+- `repository`: `owner/name`, `github.com/owner/name` or a GitHub URL.
+- `commit`: 7 to 64 hex characters (a full SHA is best).
+
+```json
+{
+  "repository": "acme/web",
+  "commit": "4f2c9b8…",
+  "checkedAt": "2026-10-27T10:00:00.000Z",
+  "partial": false,
+  "notes": ["placements since 2026-09-27T10:00:00.000Z (retention window) were considered"],
+  "environments": [
+    {
+      "environment": "Production",
+      "environmentId": "production",
+      "source": "github",
+      "liveCommit": "9d1e…",
+      "liveSince": "2026-10-26T09:12:00.000Z",
+      "contained": true,
+      "reasonCode": "ancestor",
+      "reason": "the live commit is 3 commit(s) ahead and includes this commit",
+      "evidence": ["<event id>", "<event id>"],
+      "comparison": { "status": "ahead", "aheadBy": 3, "behindBy": 0, "mergeBaseSha": "4f2c…" },
+      "cached": false
+    }
+  ]
+}
+```
+
+- `contained`: `true`, `false` or `"unknown"`; `reasonCode`/`reason` say why
+  (e.g. `missing_permission`, `commit_not_found`, `rate_limited` with
+  `retryAfter`, `timeout`, `not_checked_limit`).
+- `environment` is the mapped environment name ([mapping](environment-mapping.md)),
+  else the tool's own name; `environmentId` is null when unmapped.
+- `evidence`: ids of the placement events (newest first) behind `liveCommit`
+  and `liveSince`.
+- `partial: true` when the request did not check everything (time budget,
+  environment limit, rate limit) or not all placements were read; `notes`
+  explain.
+- `404 {"error":"not_found"}` when the tenant has neither recent placements
+  of the repository nor a GitHub connection covering it (also for another
+  tenant's repository). `400` for invalid parameters.

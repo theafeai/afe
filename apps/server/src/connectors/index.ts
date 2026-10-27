@@ -1,5 +1,6 @@
 import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
+import { containmentModule } from "../containment/index.ts";
 import { healthModule } from "../health/index.ts";
 import { mappingModule } from "../mapping/index.ts";
 import { retentionModule } from "../retention.ts";
@@ -26,4 +27,6 @@ export const defaultModules: ConnectorModule[] = [
   mappingModule,
   // Retention purge of expired events (ADR 0008).
   retentionModule,
+  // Commit containment: is commit X in what is live (AFE-22).
+  containmentModule,
 ];
