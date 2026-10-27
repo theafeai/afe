@@ -8,6 +8,7 @@ import { EnvKeyProvider } from "@afe/core/security";
 import { createTestPool } from "@afe/db/testing";
 import { getConnection, listEvents, verifyTenantChain } from "@afe/db";
 import { FakeVercelApi } from "@afe/connector-vercel/testing";
+import { normalizeDeployment, productionChangeEvent } from "@afe/connector-vercel";
 import { buildAfe, InlineJobQueue, type AfeConfig, type ServerContext } from "../src/index.ts";
 import {
   createVercelModule,
@@ -161,12 +162,17 @@ describe("vercel event capture (server wiring)", () => {
     });
   }
 
-  async function sendWebhook(type: string, deploymentId: string, projectId = "prj_web") {
+  async function sendWebhook(
+    type: string,
+    deploymentId: string,
+    projectId = "prj_web",
+    opts: { id?: string; createdAt?: number } = {},
+  ) {
     const hook = api.signedWebhook(
       {
-        id: `evt_${type}_${deploymentId}`,
+        id: opts.id ?? `evt_${type}_${deploymentId}`,
         type,
-        createdAt: clock,
+        createdAt: opts.createdAt ?? clock,
         payload: {
           team: { id: TEAM.id },
           user: { id: USER.id },
@@ -228,7 +234,11 @@ describe("vercel event capture (server wiring)", () => {
       ["deployment:dpl_a:succeeded", "deployment.status_updated", "backfill"],
       ["deployment:dpl_b:created", "deployment.created", "webhook"],
       ["deployment:dpl_b:succeeded", "deployment.status_updated", "reconciliation"],
-      ["production_alias:prj_web:dpl_b:dpl_a", "deployment.rolled_back", "reconciliation"],
+      [
+        expect.stringMatching(/^production_alias:prj_web:dpl_b:dpl_a:\d+$/),
+        "deployment.rolled_back",
+        "reconciliation",
+      ],
     ]);
     expect(all.find((e) => e.action === "deployment.rolled_back")).toMatchObject({
       correlation: { commitShas: [SHA], deploymentIds: ["vercel:dpl_a", "vercel:dpl_b"] },
@@ -240,6 +250,112 @@ describe("vercel event capture (server wiring)", () => {
     expect(observations.some((o) => o.ok && o.kind === "webhook")).toBe(true);
     expect(observations.filter((o) => o.kind === "poll").every((o) => o.ok)).toBe(true);
     expect(logs.join("")).not.toContain("SECRET");
+  });
+
+  const aliasEvents = async () =>
+    (await events()).filter(
+      (e) => e.action === "deployment.promoted" || e.action === "deployment.rolled_back",
+    );
+
+  it("records repeated identical production changes once each, across webhook and poll (AFE-30)", async () => {
+    deploy("dpl_a", { createdAt: T0 - 60 * MIN, ready: T0 - 58 * MIN });
+    deploy("dpl_b", { target: null, createdAt: T0 - 30 * MIN, ready: T0 - 28 * MIN });
+    api.setProduction(TEAM.id, "prj_web", "dpl_a");
+    const id = await connect(); // baseline: dpl_a
+
+    // A→B: webhook first, then poll.
+    clock += 5 * MIN;
+    api.setProduction(TEAM.id, "prj_web", "dpl_b");
+    await sendWebhook("deployment.promoted", "dpl_b", "prj_web", { id: "evt_1" });
+    clock += 5 * MIN;
+    await poll();
+    // B→A: poll first, then the (late) webhook.
+    clock += 5 * MIN;
+    api.setProduction(TEAM.id, "prj_web", "dpl_a");
+    const rolledBackAt = clock;
+    clock += 3 * MIN;
+    await poll();
+    await sendWebhook("deployment.promoted", "dpl_a", "prj_web", {
+      id: "evt_2",
+      createdAt: rolledBackAt,
+    });
+    // A→B again.
+    clock += 5 * MIN;
+    api.setProduction(TEAM.id, "prj_web", "dpl_b");
+    await sendWebhook("deployment.promoted", "dpl_b", "prj_web", { id: "evt_3" });
+    clock += 5 * MIN;
+    await poll();
+
+    const alias = await aliasEvents();
+    expect(
+      alias.map((e) => [e.data.fromDeploymentId, e.data.toDeploymentId, e.observation.method]),
+    ).toEqual([
+      ["dpl_a", "dpl_b", "webhook"],
+      ["dpl_b", "dpl_a", "reconciliation"],
+      ["dpl_a", "dpl_b", "webhook"],
+    ]);
+    expect(new Set(alias.map((e) => e.sourceEventId)).size).toBe(3);
+    const state = (await getVercelProductionState(pool, "default", id, "prj_web"))!;
+    expect(state.deploymentId).toBe("dpl_b");
+    expect(state.changes.map((c) => c.key).slice(1)).toEqual(alias.map((e) => e.sourceEventId));
+    expect((await verifyTenantChain(pool, "default")).ok).toBe(true);
+  });
+
+  it("upgrade: a production state row stored before migration 0015 is the baseline (AFE-30)", async () => {
+    deploy("dpl_a", { createdAt: T0 - 60 * MIN, ready: T0 - 58 * MIN });
+    deploy("dpl_b", { target: null, createdAt: T0 - 30 * MIN, ready: T0 - 28 * MIN });
+    api.setProduction(TEAM.id, "prj_web", "dpl_b");
+    const id = await connect();
+    // Replace the state with a row as written before AFE-30 (no `changes`),
+    // and the event recorded then under the old key.
+    await pool.query("DELETE FROM vercel_production_state");
+    await pool.query(
+      `INSERT INTO vercel_production_state
+         (tenant_id, connection_id, project_id, deployment_id, deployment_created_at,
+          previous_deployment_id, previous_deployment_created_at, last_seen_at, changed_at)
+       VALUES ('default', $1, 'prj_web', 'dpl_b', $2, 'dpl_a', $3, $4, $4)`,
+      [id, new Date(T0 - 30 * MIN), new Date(T0 - 60 * MIN), new Date(T0)],
+    );
+    expect((await getVercelProductionState(pool, "default", id, "prj_web"))!.changes).toEqual([]);
+    const legacyKey = "production_alias:prj_web:dpl_a:dpl_b";
+    await ctx.sink.ingest(
+      "default",
+      productionChangeEvent({
+        projectId: "prj_web",
+        deployment: normalizeDeployment({ id: "dpl_b", projectId: "prj_web", target: null }),
+        change: {
+          kind: "promotion",
+          confidence: "inferred",
+          reason: "recorded before AFE-30",
+          fromDeploymentId: "dpl_a",
+          occurredAt: null,
+        },
+        provenance: { method: "reconciliation", observedAt: new Date(T0), connectionId: id },
+        occurrence: { source: "observed", at: T0, notBefore: null },
+        sourceEventId: legacyKey,
+        raw: {},
+      }),
+    );
+
+    // Polls and a late webhook for that change emit nothing new.
+    clock += MIN;
+    await poll();
+    await sendWebhook("deployment.promoted", "dpl_b", "prj_web", { id: "late", createdAt: T0 });
+    expect((await aliasEvents()).map((e) => e.sourceEventId)).toEqual([legacyKey]);
+
+    // Later changes, including A→B again, get occurrence-qualified keys.
+    for (const to of ["dpl_a", "dpl_b"]) {
+      clock += 5 * MIN;
+      api.setProduction(TEAM.id, "prj_web", to);
+      clock += 5 * MIN;
+      await poll();
+    }
+    const alias = await aliasEvents();
+    expect(alias.map((e) => e.sourceEventId)).toEqual([
+      legacyKey,
+      expect.stringMatching(/^production_alias:prj_web:dpl_b:dpl_a:\d+$/),
+      expect.stringMatching(/^production_alias:prj_web:dpl_a:dpl_b:\d+$/),
+    ]);
   });
 
   it("re-observes a gap through the health backfill hook", async () => {
@@ -327,6 +443,7 @@ describe("vercel event capture (server wiring)", () => {
       previousDeploymentCreatedAt: null,
       lastSeenAt: T0,
       changedAt: T0,
+      changes: [],
     };
     await putVercelProductionState(pool, "default", id, "prj_web", s);
     expect(await getVercelProductionState(pool, "tenant-b", id, "prj_web")).toBeNull();

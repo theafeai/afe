@@ -113,7 +113,7 @@ canonical audit events ([event model](../event-model.md)). Code:
 `packages/connector-vercel/src/mapping.ts` (mapping), `capture.ts` (webhooks,
 promotion/rollback state), `polling.ts` (poll, backfill, reconciliation), wired
 in `apps/server/src/connectors/vercel.ts`; state in migration
-`0011_vercel_capture_state.sql`.
+`0011_vercel_capture_state.sql` and `0015_vercel_production_changes.sql`.
 
 ### Sources of events
 
@@ -190,16 +190,79 @@ without a source time have `occurredAt` = when Afe noticed, and
 
 ### Idempotency keys
 
-| Event                | `sourceEventId`                                                   |
-| -------------------- | ----------------------------------------------------------------- |
-| lifecycle            | `deployment:<dpl_id>:created\|succeeded\|failed\|cancelled`       |
-| promotion / rollback | `production_alias:<project id>:<from dpl_id or none>:<to dpl_id>` |
+| Event                | `sourceEventId`                                                                   |
+| -------------------- | --------------------------------------------------------------------------------- |
+| lifecycle            | `deployment:<dpl_id>:created\|succeeded\|failed\|cancelled`                       |
+| promotion / rollback | `production_alias:<project id>:<from dpl_id or none>:<to dpl_id>:<occurrence ms>` |
 
 The alias key names the transition, not its interpretation, so a webhook and
 a poll that see the same change dedupe even if one calls it a promotion and
-the other a rollback. A webhook for a change the poll already recorded reuses
-the stored previous deployment. Limitation: the same from→to change repeated
-(A→B, B→A, A→B) is stored once, as the first A→B event.
+the other a rollback. The last part, the **occurrence time** (AFE-30), tells
+repeated identical changes apart: A→B, B→A, A→B gives three events.
+
+**Where the occurrence time comes from** (`data.occurrenceSource`, the time in
+`data.occurrenceAt`), in order of preference:
+
+1. `lastAliasRequest`: Vercel's `project.lastAliasRequest.requestedAt`, when it
+   names the new production deployment as a `promote` or `rollback`. It is a
+   source fact that the webhook job (which reads the project) and the poll
+   read independently, so both derive the same key. For a webhook, a request
+   made more than 2 minutes after the webhook's own `createdAt` is a later
+   change and is not used.
+2. `webhook`: the signed `createdAt` of the `deployment.promoted` webhook.
+3. `observed`: when the poll first saw the change (an upper bound; the lower
+   bound is the last poll that still saw the previous deployment).
+
+A per-project counter was rejected: it would collide with earlier events after
+the state is reset (the connection is removed and recreated, which cascades
+the state away but not the events), and it cannot notice a change that
+happened between two sightings of the same deployment.
+
+**How the second path finds the first one's key.** Fallback times (2, 3) differ
+between paths, so the key of every change is also kept in
+`vercel_production_state.changes` (migration `0015`, last 20 changes per
+project). Webhook and poll processing of a project are serialised by a lock
+on that row, and the later one reuses the stored key when it is the same
+occurrence:
+
+- poll after webhook: production is already the stored deployment, so nothing
+  is recorded, unless `lastAliasRequest` names it with a different
+  `requestedAt` (it went away and came back between polls: a new occurrence);
+- webhook after poll: a stored change to the same deployment whose time
+  window contains the webhook's `createdAt` (±2 minutes) is the same change;
+  two `requestedAt`s must be equal;
+- a webhook for a change to the current deployment from later than that
+  window is a new occurrence (it went away and came back unobserved). Its
+  `from` is `lastAliasRequest.fromDeploymentId`, else the target of the latest
+  recorded change before it;
+- a late webhook for a deployment that is no longer production is recorded
+  if no stored change matches it, without moving the stored state.
+
+**Failure modes.**
+
+- No `lastAliasRequest` and no webhook for a change, and production returns to
+  the same deployment before the next poll (A→B→A between polls): the poll
+  sees no change, so neither event is recorded. This is an observation gap,
+  as before AFE-30; the late webhooks fill it when Vercel delivers them.
+- Without `lastAliasRequest`, two changes to the same deployment whose times
+  are within 2 minutes of each other (webhook vs. stored window) are taken as
+  one.
+- A poll that crashes after ingesting an `observed` change but before saving
+  the state gets a new key on retry (a duplicate event). The window is
+  milliseconds; webhook retries are stable because they reuse the signed
+  `createdAt`.
+- A webhook delayed by more than 20 changes of its project is compared with
+  no stored change and may be recorded a second time.
+
+**Upgrade from before AFE-30.** State rows written earlier have `changes = []`.
+The stored production deployment is the baseline: polls record nothing until
+production changes, and a late webhook for the change that led there is
+matched against it and reuses its old key
+`production_alias:<project>:<from or none>:<to>` (`occurrenceSource: "legacy"`,
+window up to the row's `changed_at`), so events recorded before the upgrade
+are not emitted again under a new key. Events keep the key they were stored
+with; consumers should not parse the key, and should read `data.fromDeploymentId`,
+`data.toDeploymentId` and `data.occurrenceAt` instead.
 
 ### Captured fields (AFE-15 correlation)
 
@@ -271,6 +334,13 @@ References: [webhooks](https://vercel.com/docs/webhooks/webhooks-api),
 9. Pagination `next` is a creation timestamp, so deployments sharing one
    millisecond across a page boundary could be skipped.
 10. Custom environments: `customEnvironment.slug` on deployments.
+11. (AFE-30) That `lastAliasRequest.requestedAt` is set for every promote and
+    instant rollback (dashboard, CLI `vercel promote`/`vercel rollback`, API),
+    is stable once written, is in epoch ms, and that the `deployment.promoted`
+    webhook's `createdAt` is within 2 minutes of it.
+12. (AFE-30) Whether `aliasAssigned` on a deployment is re-stamped when it is
+    promoted or rolled back to (it would be another source time usable for
+    keys, but Afe does not rely on it).
 
 ### Still to verify manually (real Vercel team)
 

@@ -1,11 +1,12 @@
 /**
  * PostgreSQL storage for Vercel capture state (AFE-12, migration 0011):
  * the per-connection poll cursor and the last production deployment per
- * project. Every function is scoped by tenant and connection (R5.2).
+ * project, with its recent changes (AFE-30, migration 0015). Every function is scoped by tenant and connection (R5.2).
  */
 import type pg from "pg";
 import {
   type OpenDeployment,
+  type ProductionChangeRecord,
   type ProductionState,
   type VercelCaptureStore,
   type VercelPollState,
@@ -75,6 +76,19 @@ interface ProductionRow {
   previous_deployment_created_at: Date | null;
   last_seen_at: Date;
   changed_at: Date;
+  changes: unknown;
+}
+
+function parseChanges(v: unknown): ProductionChangeRecord[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter(
+    (c): c is ProductionChangeRecord =>
+      !!c &&
+      typeof c === "object" &&
+      typeof (c as ProductionChangeRecord).key === "string" &&
+      typeof (c as ProductionChangeRecord).to === "string" &&
+      typeof (c as ProductionChangeRecord).at === "number",
+  );
 }
 
 export async function getVercelProductionState(
@@ -85,7 +99,7 @@ export async function getVercelProductionState(
 ): Promise<ProductionState | null> {
   const { rows } = await db.query<ProductionRow>(
     `SELECT deployment_id, deployment_created_at, previous_deployment_id,
-            previous_deployment_created_at, last_seen_at, changed_at
+            previous_deployment_created_at, last_seen_at, changed_at, changes
      FROM vercel_production_state
      WHERE tenant_id = $1 AND connection_id = $2 AND project_id = $3`,
     [tenantId, connectionId, projectId],
@@ -99,6 +113,7 @@ export async function getVercelProductionState(
     previousDeploymentCreatedAt: ms(r.previous_deployment_created_at),
     lastSeenAt: r.last_seen_at.getTime(),
     changedAt: r.changed_at.getTime(),
+    changes: parseChanges(r.changes),
   };
 }
 
@@ -112,15 +127,16 @@ export async function putVercelProductionState(
   await db.query(
     `INSERT INTO vercel_production_state
        (tenant_id, connection_id, project_id, deployment_id, deployment_created_at,
-        previous_deployment_id, previous_deployment_created_at, last_seen_at, changed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        previous_deployment_id, previous_deployment_created_at, last_seen_at, changed_at, changes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (tenant_id, connection_id, project_id) DO UPDATE SET
        deployment_id = EXCLUDED.deployment_id,
        deployment_created_at = EXCLUDED.deployment_created_at,
        previous_deployment_id = EXCLUDED.previous_deployment_id,
        previous_deployment_created_at = EXCLUDED.previous_deployment_created_at,
        last_seen_at = EXCLUDED.last_seen_at,
-       changed_at = EXCLUDED.changed_at`,
+       changed_at = EXCLUDED.changed_at,
+       changes = EXCLUDED.changes`,
     [
       tenantId,
       connectionId,
@@ -131,6 +147,7 @@ export async function putVercelProductionState(
       ts(s.previousDeploymentCreatedAt),
       new Date(s.lastSeenAt),
       new Date(s.changedAt),
+      JSON.stringify(s.changes),
     ],
   );
 }
