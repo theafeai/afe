@@ -5,6 +5,8 @@
     "packages/*/test",
     "apps/server/src",
     "apps/server/test",
+    "apps/argocd-agent/src",
+    "apps/argocd-agent/test",
     "docs/research/prototypes",
     "vitest.config.ts"
   ]
