@@ -184,9 +184,13 @@ describe("connector lookbacks never exceed the retention window", () => {
     expect(JSON.stringify(lines)).toMatch(/AFE_GITHUB_BACKFILL_DAYS exceeds/);
 
     const lines2: unknown[] = [];
-    const unchanged = clampReconcileToRetention(DEFAULT_GITHUB_RECONCILE_CONFIG, new FixedWindowRetention(30), {
-      info: (...a: unknown[]) => void lines2.push(a),
-    });
+    const unchanged = clampReconcileToRetention(
+      DEFAULT_GITHUB_RECONCILE_CONFIG,
+      new FixedWindowRetention(30),
+      {
+        info: (...a: unknown[]) => void lines2.push(a),
+      },
+    );
     expect(unchanged).toEqual(DEFAULT_GITHUB_RECONCILE_CONFIG);
     expect(lines2).toEqual([]);
   });

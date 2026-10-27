@@ -112,7 +112,7 @@ describe("GitHub reconciliation (AFE-8)", () => {
       expect(result.inserted).toBe(events().length);
       expect(result.rejected).toBe(0);
 
-      // Raw evidence is the REST object, without email addresses (R8).
+      // The raw payload is the REST object, without email addresses (R8).
       for (const e of events()) {
         const body = Buffer.from(sink.rawPayloads.get(e.rawPayload!.id)!.body).toString("utf8");
         expect(body).not.toContain("@example.com");
@@ -482,7 +482,7 @@ describe("GitHub reconciliation (AFE-8)", () => {
     });
   });
 
-  it("events are a valid hash chain", async () => {
+  it("events get consecutive seqs in ingestion order", async () => {
     orgActivity(api);
     await pass();
     const list: CanonicalEvent[] = events();

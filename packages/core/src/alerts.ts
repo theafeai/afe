@@ -76,7 +76,7 @@ function alertEvent(action: string, occurredAt: string, a: AlertNotification) {
   } satisfies Omit<CanonicalEventInputLike, "observedAt">;
 }
 
-/** Audit event for an alert being raised (occurredAt = openedAt). */
+/** Event for an alert being raised (occurredAt = openedAt). */
 export function connectionAlertOpened(
   a: AlertNotification,
   observedAt: Date = new Date(),
@@ -84,7 +84,7 @@ export function connectionAlertOpened(
   return { ...alertEvent(ACTIONS.CONNECTION_ALERT_OPENED, a.openedAt, a), observedAt };
 }
 
-/** Audit event for an alert being resolved (occurredAt = resolvedAt). */
+/** Event for an alert being resolved (occurredAt = resolvedAt). */
 export function connectionAlertResolved(
   a: AlertNotification & { resolvedAt: string },
   observedAt: Date = new Date(),

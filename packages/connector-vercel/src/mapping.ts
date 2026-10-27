@@ -1,5 +1,5 @@
 /**
- * Maps Vercel deployments to canonical audit events (AFE-12). Pure functions:
+ * Maps Vercel deployments to canonical events (AFE-12). Pure functions:
  * no I/O. Webhook processing and polling (`capture.ts`, `polling.ts`) feed
  * deployments in here, so both paths produce identical idempotency keys.
  *
@@ -478,7 +478,7 @@ export interface LifecycleEventOptions {
   provenance: Provenance;
   /** Source time of the transition; defaults per transition (see `defaultOccurredAt`). */
   occurredAt?: number | null;
-  /** Raw evidence (the webhook body or the API object the event was mapped from). */
+  /** Raw payload (the webhook body or the API object the event was mapped from). */
   raw: unknown;
   extraData?: JsonObject;
 }

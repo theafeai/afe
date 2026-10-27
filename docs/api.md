@@ -1,10 +1,14 @@
-# Audit query API
+# Event query API
 
-HTTP API for asking the audit log questions and taking evidence out of it
+HTTP API for asking Afe what happened recently across your delivery tools
 (AFE-14). Code: `apps/server/src/api/events.ts` (routes),
 `packages/db/src/event-query.ts` (SQL), `packages/core/src/event-filter.ts`
-(filter semantics), `packages/core/src/export/` (export and verifier). Export
-format and verification: [export-verification.md](export-verification.md).
+(filter semantics).
+
+Afe keeps events for a retention window (`AFE_EVENT_RETENTION_DAYS`, default
+30 days, at most 60; [ADR 0008](decisions/0008-open-source-scope-without-audit-log.md)).
+Older events are not returned because they are deleted. There is no export or
+audit-verification endpoint.
 
 ## Authentication
 
@@ -28,15 +32,13 @@ never a request parameter.
   `DELETE /api/session` logs out.
 - Mutating requests with an `Origin` header must come from Afe's own origin.
 
-| Endpoint                                                                             | Role   | Purpose                                    |
-| ------------------------------------------------------------------------------------ | ------ | ------------------------------------------ |
-| `POST /api/session`, `DELETE /api/session`                                           | public | Log in with a token / log out              |
-| `GET /api/session`                                                                   | viewer | Who am I                                   |
-| `GET` events, deployments, export, audit, connections, health                        | viewer | Read                                       |
-| `POST /api/audit/anchors/verify`                                                     | viewer | Check supplied anchor receipts (read-only) |
-| Create/test/disconnect connections, Vercel project selection (incl. listing)         | admin  | Change connections                         |
-| GitHub install, setup callback, App manifest flow; Vercel install and OAuth callback | admin  | Install flows                              |
-| `GET /api/export/public-key`                                                         | admin  | Export signing key                         |
+| Endpoint                                                                             | Role   | Purpose                       |
+| ------------------------------------------------------------------------------------ | ------ | ----------------------------- |
+| `POST /api/session`, `DELETE /api/session`                                           | public | Log in with a token / log out |
+| `GET /api/session`                                                                   | viewer | Who am I                      |
+| `GET` events, deployments, connections, health                                       | viewer | Read                          |
+| Create/test/disconnect connections, Vercel project selection (incl. listing)         | admin  | Change connections            |
+| GitHub install, setup callback, App manifest flow; Vercel install and OAuth callback | admin  | Install flows                 |
 
 Errors: `401 {"error":"unauthorized"}` without valid credentials (a browser
 navigation is redirected to `/login?next=...` instead), `403
@@ -46,23 +48,20 @@ resources answer `404`.
 
 ## Endpoints
 
-| Method and path              | Purpose                                                                       |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `GET /api/events`            | Filtered, paginated event list, each with provenance                          |
-| `GET /api/events/:id`        | One event: full canonical event, provenance, raw payload status, chain status |
-| `GET /api/events/:id/raw`    | The raw source payload bytes (download)                                       |
-| `GET /api/deployments`       | "Who deployed what to where, and when" view across tools                      |
-| `GET /api/export`            | Streaming CSV or JSON Lines export with an integrity manifest                 |
-| `GET /api/export/public-key` | The manifest signing key (404 when exports are unsigned)                      |
-| `GET /api/audit/verify`      | Verifies the tenant's whole hash chain; optionally checks a recorded head     |
+| Method and path           | Purpose                                                  |
+| ------------------------- | -------------------------------------------------------- |
+| `GET /api/events`         | Filtered, paginated event list, each with provenance     |
+| `GET /api/events/:id`     | One event: full canonical event, provenance, raw payload |
+| `GET /api/events/:id/raw` | The raw source payload bytes (download, for debugging)   |
+| `GET /api/deployments`    | "Who deployed what to where, and when" view across tools |
 
 Errors: `400 {"error":"bad_request","message":...}` for invalid parameters
-(including unknown parameters: a typo never silently widens a query or an
-export), `404 {"error":"not_found"}`.
+(including unknown parameters: a typo never silently widens a query),
+`404 {"error":"not_found"}`.
 
 ## Filters
 
-Shared by `/api/events`, `/api/deployments` and `/api/export`. List
+Shared by `/api/events` and `/api/deployments`. List
 parameters can be repeated or comma-separated (`source=github,vercel`, at most
 50 values). Values of one parameter are OR-ed; different parameters are
 AND-ed.
@@ -87,7 +86,7 @@ AND-ed.
 | `imageRef`, `imageDigest`, `deploymentId`, `runId`, `pullRequest` | correlation keys (see [event model](event-model.md#correlation-keys))                                                 |
 | `from` (`occurredFrom`), `to` (`occurredTo`)                      | `occurredAt` in `[from, to)`; ISO 8601 with offset                                                                    |
 | `recordedFrom`, `recordedTo`                                      | `recordedAt` in `[from, to)`                                                                                          |
-| `seqFrom`, `seqTo`                                                | chain position, inclusive                                                                                             |
+| `seqFrom`, `seqTo`                                                | per-tenant storage order (`seq`), inclusive                                                                           |
 
 The pure function `eventMatchesFilter` in `@afe/core` is the reference
 definition; the SQL selects exactly the same events (tested).
@@ -108,17 +107,19 @@ the last `(occurredAt, seq)`, the snapshot seq and a fingerprint of the
 query); a cursor from a different query, or a malformed one, is rejected with 400. Changing a cursor cannot widen access: tenant and filters always come
 from the request.
 
-Stability: the first page pins the traversal to the chain head at that moment
-(`snapshotSeq`). Later pages only show events with `seq <= snapshotSeq`, so
-events appended while you page — including late arrivals with an older
-`occurredAt` found by reconciliation — never shift, duplicate or skip rows.
-Start a new traversal (no cursor) to see them.
+Stability: the first page pins the traversal to the tenant's latest `seq` at
+that moment (`snapshotSeq`). Later pages only show events with
+`seq <= snapshotSeq`, so events stored while you page — including late
+arrivals with an older `occurredAt` found by reconciliation — never shift,
+duplicate or skip rows. Start a new traversal (no cursor) to see them. Events
+the retention purge deletes while you page simply do not appear on later
+pages.
 
 ## Items and provenance
 
 Each list item is `{ "event": <canonical event>, "provenance": {...} }`. The
 `event` is exactly the stored canonical event (see
-[event-model.md](event-model.md)) and can be re-hashed by the client.
+[event-model.md](event-model.md)).
 
 ```json
 "provenance": {
@@ -142,32 +143,25 @@ Each list item is `{ "event": <canonical event>, "provenance": {...} }`. The
   "provenance": { ... },
   "rawPayload": {
     "id": "…", "sha256": "…", "contentType": "application/json", "sizeBytes": 2048,
-    "receivedAt": "…", "verified": true, "url": "/api/events/<id>/raw"
-  },
-  "chain": {
-    "seq": 42, "prevHash": "…", "hash": "…",
-    "hashVerified": true, "prevLinkVerified": true,
-    "head": { "seq": 1234, "hash": "…" }
+    "receivedAt": "…", "url": "/api/events/<id>/raw"
   }
 }
 ```
 
-`rawPayload.verified`: the stored bytes still hash to `rawPayload.sha256`,
-which is covered by the event hash. `hashVerified`: the event re-hashes to
-its `hash`. `prevLinkVerified`: `prevHash` equals the stored hash at
-`seq - 1`. Use `/api/audit/verify` for the whole chain.
+`rawPayload` is null for events Afe produced itself (observation gaps,
+alerts).
 
 ## `GET /api/events/:id/raw`
 
 Returns the raw payload bytes exactly as stored. Connectors strip secrets and
 everything listed in [data-inventory.md](security/data-inventory.md) before
-storing, so nothing secret is held here; the API cannot redact further
-without breaking the hash. The response is always a download that a browser
+storing, so nothing secret is held here. The payload is a debugging aid and
+is deleted together with its event. The response is always a download that a browser
 will not render: `Content-Type` is the stored type only for
 `application/json` / `text/plain` (otherwise `application/octet-stream`),
 with `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`
-and a sandboxing CSP. Headers `X-Afe-Raw-Sha256`, `X-Afe-Raw-Verified` and
-`X-Afe-Original-Content-Type` carry the evidence metadata.
+and a sandboxing CSP. Headers `X-Afe-Raw-Sha256` and
+`X-Afe-Original-Content-Type` carry the stored digest and type.
 
 ## `GET /api/deployments`
 
@@ -190,7 +184,7 @@ deployment family across tools: `deployment.created`, `.status_updated`,
 ### Examples: who deployed what to where, and when
 
 ```sh
-# Everything that reached production last week, oldest first
+# Everything that reached production last week, oldest first (within the retention window)
 curl "$AFE/api/deployments?environment=production&from=2026-10-19T00:00:00Z&to=2026-10-26T00:00:00Z&order=asc"
 
 # Successful deployments by alice (as actor, on-behalf-of or triggering user)
@@ -204,72 +198,4 @@ curl "$AFE/api/deployments?source=argocd&application=payments&trigger=manual,api
 
 # Deployments Afe only learned about through reconciliation (missed webhooks)
 curl "$AFE/api/events?action=deployment.*&method=reconciliation"
-
-# ...and take the answer out as signed, verifiable evidence
-curl -OJ "$AFE/api/export?format=csv&view=deployments&environment=production&from=2026-10-19T00:00:00Z"
-afe verify-export afe-export-default-*.afe.csv --public-key <operator public key>
 ```
-
-## `GET /api/export`
-
-Parameters: the filters above, plus `format=json|csv` (default `json`),
-`view=events|deployments` (`deployments` applies the deployment action set
-when no `action` is given) and `raw=true|false` (JSON only: embed raw payload
-bytes). The response streams; the integrity manifest is the last record, so a
-truncated download fails verification. Events are always in ascending `seq`
-order and come from one consistent database snapshot together with the chain
-head. Headers: `Content-Disposition: attachment; filename="afe-export-<tenant>-<time>.afe.jsonl|.afe.csv"`,
-`X-Afe-Export-Id`.
-
-Manifests are signed with Ed25519 when `AFE_EXPORT_SIGNING_KEY` is set
-(generate one with `afe export-keygen`, publish the public key). The
-`AuditExporter` extension point (`@afe/core`) replaces the whole exporter;
-`ExportSigner` replaces only the signing (e.g. a KMS key).
-
-## `GET /api/audit/verify`
-
-Runs `verifyTenantChain` (every hash, link and raw payload, plus the stored
-head) and returns:
-
-```json
-{
-  "ok": true,
-  "verification": { "ok": true, "count": 1234, "lastSeq": 1234, "lastHash": "…" },
-  "head": { "seq": 1234, "hash": "…" },
-  "anchor": null
-}
-```
-
-With `anchorSeq=<n>&anchorHash=<hash>` (for example the `chainHead` of an
-old export, or a head you wrote down) it also checks that the live chain still
-has that hash at that position: `anchor: {seq, hash, found, matches}`, and
-`ok` is false if it does not. That is how an auditor confirms that an export's
-events are still part of an untampered chain. This reads the whole chain; it
-is meant for audits, not for frequent polling.
-
-When the anchor module is registered (default), the response also has
-`anchors` (AFE-29, [ADR 0007](decisions/0007-chain-anchoring.md)): every
-receipt from the anchor file (`AFE_ANCHOR_DIR`) and the database copy is
-re-checked (signature against the anchor key, TSA imprint) and compared with
-the live chain. `anchors.ok` false (a hash mismatch at an anchored seq, an
-anchor beyond the head, an invalid receipt) makes `ok` false, even when
-`verification.ok` is true: that is what a consistent rewrite of the chain
-looks like.
-
-```json
-"anchors": {
-  "configured": true, "ok": true, "total": 48, "matched": 48,
-  "externalSourceChecked": true,
-  "sources": [{ "name": "file", "receipts": 24 }, { "name": "database", "receipts": 48 }],
-  "latest": { "seq": 1234, "hash": "…", "createdAt": "…", "status": "match",
-              "signature": "valid_trusted", "timestamp": "imprint_ok", "ageSeconds": 812, "stale": false },
-  "errors": [], "warnings": [],
-  "lastRun": { "lastAttemptAt": "…", "lastSuccessAt": "…", "lastError": null, "lastErrorAt": null }
-}
-```
-
-Related: `GET /api/audit/anchors` (configured anchors, public key, the newest
-100 stored receipts) and `POST /api/audit/anchors/verify` with
-`{"text": "<anchor file contents>"}` or `{"receipts": [...]}`, optionally
-`"trustedPublicKeys": [...]`, which checks receipts you kept yourself against
-the live chain.

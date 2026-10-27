@@ -13,7 +13,7 @@ User guide: [docs/connectors/vercel.md](../../docs/connectors/vercel.md).
 | User        | Read   | `GET /v2/user`: identify the account                               |
 | Team        | Read   | `GET /v2/teams/{id}`: name and health probe                        |
 | Projects    | Read   | `GET /v9/projects`: project selection                              |
-| Deployments | Read   | `GET /v6/deployments`, `GET /v13/deployments/{id}`: the audit data |
+| Deployments | Read   | `GET /v6/deployments`, `GET /v13/deployments/{id}`: the event data |
 
 There is no webhook write permission: webhooks are configured in the
 Integration Console. Access-token connections have no scopes, which is the

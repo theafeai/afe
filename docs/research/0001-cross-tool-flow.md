@@ -26,7 +26,7 @@
    - a **per-commit journey**, "where did this change go".
 3. **v1 UI after AFE-16: an environment matrix as the landing view, with a
    per-commit journey as the drill-down.** The unified timeline stays as
-   the raw audit view (what AFE-16 shows anyway) with a "highlight this
+   the raw event view (what AFE-16 shows anyway) with a "highlight this
    journey" filter. A general dependency graph is not worth building: it is
    unreadable past a handful of events and answers no question the other
    two do not.
@@ -125,7 +125,7 @@ In the prototypes, and recommended for the UI:
 | ----------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Graph of related events | anything, in principle                          | Right **internal** representation (links + evidence). As a UI it is unreadable: 68 events produced 169 links.                                                                                                                             |
 | Per-change journey      | "where did my commit go, and is it live?"       | Good drill-down. Needs a stop rule (do not walk into a different commit of the same repo) and an exclusion rule (a sync of the right config revision running a different image is not part of the journey). Root = head commit of a push. |
-| Environment view        | "what is live where, how did it get there, who" | Best landing view for an audit tool: it is the question asked during incidents and audits, and it is where uncertainty matters most.                                                                                                      |
+| Environment view        | "what is live where, how did it get there, who" | Best landing view: it is the question asked during incidents and reviews, and it is where uncertainty matters most.                                                                                                                       |
 
 **Recommendation:** links graph as the stored/derived model; environment
 state and journeys as the two derived read models. The prototype computes all
@@ -166,12 +166,12 @@ What the prototype produced on the synthetic data:
 
 ## Visualisation candidates
 
-| Candidate                  | Prototype           | Findings                                                                                                                                                                                                                                                                                                        |
-| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unified timeline           | `timeline.html`     | Complete and honest (it is the log), easy to build, needed anyway. Interleaved tools make a single flow hard to follow until a journey is highlighted; then it works well. Does not answer "what is live".                                                                                                      |
-| Per-commit journey diagram | `journey.html`      | Clearest for one change; confidence on edges is legible. Columns by stage work for GitOps (change → CI → artifact → config → deploy → runtime). Needs "excluded" and "continues as" lists to be honest. Breaks down for long-lived commits with many deploys (W): a list of placements reads better there.      |
-| Environment matrix         | `environments.html` | Answers the audit/incident question at a glance; surfaces uncertainty (unknown, ambiguous, weak) exactly where it matters. Per-cell history ("how it got here") covers rollback/promotion/manual steps well. Needs service and environment mapping (GitHub's `Production – web` shows as a separate row today). |
-| Dependency graph           | not built           | The link graph rendered generically (169 edges for 68 events) is noise; journeys are the readable projection of it.                                                                                                                                                                                             |
+| Candidate                  | Prototype           | Findings                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unified timeline           | `timeline.html`     | Complete and honest (it is the log), easy to build, needed anyway. Interleaved tools make a single flow hard to follow until a journey is highlighted; then it works well. Does not answer "what is live".                                                                                                 |
+| Per-commit journey diagram | `journey.html`      | Clearest for one change; confidence on edges is legible. Columns by stage work for GitOps (change → CI → artifact → config → deploy → runtime). Needs "excluded" and "continues as" lists to be honest. Breaks down for long-lived commits with many deploys (W): a list of placements reads better there. |
+| Environment matrix         | `environments.html` | Answers the incident question at a glance; surfaces uncertainty (unknown, ambiguous, weak) exactly where it matters. Per-cell history ("how it got here") covers rollback/promotion/manual steps well. Needs service and environment mapping (GitHub's `Production – web` shows as a separate row today).  |
+| Dependency graph           | not built           | The link graph rendered generically (169 edges for 68 events) is noise; journeys are the readable projection of it.                                                                                                                                                                                        |
 
 **v1 after AFE-16:** environment matrix (landing) → click a cell → history of
 placements → click a placement → per-commit journey. Keep the unified
@@ -325,7 +325,7 @@ recomputed from scratch.
    `aliasAssigned`, deployment URL; enrich promote/rollback events with the
    deployment's commit; reconcile the project's current production deployment.
 6. **Correlation service (server).** Productionise the prototype: derived,
-   rebuildable `event_links` (tenant-scoped, not part of the hash chain) or
+   rebuildable `event_links` (tenant-scoped, derived from events) or
    compute-on-read for a time window; API for environment state and journeys
    on top of the AFE-14 query API. Decide incremental vs batch after measuring.
 7. **UI: environment matrix (v1 landing view).** Service × environment

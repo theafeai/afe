@@ -182,7 +182,12 @@ export function EventDetailPage({ id }: { id: string }) {
             items={[
               ["Content type", raw.contentType ?? "unknown type"],
               ["Size", formatBytes(raw.sizeBytes)],
-              ["SHA-256", <code key="h" className="hash">{raw.sha256}</code>],
+              [
+                "SHA-256",
+                <code key="h" className="hash">
+                  {raw.sha256}
+                </code>,
+              ],
               [
                 "Download",
                 <a key="d" href={raw.url} download>

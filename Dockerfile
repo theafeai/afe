@@ -37,7 +37,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 # ---- runtime -----------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 LABEL org.opencontainers.image.title="Afe" \
-      org.opencontainers.image.description="Deployment audit and visibility across GitHub, ArgoCD and Vercel" \
+      org.opencontainers.image.description="Live deployment visibility across GitHub, ArgoCD and Vercel" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.source="https://github.com/theafeai/afe"
 

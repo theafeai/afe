@@ -175,7 +175,7 @@ describe("connection health", () => {
       expect((await health(c.id)).consecutiveFailures).toBe(5);
       expect(gapEvents(c.id)).toHaveLength(1);
 
-      // Blind for > 15 minutes: alert opened (once), recorded as an audit event.
+      // Blind for > 15 minutes: alert opened (once), recorded as an event.
       await alertCheck();
       await alertCheck();
       const opened = alerts.filter((a) => a.connectionId === c.id);
@@ -409,14 +409,7 @@ describe("connection health", () => {
     const { createPgEventSink } = await import("@afe/db");
     const pgSink = createPgEventSink(pool);
     for (const e of gapEvents(c.id)) {
-      const {
-        schemaVersion: _v,
-        id: _id,
-        seq: _s,
-        tenantId: _t,
-        recordedAt: _r,
-        ...rest
-      } = e;
+      const { schemaVersion: _v, id: _id, seq: _s, tenantId: _t, recordedAt: _r, ...rest } = e;
       await pgSink.ingest("default", { ...rest, rawPayload: null });
     }
     const res = await afe.app.inject({ method: "GET", url: `/api/connections/${c.id}/health` });

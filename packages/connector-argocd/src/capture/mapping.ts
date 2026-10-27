@@ -1,5 +1,5 @@
 /**
- * Maps observations of ArgoCD Applications to canonical audit events (AFE-10).
+ * Maps observations of ArgoCD Applications to canonical events (AFE-10).
  *
  * Pure apart from the optional, lazily-called `appEvents` lookup: given what
  * was last seen of an application (`AppCaptureState`) and its current object,

@@ -8,7 +8,7 @@
 Afe must make source outages and missed data visible instead of silent. This
 module, shared by every connector (GitHub, ArgoCD, Vercel, future ones), tracks
 the health and last successful observation of every connection, records
-**observation gaps** in the audit log, retries with backoff, backfills after
+**observation gaps** as events, retries with backoff, backfills after
 recovery and alerts when a connection has been blind for too long.
 
 ## Pieces
@@ -17,7 +17,7 @@ recovery and alerts when a connection has been blind for too long.
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `connection_health`               | Mutable per-connection state: state, last success/attempt/failure, sanitised last error, backoff, open gap.      |
 | `alerts`                          | Alerts raised by Afe (`connection_blind`), with AlertSink delivery bookkeeping.                                  |
-| `health_outbox`                   | Transactional outbox for audit events and jobs produced by a state change (see "Consistency").                   |
+| `health_outbox`                   | Transactional outbox for events and jobs produced by a state change (see "Consistency").                         |
 | `HealthService`                   | `reportSuccess` / `reportFailure` / `canAttempt` (`HealthReporter`), plus the job logic.                         |
 | `health.probe`                    | Cron, every minute: probes active connections that are due, detects Afe downtime, delivers leftover outbox rows. |
 | `health.backfill`                 | Calls the connector's `backfill(connection, gapStart, gapEnd)` after a gap closes. Retried by the queue.         |
@@ -47,7 +47,8 @@ registered module via `ctx.modules`, and installs itself as `ctx.health`.
 3. `detail` is sanitised (token-looking strings, URL credentials and query
    strings, `Authorization` values are redacted; truncated to 500 chars), but
    pass only status code, error kind and request id — never headers or bodies.
-   Details are written to the immutable audit log.
+   Details are written to stored events, which are never edited (only purged
+   after the retention window).
 
 ## Gap rules
 
@@ -66,7 +67,7 @@ registered module via `ctx.modules`, and installs itself as `ctx.health`.
 - **Closing.** A success newer than the latest failure closes the gap:
   `observation_gap.closed` with `endedAt` = time of that success, a
   `health.backfill` job for `[startedAt, endedAt]`, and resolution of any open
-  alert (audit event `connection.alert.resolved` + AlertSink notification).
+  alert (event `connection.alert.resolved` + AlertSink notification).
 - **Out-of-order reports** (a failure older than the last success, or a
   success older than the last failure) are recorded but do not open/close gaps.
 - **Revoked / unauthorized.** State `revoked` / `unauthorized`, gap reason
@@ -115,7 +116,7 @@ Reason mapping:
 start is older than `AFE_HEALTH_ALERT_AFTER` (default 15 min) — "blind" is
 measured from the last successful observation. Disconnected connections are
 skipped. Each alert is recorded in `alerts`, as a `connection.alert.opened`
-audit event, and sent to the `AlertSink`. It is resolved on recovery.
+event, and sent to the `AlertSink`. It is resolved on recovery.
 
 `AlertSink` (`@afe/core`, ADR 0002 extension point) has one method,
 `send(notification)`. The OSS default logs every alert and, if
@@ -132,7 +133,7 @@ product passes its own sink: `createHealthModule({ alertSink })`.
 All decisions for one connection run in a transaction holding its
 `connection_health` row lock (`SELECT ... FOR UPDATE`), so concurrent
 reports (webhooks, polls, probes on several workers) serialise per
-connection. Side effects (audit events, backfill job) are written to
+connection. Side effects (events, backfill job) are written to
 `health_outbox` in the same transaction and delivered after commit, then
 deleted. This means the lock holder never needs a second pool connection (no
 pool exhaustion under bursts), a crash cannot lose a gap event or a backfill

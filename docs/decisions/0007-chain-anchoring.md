@@ -1,6 +1,6 @@
 # ADR 0007: Anchoring audit chain heads outside the database
 
-- Status: Accepted
+- Status: Superseded by ADR 0008 (chain anchoring removed from the open-source build)
 - Date: 2026-10-27
 - Issue: AFE-29
 

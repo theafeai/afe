@@ -150,7 +150,8 @@ function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () 
       <p>
         To disconnect, uninstall the Afe GitHub App from <strong>{c.name}</strong> on GitHub (
         <em>Settings → GitHub Apps</em> for an organization or your account). Afe records the
-        uninstall and marks this connection revoked. Events recorded before are kept until they leave the retention window.
+        uninstall and marks this connection revoked. Events recorded before are kept until they
+        leave the retention window.
       </p>
     );
   }

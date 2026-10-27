@@ -1,8 +1,9 @@
 # Security policy
 
-Afe is an audit tool: people rely on it to tell them the truth about who deployed
-what. We treat vulnerabilities, and anything that could let the audit record be
-silently altered, as high priority.
+Afe holds read access to your delivery tools and shows people who deployed what,
+to where, and when. We treat vulnerabilities, especially anything that could leak
+credentials, cross tenants or let someone inject or alter the events Afe shows,
+as high priority.
 
 ## Reporting a vulnerability
 
@@ -26,14 +27,14 @@ self-hosting setup.
 ## Security model
 
 - [Threat model](docs/security/threat-model.md): assets, actors, trust
-  boundaries, STRIDE threats and mitigations, tamper evidence of the audit log.
+  boundaries, STRIDE threats and mitigations.
 - [Security rules for integrations](docs/security/rules.md): binding rules for
   every connector (read-only scopes, credential handling, webhook verification
   and replay rejection, log redaction, tenant isolation, outbound request
   safety, TLS).
 - [Data inventory](docs/security/data-inventory.md): what Afe stores and what it
   deliberately does not (no source code, no secret or environment variable
-  values).
+  values), and how long it keeps events (retention, at most 60 days).
 - [Key management](docs/security/key-management.md): credential encryption,
   `AFE_ENCRYPTION_KEY`, key rotation, KMS envelope encryption for the hosted
   service.

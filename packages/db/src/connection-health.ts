@@ -526,7 +526,7 @@ function toOutbox(r: Row): HealthOutboxEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Gap history (read from the audit log)
+// Gap history (read from stored events, so limited to the retention window)
 // ---------------------------------------------------------------------------
 
 export interface ObservationGapRecord extends ObservationGap {

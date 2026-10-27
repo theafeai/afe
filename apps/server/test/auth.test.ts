@@ -470,7 +470,12 @@ describe("API authentication (AFE-27)", () => {
     });
 
     it("lists only the caller's tenant", async () => {
-      const lists = ["/api/events", "/api/deployments", "/api/connections", "/api/connections/argocd"];
+      const lists = [
+        "/api/events",
+        "/api/deployments",
+        "/api/connections",
+        "/api/connections/argocd",
+      ];
       for (const url of lists) {
         const b = await inject("GET", url, B);
         expect(b.statusCode, url).toBe(200);

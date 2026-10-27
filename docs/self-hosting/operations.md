@@ -25,7 +25,7 @@ service names for other setups.
 
 ## Backups
 
-Everything Afe stores is in PostgreSQL: the audit log, raw payloads,
+Everything Afe stores is in PostgreSQL: events, raw payloads,
 configuration, encrypted credentials and the job queue. The encryption key is
 **not** in the database; back it up separately (see [secrets](secrets.md)).
 
@@ -40,19 +40,11 @@ docker compose exec -T postgres pg_dump -U afe -d afe -Fc > afe-$(date +%F).dump
 - For point-in-time recovery or very large installs, use PostgreSQL WAL
   archiving (e.g. pgBackRest, WAL-G) or your managed database's backups instead.
 - Test restores regularly (below).
-
-### Why the audit log's hash chain survives a backup and restore
-
-Each event's hash is SHA-256 over its canonical content (RFC 8785 JSON),
-including its per-tenant sequence number and the previous event's hash
-([ADR 0003](../decisions/0003-event-model-and-audit-log.md)). Nothing physical
-(row ids, OIDs, page layout, insertion time of the restored row) is hashed, so
-a logical dump and restore reproduces exactly the same chain.
-`pg_dump` creates the append-only triggers after loading the data, so the
-restore is not blocked by them, and the chain-link check is in place again
-afterwards. Chain verification after a restore reports the same head hash
-(sequence number and hash of the last event) as before; compare it with a head
-you recorded or exported earlier to prove the restored log is complete.
+- Events in the database cover only the retention window
+  (`AFE_EVENT_RETENTION_DAYS`, default 30 days). A backup keeps the events as
+  of the day it was taken, so backups are also how you keep older data if you
+  need it; size backup retention with that (and your privacy obligations) in
+  mind.
 
 ## Restore
 
@@ -71,9 +63,10 @@ curl -s http://127.0.0.1:8080/healthz
   run forward on start). Never restore into an older version.
 - After restoring an older backup, events between the backup and the restore are
   not in the database. Reconciliation polling re-discovers what the sources
-  still report (marked as discovered by reconciliation); anything older than the
-  sources' history is lost. Restoring is therefore not a way to hide events:
-  the restored chain head differs from heads recorded or exported later.
+  still report (marked as discovered by reconciliation) inside the retention
+  window; anything older than the sources' history is lost.
+- Events in the backup that are older than the retention window are deleted by
+  the next `retention.purge` run after the restore.
 
 ## Upgrades
 
@@ -91,6 +84,13 @@ once).
 
 To run migrations as a separate step (e.g. in a deployment pipeline):
 `docker compose run --rm afe-server migrate`.
+
+Upgrading to the release with migration `0021_remove_audit_chain.sql`
+([ADR 0008](../decisions/0008-open-source-scope-without-audit-log.md)): the
+hash-chain columns, chain heads and anchor tables are dropped, and within an
+hour the first `retention.purge` run deletes every event older than
+`AFE_EVENT_RETENTION_DAYS` (default 30). Take a backup first if you want to keep
+the older history.
 
 Rolling back: stop Afe, restore the pre-upgrade backup, set the previous
 `AFE_VERSION`, start. Events recorded after the backup are re-discovered by

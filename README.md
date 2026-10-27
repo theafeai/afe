@@ -1,15 +1,18 @@
 # Afe
 
-**Deployment audit and visibility across GitHub, ArgoCD and Vercel.**
+**Live deployment visibility across GitHub, ArgoCD and Vercel.**
 
-Afe records every way a deployment can happen in your delivery tools, and who
-caused it, into an append-only, tamper-evident audit log. It answers "who deployed
-what, to where, and when?" with evidence you can export and verify.
+Afe watches every way a deployment can happen in your delivery tools, and who
+caused it, and shows it in one timeline. It answers "who deployed what, to where,
+and when?" for the recent past, and tells you when it could not see a source.
 
 - **Read-only** access to every connected tool.
 - **Complete:** webhooks for speed, plus reconciliation polling so missed events
   are found and flagged; outages are recorded as observation gaps, not silence.
-- **Verifiable:** hash-chained events and exports with an integrity proof.
+- **Recent, not forever:** events are kept for a retention window
+  (`AFE_EVENT_RETENTION_DAYS`, default 30 days, at most 60) and then deleted.
+  Afe is not an audit log or a compliance record
+  ([ADR 0008](docs/decisions/0008-open-source-scope-without-audit-log.md)).
 - **Self-hostable:** one container plus PostgreSQL.
 
 > Status: early development. See the [architecture decision](docs/decisions/0002-architecture-and-stack.md).

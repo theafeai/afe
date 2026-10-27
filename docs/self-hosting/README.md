@@ -16,11 +16,11 @@ external queue or cache, and no help from us is needed.
 
 ## What runs
 
-| Component    | Image                  | Role                                                       |
-| ------------ | ---------------------- | ---------------------------------------------------------- |
-| `postgres`   | `postgres:16`          | Audit log, configuration, encrypted credentials, job queue |
-| `afe-server` | `ghcr.io/theafeai/afe` | `afe server`: HTTP API, webhook receivers, web UI          |
-| `afe-worker` | `ghcr.io/theafeai/afe` | `afe worker`: webhook processing, polling, reconciliation  |
+| Component    | Image                  | Role                                                           |
+| ------------ | ---------------------- | -------------------------------------------------------------- |
+| `postgres`   | `postgres:16`          | Recent events, configuration, encrypted credentials, job queue |
+| `afe-server` | `ghcr.io/theafeai/afe` | `afe server`: HTTP API, webhook receivers, web UI              |
+| `afe-worker` | `ghcr.io/theafeai/afe` | `afe worker`: webhook processing, polling, reconciliation      |
 
 The image's entrypoint is the `afe` CLI. Commands: `all` (default: server and
 worker in one process), `server`, `worker`, `migrate`, `reencrypt-credentials`.

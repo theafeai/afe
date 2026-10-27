@@ -152,7 +152,7 @@ export const GITHUB_WEBHOOK_JOB = "github.webhook";
 /**
  * Payload of a `github.webhook` job: one verified, de-duplicated delivery for
  * one connection. Contains no credentials. `rawBody` is the exact delivery
- * text, so the worker can store byte-exact evidence in raw_payloads.
+ * text, so the worker can store the byte-exact body in raw_payloads.
  */
 export interface GitHubWebhookJob {
   tenantId: string;

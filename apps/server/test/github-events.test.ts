@@ -153,7 +153,7 @@ describe("GitHub repository events (AFE-7)", () => {
     await jobs.drain();
   }
 
-  describe("each trigger produces a correct audit event", () => {
+  describe("each trigger produces a correct event", () => {
     for (const [label, fixture, trigger] of TRIGGERS) {
       it(label, async () => {
         const f = loadWebhook(fixture);

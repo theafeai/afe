@@ -584,7 +584,7 @@ function warnOnPermissions(ctx: ServerContext, connection: Connection): void {
 
 /**
  * Applies an `installation` or `installation_repositories` delivery inside the
- * caller's transaction and returns the audit events to ingest.
+ * caller's transaction and returns the events to ingest.
  */
 async function applyLifecycle(
   rt: GitHubRuntime,

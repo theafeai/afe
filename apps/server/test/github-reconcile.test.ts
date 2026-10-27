@@ -1,6 +1,6 @@
 /**
  * AFE-8: GitHub reconciliation polling and backfill, server wiring:
- * scheduler -> github.reconcile-repo jobs -> audit log (PostgreSQL), poll
+ * scheduler -> github.reconcile-repo jobs -> events (PostgreSQL), poll
  * state (migration 0013), health reporting, first-install and gap backfill.
  * GitHub is a local fake (no network).
  */
@@ -10,12 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type pg from "pg";
 import type { CanonicalEvent, Connection, HealthReporter } from "@afe/core";
 import { EnvKeyProvider, Secret, signHmac } from "@afe/core/security";
-import {
-  createPgEventSink,
-  getConnection,
-  listEvents,
-  upsertConnection,
-} from "@afe/db";
+import { createPgEventSink, getConnection, listEvents, upsertConnection } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import { GitHubRateLimitError, type GitHubAppConfig } from "@afe/connector-github";
 import { FakeGitHubApi } from "../../../packages/connector-github/test/fake-repo-api.ts";
@@ -69,7 +64,7 @@ describe("GitHub reconciliation and backfill (AFE-8)", () => {
   let connection: Connection;
   let deliveries = 0;
   let tenants = 0;
-  // A tenant per test: the append-only log (and its idempotency keys) outlives each test.
+  // A tenant per test: stored events (and their idempotency keys) outlive each test.
   let tenant = "afe8-0";
 
   beforeAll(async () => {
@@ -159,7 +154,7 @@ describe("GitHub reconciliation and backfill (AFE-8)", () => {
   const rt = () => githubRuntime(afe.context)!;
   const allEvents = async (): Promise<CanonicalEvent[]> =>
     (await listEvents(pool, tenant, { limit: 1000 })).events;
-  /** GitHub events of this test's connection (the append-only log outlives each test). */
+  /** GitHub events of this test's connection (stored events outlive each test). */
   const github = async () => {
     const { rows } = await pool.query<{ id: string }>(
       "SELECT id FROM connections WHERE source = 'github'",
@@ -189,7 +184,7 @@ describe("GitHub reconciliation and backfill (AFE-8)", () => {
     });
   }
 
-  it("webhooks switched off: every run and deployment is in the audit log, flagged reconciled", async () => {
+  it("webhooks switched off: every run and deployment is stored, flagged reconciled", async () => {
     orgActivity(api);
     await connect();
     await jobs.send(GITHUB_JOBS.RECONCILE, {});

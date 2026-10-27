@@ -147,8 +147,7 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     options.clock,
   );
 
-  const retention =
-    options.retentionPolicy ?? new FixedWindowRetention(config.eventRetentionDays);
+  const retention = options.retentionPolicy ?? new FixedWindowRetention(config.eventRetentionDays);
   const context: ServerContext = {
     pool: options.pool,
     sink: options.sink ?? createPgEventSink(options.pool, { retention }),

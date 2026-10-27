@@ -691,7 +691,10 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
         async backfill(conn: Connection, from: Date, to: Date): Promise<void> {
           if (conn.source !== SOURCE || conn.status !== "active") return;
           // Events before the retention cutoff would be dropped anyway (ADR 0008).
-          const start = clampToRetention(from, await ctx.retention.cutoff(conn.tenantId, new Date(now())));
+          const start = clampToRetention(
+            from,
+            await ctx.retention.cutoff(conn.tenantId, new Date(now())),
+          );
           if (start.getTime() >= to.getTime()) return;
           await runCapture(ctx, conn, "reconcile", (poller) => poller.reconcile(start, to));
         },
