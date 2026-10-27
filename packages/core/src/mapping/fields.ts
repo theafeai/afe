@@ -34,7 +34,9 @@ const LABEL_KEY = /^[A-Za-z0-9]([A-Za-z0-9._/-]{0,251}[A-Za-z0-9])?$/;
 /** True for a field a rule may use. */
 export function isMappingField(field: string): boolean {
   if ((MAPPING_FIELDS as readonly string[]).includes(field)) return true;
-  return field.startsWith(LABEL_FIELD_PREFIX) && LABEL_KEY.test(field.slice(LABEL_FIELD_PREFIX.length));
+  return (
+    field.startsWith(LABEL_FIELD_PREFIX) && LABEL_KEY.test(field.slice(LABEL_FIELD_PREFIX.length))
+  );
 }
 
 /** The source a field belongs to (`argocd.label:x` → `argocd`). */
@@ -70,7 +72,8 @@ export function observationsOf(e: MappableEvent): Observations {
       add(
         out,
         "github.repository",
-        t.repository ?? (e.correlation?.repositories?.[0] ? ownerName(e.correlation.repositories[0]) : null),
+        t.repository ??
+          (e.correlation?.repositories?.[0] ? ownerName(e.correlation.repositories[0]) : null),
       );
       break;
     case "argocd":

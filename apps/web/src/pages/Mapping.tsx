@@ -17,19 +17,16 @@ import {
   type RuleView,
   type UnmappedValue,
 } from "../api/mapping.ts";
-import {
-  Empty,
-  ErrorBox,
-  Loading,
-  ToolBadge,
-  useAsync,
-  useDocumentTitle,
-} from "../components.tsx";
+import { Empty, ErrorBox, Loading, ToolBadge, useAsync, useDocumentTitle } from "../components.tsx";
 import { formatDateTime } from "../format.ts";
 import { Link } from "../router.tsx";
 
 const LABEL_FIELD = "argocd.label:<key>";
-const MATCH_LABEL: Record<MatchType, string> = { exact: "is", glob: "matches glob", regex: "matches regex" };
+const MATCH_LABEL: Record<MatchType, string> = {
+  exact: "is",
+  glob: "matches glob",
+  regex: "matches regex",
+};
 const CONFIDENCE_LABEL: Record<string, string> = {
   configured: "Configured",
   default: "Built-in default",
@@ -161,7 +158,11 @@ export function MappingPage() {
               });
             }}
           />
-          <CurrentClassification data={current.data} loading={current.loading} error={current.error} />
+          <CurrentClassification
+            data={current.data}
+            loading={current.loading}
+            error={current.error}
+          />
         </>
       )}
     </div>
@@ -177,7 +178,8 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
     e.preventDefault();
     if (!name.trim()) return;
     const ok = await act(
-      () => mappingApi.createService({ name: name.trim(), description: description.trim() || null }),
+      () =>
+        mappingApi.createService({ name: name.trim(), description: description.trim() || null }),
       `Service “${name.trim()}” added.`,
     );
     if (ok) {
@@ -200,7 +202,9 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
                 type="button"
                 className="btn-link"
                 aria-label={`Delete service ${s.name}`}
-                onClick={() => void act(() => mappingApi.deleteService(s.id), `Service “${s.name}” deleted.`)}
+                onClick={() =>
+                  void act(() => mappingApi.deleteService(s.id), `Service “${s.name}” deleted.`)
+                }
               >
                 Delete
               </button>
@@ -211,7 +215,12 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
       <form className="form" onSubmit={submit}>
         <div className="field">
           <label htmlFor="svc-name">Service name</label>
-          <input id="svc-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={128} />
+          <input
+            id="svc-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={128}
+          />
         </div>
         <div className="field">
           <label htmlFor="svc-desc">Description (optional)</label>
@@ -285,7 +294,10 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
               className="btn-link"
               aria-label={`Delete environment ${e.name}`}
               onClick={() =>
-                void act(() => mappingApi.deleteEnvironment(e.id), `Environment “${e.name}” deleted.`)
+                void act(
+                  () => mappingApi.deleteEnvironment(e.id),
+                  `Environment “${e.name}” deleted.`,
+                )
               }
             >
               Delete
@@ -296,11 +308,20 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
       <form className="form" onSubmit={submit}>
         <div className="field">
           <label htmlFor="env-name">Environment name</label>
-          <input id="env-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={128} />
+          <input
+            id="env-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={128}
+          />
         </div>
         <div className="field">
           <label htmlFor="env-kind">Kind</label>
-          <select id="env-kind" value={kind} onChange={(e) => setKind(e.target.value as EnvironmentKind)}>
+          <select
+            id="env-kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as EnvironmentKind)}
+          >
             {state.environmentKinds.map((k) => (
               <option key={k} value={k}>
                 {k}
@@ -452,7 +473,8 @@ function RuleForm({
   const [labelKey, setLabelKey] = useState(splitField(initial.field).labelKey);
   const choice = splitField(d.field).choice;
   const targets = d.kind === "service" ? state.services : state.environments;
-  const effective: RuleDraft = choice === LABEL_FIELD ? { ...d, field: `argocd.label:${labelKey}` } : d;
+  const effective: RuleDraft =
+    choice === LABEL_FIELD ? { ...d, field: `argocd.label:${labelKey}` } : d;
   const valid = draftValid(effective) && targets.some((t) => t.id === effective.targetId);
   const set = (patch: Partial<RuleDraft>) => setD((x) => ({ ...x, ...patch }));
 
@@ -572,7 +594,11 @@ function RuleForm({
         </label>
         <div className="field">
           <label htmlFor="rule-target">{d.kind === "service" ? "Service" : "Environment"}</label>
-          <select id="rule-target" value={d.targetId} onChange={(e) => set({ targetId: e.target.value })}>
+          <select
+            id="rule-target"
+            value={d.targetId}
+            onChange={(e) => set({ targetId: e.target.value })}
+          >
             {targets.length === 0 && <option value="">(add one first)</option>}
             {targets.map((t) => (
               <option key={t.id} value={t.id}>

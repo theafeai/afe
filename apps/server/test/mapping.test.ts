@@ -1,10 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
-import {
-
-  type CanonicalEventInputLike,
-  type EventSink,
-} from "@afe/core";
+import { type CanonicalEventInputLike, type EventSink } from "@afe/core";
 import { ingestEvent, createPgEventSink, queryEvents } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import { buildAfe, defaultModules, loadConfig, type AfeApp } from "../src/index.ts";
@@ -48,7 +44,10 @@ describe("mapping API (AFE-19)", () => {
     afe.app.inject({
       method: method as "GET",
       url,
-      headers: { ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+      headers: {
+        ...headers,
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      },
       ...(body !== undefined ? { payload: JSON.stringify(body) } : {}),
     });
 
@@ -175,7 +174,10 @@ describe("mapping API (AFE-19)", () => {
     expect((await call("POST", "/api/mapping/services", A, { name: "Web shop" })).statusCode).toBe(
       409,
     );
-    const pay = await call("POST", "/api/mapping/services", A, { id: "payments", name: "Payments" });
+    const pay = await call("POST", "/api/mapping/services", A, {
+      id: "payments",
+      name: "Payments",
+    });
     expect(pay.statusCode).toBe(201);
     const env = await call("POST", "/api/mapping/environments", A, {
       name: "Prod EU",
@@ -312,11 +314,19 @@ describe("mapping API (AFE-19)", () => {
     expect(re.statusCode).toBe(200);
     expect(re.json().rules.map((r: { id: string }) => r.id)).toEqual([...ids].reverse());
 
-    const tog = await call("PUT", "/api/mapping/builtin-rules/builtin:vercel-target-production", A, {
-      enabled: false,
-    });
+    const tog = await call(
+      "PUT",
+      "/api/mapping/builtin-rules/builtin:vercel-target-production",
+      A,
+      {
+        enabled: false,
+      },
+    );
     expect(tog.statusCode).toBe(200);
-    expect((await call("PUT", "/api/mapping/builtin-rules/builtin:nope", A, { enabled: false })).statusCode).toBe(404);
+    expect(
+      (await call("PUT", "/api/mapping/builtin-rules/builtin:nope", A, { enabled: false }))
+        .statusCode,
+    ).toBe(404);
 
     const del = await call("DELETE", "/api/mapping/services/web-shop", A);
     expect(del.statusCode).toBe(409);
@@ -332,8 +342,9 @@ describe("mapping API (AFE-19)", () => {
       "builtin_rule:updated",
       "environment:deleted",
     ]);
-    expect(audit.find((e) => e.data.entity === "rule" && e.data.operation === "updated")!.data)
-      .toMatchObject({ before: { match: "exact" }, after: { match: "glob", pattern: "acme/*" } });
+    expect(
+      audit.find((e) => e.data.entity === "rule" && e.data.operation === "updated")!.data,
+    ).toMatchObject({ before: { match: "exact" }, after: { match: "glob", pattern: "acme/*" } });
   });
 
   it("previews proposed rules without storing them", async () => {
@@ -393,7 +404,11 @@ describe("mapping API (AFE-19)", () => {
     const values = res.json().values as { field: string; value: string; missing: string[] }[];
     expect(values).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ field: "argocd.application", value: "payments", missing: ["service"] }),
+        expect.objectContaining({
+          field: "argocd.application",
+          value: "payments",
+          missing: ["service"],
+        }),
         expect.objectContaining({ field: "argocd.label:team", value: "pay" }),
       ]),
     );

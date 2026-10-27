@@ -18,7 +18,10 @@ import {
 
 const environments = [...DEFAULT_ENVIRONMENTS];
 
-function rule(id: string, o: Partial<MappingRule> & Pick<MappingRule, "field" | "pattern" | "targetId">): MappingRule {
+function rule(
+  id: string,
+  o: Partial<MappingRule> & Pick<MappingRule, "field" | "pattern" | "targetId">,
+): MappingRule {
   return {
     id,
     kind: "environment",
@@ -50,7 +53,10 @@ const vercel = (target: string, project = "prj_web", name = "web"): MappableEven
   source: "vercel",
   target: { type: "deployment", id: "dpl_1", name, project, environment: target },
 });
-const argo = (o: Partial<MappableEvent["target"]> = {}, labels?: Record<string, string>): MappableEvent => ({
+const argo = (
+  o: Partial<MappableEvent["target"]> = {},
+  labels?: Record<string, string>,
+): MappableEvent => ({
   source: "argocd",
   target: {
     type: "application",
@@ -156,15 +162,16 @@ describe("observations", () => {
       "vercel.project": ["prj_web", "web"],
       "vercel.target": ["preview"],
     });
-    expect(observationsOf(argo({ environment: "prod" }, { team: "payments", "afe.dev/tier": "1" })))
-      .toMatchObject({
-        "argocd.application": ["web-prod"],
-        "argocd.project": ["payments"],
-        "argocd.namespace": ["web"],
-        "argocd.environment": ["prod"],
-        "argocd.label:team": ["payments"],
-        "argocd.label:afe.dev/tier": ["1"],
-      });
+    expect(
+      observationsOf(argo({ environment: "prod" }, { team: "payments", "afe.dev/tier": "1" })),
+    ).toMatchObject({
+      "argocd.application": ["web-prod"],
+      "argocd.project": ["payments"],
+      "argocd.namespace": ["web"],
+      "argocd.environment": ["prod"],
+      "argocd.label:team": ["payments"],
+      "argocd.label:afe.dev/tier": ["1"],
+    });
   });
 
   it("validates fields", () => {
@@ -202,9 +209,26 @@ describe("resolvePlacement", () => {
   it("tenant rules win over built-ins, lower priority first, and set the service", () => {
     const m = compileMapping(
       config([
-        rule("r-late", { field: "github.environment", match: "glob", pattern: "Production*", targetId: "staging", priority: 20 }),
-        rule("r-early", { field: "github.environment", match: "regex", pattern: "^production – ", targetId: "production", priority: 10 }),
-        rule("s-web", { kind: "service", field: "github.repository", pattern: "ACME/web", targetId: "web" }),
+        rule("r-late", {
+          field: "github.environment",
+          match: "glob",
+          pattern: "Production*",
+          targetId: "staging",
+          priority: 20,
+        }),
+        rule("r-early", {
+          field: "github.environment",
+          match: "regex",
+          pattern: "^production – ",
+          targetId: "production",
+          priority: 10,
+        }),
+        rule("s-web", {
+          kind: "service",
+          field: "github.repository",
+          pattern: "ACME/web",
+          targetId: "web",
+        }),
       ]),
     );
     expect(resolvePlacement(gh("Production – web"), m)).toEqual({
@@ -229,10 +253,20 @@ describe("resolvePlacement", () => {
     const m = compileMapping(
       config(
         [
-          rule("off", { field: "vercel.target", pattern: "production", targetId: "staging", enabled: false }),
+          rule("off", {
+            field: "vercel.target",
+            pattern: "production",
+            targetId: "staging",
+            enabled: false,
+          }),
           rule("ghost", { field: "vercel.target", pattern: "production", targetId: "nope" }),
         ],
-        { builtinOverrides: { "builtin:vercel-target-production": false, "builtin:vercel-environment-production": false } },
+        {
+          builtinOverrides: {
+            "builtin:vercel-target-production": false,
+            "builtin:vercel-environment-production": false,
+          },
+        },
       ),
     );
     expect(resolvePlacement(vercel("production"), m).environmentId).toBeNull();
@@ -247,21 +281,41 @@ describe("resolvePlacement", () => {
   it("case sensitivity and label rules", () => {
     const m = compileMapping(
       config([
-        rule("cs", { field: "argocd.project", pattern: "Payments", caseSensitive: true, targetId: "development" }),
-        rule("lbl", { kind: "service", field: "argocd.label:app.kubernetes.io/part-of", pattern: "api", targetId: "api" }),
+        rule("cs", {
+          field: "argocd.project",
+          pattern: "Payments",
+          caseSensitive: true,
+          targetId: "development",
+        }),
+        rule("lbl", {
+          kind: "service",
+          field: "argocd.label:app.kubernetes.io/part-of",
+          pattern: "api",
+          targetId: "api",
+        }),
       ]),
     );
     expect(m.usesLabels).toBe(true);
     expect(resolvePlacement(argo({ project: "payments" }), m).environment?.ruleId).not.toBe("cs");
     expect(resolvePlacement(argo({ project: "Payments" }), m).environment?.ruleId).toBe("cs");
-    expect(resolvePlacement(argo({}, { "app.kubernetes.io/part-of": "api" }), m).serviceId).toBe("api");
+    expect(resolvePlacement(argo({}, { "app.kubernetes.io/part-of": "api" }), m).serviceId).toBe(
+      "api",
+    );
     expect(resolvePlacement(argo(), m).serviceId).toBeNull();
   });
 
   it("resolves thousands of events quickly and returns independent results", () => {
     const rules: MappingRule[] = [];
     for (let i = 0; i < 200; i++) {
-      rules.push(rule(`r${i}`, { field: "argocd.application", match: "regex", pattern: `^app-${i}-(prod|stg)$`, targetId: "production", priority: i }));
+      rules.push(
+        rule(`r${i}`, {
+          field: "argocd.application",
+          match: "regex",
+          pattern: `^app-${i}-(prod|stg)$`,
+          targetId: "production",
+          priority: i,
+        }),
+      );
     }
     const m = compileMapping(config(rules));
     const events = Array.from({ length: 5000 }, (_, i) =>
@@ -305,7 +359,13 @@ describe("validation", () => {
     expect(bad.success).toBe(false);
     expect(bad.error?.issues[0]?.message).toMatch(/backreferences/);
     expect(
-      ruleInputSchema.safeParse({ kind: "service", field: "x.y", match: "exact", pattern: "a", targetId: "web" }).success,
+      ruleInputSchema.safeParse({
+        kind: "service",
+        field: "x.y",
+        match: "exact",
+        pattern: "a",
+        targetId: "web",
+      }).success,
     ).toBe(false);
   });
 

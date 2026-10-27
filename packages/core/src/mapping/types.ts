@@ -4,7 +4,13 @@
  * docs/environment-mapping.md.
  */
 
-export const ENVIRONMENT_KINDS = ["production", "staging", "preview", "development", "other"] as const;
+export const ENVIRONMENT_KINDS = [
+  "production",
+  "staging",
+  "preview",
+  "development",
+  "other",
+] as const;
 export type EnvironmentKind = (typeof ENVIRONMENT_KINDS)[number];
 
 /** A service: one row of the environment matrix ("the same thing across environments"). */

@@ -112,14 +112,12 @@ export const mappingApi = {
 
   createService: (body: { id?: string; name: string; description?: string | null }) =>
     request<{ service: MappingService }>("POST", "/api/mapping/services", body),
-  deleteService: (id: string) => request<{ ok: true }>("DELETE", `/api/mapping/services/${enc(id)}`),
+  deleteService: (id: string) =>
+    request<{ ok: true }>("DELETE", `/api/mapping/services/${enc(id)}`),
 
   createEnvironment: (body: { name: string; kind: EnvironmentKind; order?: number }) =>
     request<{ environment: MappingEnvironment }>("POST", "/api/mapping/environments", body),
-  updateEnvironment: (
-    id: string,
-    body: { name: string; kind: EnvironmentKind; order?: number },
-  ) =>
+  updateEnvironment: (id: string, body: { name: string; kind: EnvironmentKind; order?: number }) =>
     request<{ environment: MappingEnvironment }>(
       "PUT",
       `/api/mapping/environments/${enc(id)}`,

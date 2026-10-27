@@ -132,7 +132,10 @@ export class MappingService {
   }
 
   /** Placement of each event under the tenant's current mapping. */
-  async placements(tenantId: string, events: CanonicalEvent[]): Promise<Map<string, PlacementView>> {
+  async placements(
+    tenantId: string,
+    events: CanonicalEvent[],
+  ): Promise<Map<string, PlacementView>> {
     const out = new Map<string, PlacementView>();
     if (events.length === 0) return out;
     const { config, mapping } = await this.load(tenantId);

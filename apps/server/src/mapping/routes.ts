@@ -162,11 +162,11 @@ export function mappingChangedEvent(
 }
 
 const previewSchema = z.strictObject({
-  rules: z.array(proposedRuleSchema).max(MAPPING_LIMITS.rulesPerKind * 2).optional(),
-  services: z
-    .array(serviceInputSchema)
-    .max(MAPPING_LIMITS.services)
+  rules: z
+    .array(proposedRuleSchema)
+    .max(MAPPING_LIMITS.rulesPerKind * 2)
     .optional(),
+  services: z.array(serviceInputSchema).max(MAPPING_LIMITS.services).optional(),
   environments: z.array(environmentInputSchema).max(MAPPING_LIMITS.environments).optional(),
   builtinOverrides: z.record(z.string().max(80), z.boolean()).optional(),
   /** How many recent deployment events to classify (default 200). */
@@ -484,7 +484,11 @@ export function registerMappingRoutes(
           throw new HttpError(400, "bad_request", "too many rules");
         }
         const priority = (await maxMappingRulePriority(tx, tenantId, input.kind)) + 10;
-        const created = await insertMappingRule(tx, tenantId, toRule(randomUUID(), input, priority));
+        const created = await insertMappingRule(
+          tx,
+          tenantId,
+          toRule(randomUUID(), input, priority),
+        );
         return {
           result: created,
           change: {
@@ -746,7 +750,10 @@ export function registerMappingRoutes(
         }
       }
       const list = [...values.values()]
-        .sort((a, b) => b.count - a.count || a.field.localeCompare(b.field) || a.value.localeCompare(b.value))
+        .sort(
+          (a, b) =>
+            b.count - a.count || a.field.localeCompare(b.field) || a.value.localeCompare(b.value),
+        )
         .slice(0, 300)
         .map((v) => ({ ...v, missing: [...v.missing].sort() }));
       return { sampleSize: events.length, values: list };

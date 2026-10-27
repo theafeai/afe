@@ -46,15 +46,16 @@ resources answer `404`.
 
 ## Endpoints
 
-| Method and path              | Purpose                                                                       |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `GET /api/events`            | Filtered, paginated event list, each with provenance                          |
-| `GET /api/events/:id`        | One event: full canonical event, provenance, raw payload status, chain status |
-| `GET /api/events/:id/raw`    | The raw source payload bytes (download)                                       |
-| `GET /api/deployments`       | "Who deployed what to where, and when" view across tools                      |
-| `GET /api/export`            | Streaming CSV or JSON Lines export with an integrity manifest                 |
-| `GET /api/export/public-key` | The manifest signing key (404 when exports are unsigned)                      |
-| `GET /api/audit/verify`      | Verifies the tenant's whole hash chain; optionally checks a recorded head     |
+| Method and path              | Purpose                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| `GET /api/events`            | Filtered, paginated event list, each with provenance                            |
+| `GET /api/events/:id`        | One event: full canonical event, provenance, raw payload status, chain status   |
+| `GET /api/events/:id/raw`    | The raw source payload bytes (download)                                         |
+| `GET /api/deployments`       | "Who deployed what to where, and when" view across tools                        |
+| `GET /api/export`            | Streaming CSV or JSON Lines export with an integrity manifest                   |
+| `GET /api/export/public-key` | The manifest signing key (404 when exports are unsigned)                        |
+| `GET /api/audit/verify`      | Verifies the tenant's whole hash chain; optionally checks a recorded head       |
+| `/api/mapping/...`           | Environment and service mapping (see [below](#environment-and-service-mapping)) |
 
 Errors: `400 {"error":"bad_request","message":...}` for invalid parameters
 (including unknown parameters: a typo never silently widens a query or an
@@ -183,9 +184,20 @@ deployment family across tools: `deployment.created`, `.status_updated`,
   "what": { "commitShas": ["…"], "refs": ["refs/heads/main"], "imageRefs": [], "imageDigests": [], "deploymentIds": ["vercel:dpl_1"] },
   "where": { "environment": "production", "targetType": "project", "targetId": "prj_1", "project": "web", "application": null, "cluster": null, ... },
   "how": { "type": "promotion" },
-  "provenance": { "method": "reconciliation", ... }
+  "provenance": { "method": "reconciliation", ... },
+  "placement": {
+    "service": { "id": "web", "name": "Web" },
+    "environment": { "id": "production", "name": "Production", "kind": "production", "order": 10 },
+    "confidence": "configured", "matchedRuleIds": ["…", "…"], "unmapped": []
+  }
 }
 ```
+
+`placement` (AFE-19) is resolved with the tenant's current
+[environment and service mapping](environment-mapping.md) when the page is
+read; it is not part of the event and changes when the mapping changes. A
+dimension no rule assigns is `null` and listed in `unmapped`; `confidence` is
+`configured`, `default` (a built-in rule decided), `partial` or `unmapped`.
 
 ### Examples: who deployed what to where, and when
 
@@ -273,3 +285,77 @@ Related: `GET /api/audit/anchors` (configured anchors, public key, the newest
 `{"text": "<anchor file contents>"}` or `{"receipts": [...]}`, optionally
 `"trustedPublicKeys": [...]`, which checks receipts you kept yourself against
 the live chain.
+
+## Environment and service mapping
+
+Per-tenant configuration that groups events into services and environments
+(AFE-19, [environment-mapping.md](environment-mapping.md)). Reads need the
+viewer role, changes the admin role; `POST /api/mapping/preview` is a dry run
+and needs only viewer. Ids of another tenant answer `404`. Every change is
+recorded in the audit log as a `config.mapping.changed` event (source `afe`)
+with the actor and a before/after summary, and returns the new `revision`.
+
+| Method and path                        | Purpose                                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET /api/mapping`                     | Services, environments, rules, built-in rules (with `inactiveReason`), fields                |
+| `POST /api/mapping/services`           | `{"name", "id"?, "description"?}` → 201; the id defaults to a slug of the name               |
+| `PUT /api/mapping/services/:id`        | `{"name", "description"?}` (the id cannot change)                                            |
+| `DELETE /api/mapping/services/:id`     | 409 `{"error":"in_use","ruleIds":[...]}` while rules assign it                               |
+| `POST /api/mapping/environments`       | `{"name", "kind", "id"?, "order"?}`; kind `production\|staging\|preview\|development\|other` |
+| `PUT /api/mapping/environments/:id`    | `{"name", "kind", "order"?}` (order = matrix column position)                                |
+| `DELETE /api/mapping/environments/:id` | 409 while rules assign it                                                                    |
+| `POST /api/mapping/rules`              | Create a rule (body below); appended after the tenant's rules of its kind                    |
+| `PUT /api/mapping/rules/:id`           | Replace a rule                                                                               |
+| `DELETE /api/mapping/rules/:id`        | Delete a rule                                                                                |
+| `POST /api/mapping/rules/reorder`      | `{"kind", "ids": [...]}`: every rule of the kind, in the new order                           |
+| `PUT /api/mapping/builtin-rules/:id`   | `{"enabled": false}` switches a built-in default off for the tenant                          |
+| `POST /api/mapping/preview`            | Dry run: classify recent deployment events with proposed rules                               |
+| `GET /api/mapping/unmapped?limit=500`  | Raw values on recent deployment events that are not fully mapped                             |
+
+Rule body:
+
+```json
+{
+  "kind": "environment",
+  "field": "github.environment",
+  "match": "regex",
+  "pattern": "^production – ",
+  "caseSensitive": false,
+  "targetId": "production",
+  "enabled": true,
+  "priority": 10,
+  "note": "GitHub environments created by the Vercel integration"
+}
+```
+
+`field` is one of `github.environment`, `github.repository`,
+`argocd.application`, `argocd.project`, `argocd.namespace`, `argocd.cluster`,
+`argocd.environment`, `argocd.repository`, `argocd.label:<key>`,
+`vercel.project` (id or name), `vercel.target`, `vercel.repository`. `match`
+is `exact`, `glob` (`*`, `?`) or `regex` (a linear-time subset, see the
+mapping doc); an unsupported or oversized pattern is a `400` naming the
+problem. The target must exist (`400` otherwise).
+
+Preview body (every part optional; omitted parts use the current
+configuration): `{"rules": [...], "services": [...], "environments": [...],
+"builtinOverrides": {"builtin:…": false}, "limit": 200, "items": 50}`. Rules
+in `rules` replace the tenant's rules (existing ones may keep their `id`).
+Response:
+
+```json
+{
+  "sampleSize": 200,
+  "summary": { "current": { "configured": 120, "default": 30, "partial": 40, "unmapped": 10 },
+               "proposed": { "configured": 150, "default": 30, "partial": 15, "unmapped": 5 },
+               "changed": 35 },
+  "inactive": [{ "ruleId": "proposed:3", "reason": "service shop does not exist" }],
+  "items": [{ "eventId": "…", "when": "…", "source": "argocd", "action": "argocd.sync.succeeded",
+              "label": "payments", "observations": { "argocd.application": ["payments"] },
+              "current": { …placement }, "proposed": { …placement }, "changed": true }]
+}
+```
+
+Unmapped values: `{"sampleSize": 500, "values": [{"source": "argocd",
+"field": "argocd.label:team", "value": "pay", "count": 12, "lastSeen": "…",
+"missing": ["service"], "exampleEventId": "…"}]}`, most frequent first (at most
+300). Values come from events whose service or environment is unmapped.

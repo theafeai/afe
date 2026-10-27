@@ -248,7 +248,11 @@ class Parser {
         parts.push(lo);
         continue;
       }
-      if (this.peek() === "-" && this.chars[this.i + 1] !== undefined && this.chars[this.i + 1] !== "]") {
+      if (
+        this.peek() === "-" &&
+        this.chars[this.i + 1] !== undefined &&
+        this.chars[this.i + 1] !== "]"
+      ) {
         this.i++;
         const hi = this.classAtom(start);
         if (typeof hi === "function") this.fail("invalid range in character class", start);
@@ -348,7 +352,10 @@ export interface SafeRegex {
 }
 
 /** Parses and compiles a pattern; throws `SafeRegexError` for unsupported or oversized patterns. */
-export function compileSafeRegex(pattern: string, options: { ignoreCase?: boolean } = {}): SafeRegex {
+export function compileSafeRegex(
+  pattern: string,
+  options: { ignoreCase?: boolean } = {},
+): SafeRegex {
   if (pattern.length === 0) throw new SafeRegexError("pattern is empty");
   if ([...pattern].length > MAX_PATTERN_LENGTH) {
     throw new SafeRegexError(`pattern is longer than ${MAX_PATTERN_LENGTH} characters`);

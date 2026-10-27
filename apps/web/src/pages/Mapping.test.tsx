@@ -68,7 +68,8 @@ const placement = (service: string | null, environment: string | null) => ({
   environment: environment
     ? { id: environment.toLowerCase(), name: environment, kind: "production", order: 10 }
     : null,
-  confidence: service && environment ? "configured" : service || environment ? "partial" : "unmapped",
+  confidence:
+    service && environment ? "configured" : service || environment ? "partial" : "unmapped",
   matchedRuleIds: [],
   unmapped: [...(service ? [] : ["service"]), ...(environment ? [] : ["environment"])],
 });
@@ -91,7 +92,10 @@ function previewResult(changed: boolean): PreviewResult {
         label: "payments",
         observations: { "argocd.application": ["payments"] },
         current: placement(null, "Production") as PreviewResult["items"][0]["current"],
-        proposed: placement(changed ? "API" : null, "Production") as PreviewResult["items"][0]["current"],
+        proposed: placement(
+          changed ? "API" : null,
+          "Production",
+        ) as PreviewResult["items"][0]["current"],
         changed,
       },
     ],
@@ -115,7 +119,9 @@ beforeEach(() => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method, url, body });
     if (url === "/api/session") {
-      return json(200, { principal: { id: "p", tenantId: "default", roles: ["admin"], kind: "token" } });
+      return json(200, {
+        principal: { id: "p", tenantId: "default", roles: ["admin"], kind: "token" },
+      });
     }
     if (url === "/api/mapping" && method === "GET") return json(200, state);
     if (url === "/api/mapping/unmapped") {
@@ -156,7 +162,9 @@ beforeEach(() => {
 describe("Mapping settings page", () => {
   it("lists services, environments, rules and built-ins, linked from the nav", async () => {
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "Environment and service mapping" })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Environment and service mapping" }),
+    ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mapping" }).getAttribute("aria-current")).toBe("page");
     const services = screen.getByRole("region", { name: "Services" });
     expect(within(services).getByText("Web")).toBeTruthy();
@@ -172,7 +180,9 @@ describe("Mapping settings page", () => {
     fireEvent.change(screen.getByLabelText("Service name"), { target: { value: "Shop" } });
     fireEvent.click(screen.getByRole("button", { name: "Add service" }));
     expect(await screen.findByText("Service “Shop” added.")).toBeTruthy();
-    expect(calls.find((c) => c.method === "POST" && c.url === "/api/mapping/services")?.body).toEqual({
+    expect(
+      calls.find((c) => c.method === "POST" && c.url === "/api/mapping/services")?.body,
+    ).toEqual({
       name: "Shop",
       description: null,
     });
@@ -190,7 +200,8 @@ describe("Mapping settings page", () => {
     fireEvent.change(screen.getByLabelText("Service"), { target: { value: "api" } });
     expect(await screen.findByText("1 of 3 recent deployment events would change.")).toBeTruthy();
     const preview = calls.filter((c) => c.url === "/api/mapping/preview" && c.body).at(-1)!;
-    const sent = (preview.body as { rules: { id?: string; field: string; pattern: string }[] }).rules;
+    const sent = (preview.body as { rules: { id?: string; field: string; pattern: string }[] })
+      .rules;
     expect(sent.map((r) => r.id ?? "new")).toEqual(["r1", "r2", "r3", "new"]);
     expect(sent.at(-1)).toMatchObject({ field: "argocd.label:team", pattern: "pay*" });
     expect(sent[0]).not.toHaveProperty("inactiveReason");
@@ -221,7 +232,9 @@ describe("Mapping settings page", () => {
     });
     fireEvent.click(within(svcRules).getByRole("button", { name: "Delete rule acme/api" }));
     await screen.findByText("Rule deleted.");
-    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/mapping/rules/r2")).toBe(true);
+    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/mapping/rules/r2")).toBe(
+      true,
+    );
   });
 
   it("creates a rule from an unmapped value", async () => {

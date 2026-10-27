@@ -107,44 +107,44 @@ prefixed with the tool (`argocd.sync.*`). The state of a run is carried in
 `ACTIONS` (`packages/core/src/actions.ts`); to add an action, add it there and
 here. Never rename or remove one: stored events keep their names.
 
-| Action                                                 | Sources        | Meaning                                                                            |
-| ------------------------------------------------------ | -------------- | ---------------------------------------------------------------------------------- |
-| `deployment.created`                                   | github, vercel | A deployment record was created.                                                   |
-| `deployment.status_updated`                            | github, vercel | A deployment changed state; new state in `outcome`.                                |
-| `deployment.promoted`                                  | vercel         | An existing build was promoted (e.g. to production).                               |
-| `deployment.rolled_back`                               | vercel, argocd | A previous deployment/revision was made live again.                                |
-| `deployment.cancelled`                                 | github, vercel | Cancelled before completing.                                                       |
-| `deployment.deleted`                                   | github, vercel | Deployment record deleted in the source.                                           |
-| `deployment.review_approved`                           | github         | Required reviewer approved a deployment to a protected environment.                |
-| `deployment.review_rejected`                           | github         | Required reviewer rejected it.                                                     |
-| `deployment.protection_rule_requested`                 | github         | A custom deployment protection rule was asked to decide.                           |
-| `deployment.review_requested`                          | github         | A deployment to a protected environment is waiting for a required reviewer.        |
-| `workflow_run.requested`                               | github         | Workflow run queued.                                                               |
-| `workflow_run.in_progress`                             | github         | Workflow run started.                                                              |
-| `workflow_run.completed`                               | github         | Workflow run finished; conclusion in `outcome`.                                    |
-| `workflow_job.completed`                               | github         | A job finished (e.g. the job that deployed to an environment).                     |
-| `ref.pushed`                                           | github         | Commits pushed to an existing branch or tag.                                       |
-| `ref.created` / `ref.deleted`                          | github         | Branch or tag created / deleted.                                                   |
-| `pull_request.merged`                                  | github         | Pull request merged.                                                               |
-| `pull_request.opened` / `.reopened` / `.closed`        | github         | Pull request opened, reopened, or closed without merging.                          |
-| `pull_request.synchronized`                            | github         | New commits pushed to a pull request's head branch.                                |
-| `repository_dispatch.received`                         | github         | A `repository_dispatch` was sent to a repository (API only).                       |
-| `release.published`                                    | github         | Release published.                                                                 |
-| `artifact.published`                                   | github         | A build artifact (container image) was published; `imageRefs`/`imageDigests`.      |
-| `argocd.sync.started`                                  | argocd         | Sync operation started (`operationState.phase` Running).                           |
-| `argocd.sync.succeeded`                                | argocd         | Sync operation finished with phase Succeeded.                                      |
-| `argocd.sync.failed`                                   | argocd         | Sync operation finished with phase Failed or Error.                                |
-| `argocd.sync.terminated`                               | argocd         | Sync operation was terminated.                                                     |
-| `argocd.application.created` / `.updated` / `.deleted` | argocd         | Application spec created, changed (target revision, source, sync policy), deleted. |
-| `argocd.health.changed`                                | argocd         | Application health status changed; new status in `data`.                           |
-| `argocd.application.refreshed`                         | argocd         | A refresh (normal/hard) was requested; best-effort, the annotation is short-lived. |
-| `argocd.sync_status.changed`                           | argocd         | Application sync status changed (Synced/OutOfSync/Unknown); new status in `data`.  |
-| `configuration.changed`                                | any            | A deployment-relevant setting changed (environment protection, env vars, ...).     |
-| `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                         |
-| `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                   |
-| `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).      |
-| `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                    |
-| `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).            |
+| Action                                                 | Sources        | Meaning                                                                                         |
+| ------------------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------- |
+| `deployment.created`                                   | github, vercel | A deployment record was created.                                                                |
+| `deployment.status_updated`                            | github, vercel | A deployment changed state; new state in `outcome`.                                             |
+| `deployment.promoted`                                  | vercel         | An existing build was promoted (e.g. to production).                                            |
+| `deployment.rolled_back`                               | vercel, argocd | A previous deployment/revision was made live again.                                             |
+| `deployment.cancelled`                                 | github, vercel | Cancelled before completing.                                                                    |
+| `deployment.deleted`                                   | github, vercel | Deployment record deleted in the source.                                                        |
+| `deployment.review_approved`                           | github         | Required reviewer approved a deployment to a protected environment.                             |
+| `deployment.review_rejected`                           | github         | Required reviewer rejected it.                                                                  |
+| `deployment.protection_rule_requested`                 | github         | A custom deployment protection rule was asked to decide.                                        |
+| `deployment.review_requested`                          | github         | A deployment to a protected environment is waiting for a required reviewer.                     |
+| `workflow_run.requested`                               | github         | Workflow run queued.                                                                            |
+| `workflow_run.in_progress`                             | github         | Workflow run started.                                                                           |
+| `workflow_run.completed`                               | github         | Workflow run finished; conclusion in `outcome`.                                                 |
+| `workflow_job.completed`                               | github         | A job finished (e.g. the job that deployed to an environment).                                  |
+| `ref.pushed`                                           | github         | Commits pushed to an existing branch or tag.                                                    |
+| `ref.created` / `ref.deleted`                          | github         | Branch or tag created / deleted.                                                                |
+| `pull_request.merged`                                  | github         | Pull request merged.                                                                            |
+| `pull_request.opened` / `.reopened` / `.closed`        | github         | Pull request opened, reopened, or closed without merging.                                       |
+| `pull_request.synchronized`                            | github         | New commits pushed to a pull request's head branch.                                             |
+| `repository_dispatch.received`                         | github         | A `repository_dispatch` was sent to a repository (API only).                                    |
+| `release.published`                                    | github         | Release published.                                                                              |
+| `artifact.published`                                   | github         | A build artifact (container image) was published; `imageRefs`/`imageDigests`.                   |
+| `argocd.sync.started`                                  | argocd         | Sync operation started (`operationState.phase` Running).                                        |
+| `argocd.sync.succeeded`                                | argocd         | Sync operation finished with phase Succeeded.                                                   |
+| `argocd.sync.failed`                                   | argocd         | Sync operation finished with phase Failed or Error.                                             |
+| `argocd.sync.terminated`                               | argocd         | Sync operation was terminated.                                                                  |
+| `argocd.application.created` / `.updated` / `.deleted` | argocd         | Application spec created, changed (target revision, source, sync policy), deleted.              |
+| `argocd.health.changed`                                | argocd         | Application health status changed; new status in `data`.                                        |
+| `argocd.application.refreshed`                         | argocd         | A refresh (normal/hard) was requested; best-effort, the annotation is short-lived.              |
+| `argocd.sync_status.changed`                           | argocd         | Application sync status changed (Synced/OutOfSync/Unknown); new status in `data`.               |
+| `configuration.changed`                                | any            | A deployment-relevant setting changed (environment protection, env vars, ...).                  |
+| `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                                      |
+| `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                                |
+| `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).                   |
+| `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                                 |
+| `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).                         |
 | `config.mapping.changed`                               | afe            | Environment/service mapping changed; who, and before/after ([mapping](environment-mapping.md)). |
 
 The validator accepts any action that matches the pattern, so connectors can

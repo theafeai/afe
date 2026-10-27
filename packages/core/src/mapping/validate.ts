@@ -10,7 +10,7 @@ export const MAPPING_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 /** Upper bounds that keep resolution cheap and the UI usable. */
 export const MAPPING_LIMITS = { services: 500, environments: 50, rulesPerKind: 500 } as const;
 
-const noControl = (s: string) => !/[\u0000-\u001f\u007f]/.test(s);
+const noControl = (s: string) => ![...s].some((c) => c.charCodeAt(0) < 0x20 || c === "\u007f");
 const text = (max: number) =>
   z
     .string()
@@ -53,10 +53,9 @@ export type EnvironmentInput = z.output<typeof environmentInputSchema>;
 
 const ruleShape = {
   kind: z.enum(RULE_KINDS),
-  field: z
-    .string()
-    .max(300)
-    .refine(isMappingField, { message: "unknown field (see MAPPING_FIELDS or argocd.label:<key>)" }),
+  field: z.string().max(300).refine(isMappingField, {
+    message: "unknown field (see MAPPING_FIELDS or argocd.label:<key>)",
+  }),
   match: z.enum(MATCH_TYPES),
   pattern: z.string().min(1).max(256).refine(noControl, {
     message: "must not contain control characters",
