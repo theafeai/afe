@@ -1,9 +1,11 @@
 /**
- * Cross-tool correlation prototype (AFE-15): shared types and helpers.
+ * Cross-tool correlation (AFE-15 prototype, productionised in AFE-20): shared
+ * types and helpers.
  *
- * This is research code that informs the first UI; it is not a production
- * API. It works on canonical events (stored `CanonicalEvent`s or anything with
- * the same fields) and is pure: no I/O, no clock. See
+ * Works on canonical events (stored `CanonicalEvent`s or anything with the
+ * same fields) and is pure: no I/O, no clock. The server's correlation
+ * service (apps/server/src/correlation) loads a tenant's events for the
+ * retention window and runs this code on read. See docs/correlation.md and
  * docs/research/0001-cross-tool-flow.md.
  */
 import type { CanonicalEvent, JsonObject, JsonValue } from "../event.ts";
@@ -21,7 +23,10 @@ export type CorrelationEvent = Pick<
   | "occurredAt"
   | "correlation"
   | "data"
->;
+> & {
+  /** The connection that observed the event; used to match observation gaps. */
+  connectionId?: string | null;
+};
 
 /**
  * How sure a link or attribution is, weakest first.
@@ -57,7 +62,7 @@ export const EVIDENCE_CONFIDENCE = {
   same_commit_same_repo: "certain",
   /** Same full commit SHA but no common repository (fork, mirror, or repo unknown). */
   same_commit: "strong",
-  /** Same image digest (`correlation.imageDigests`). */
+  /** Same image digest (`correlation.imageDigests` or a digest-pinned `imageRefs` entry). */
   same_image_digest: "strong",
   /** Same deployment URL host (`correlation.deploymentUrls`; e.g. GitHub deployment_status.target_url = Vercel url). */
   same_deployment_url: "strong",
@@ -73,6 +78,7 @@ export const EVIDENCE_CONFIDENCE = {
   time_proximity: "weak",
 } as const satisfies Record<string, Confidence>;
 export type EvidenceKind = keyof typeof EVIDENCE_CONFIDENCE;
+export const EVIDENCE_KINDS = Object.keys(EVIDENCE_CONFIDENCE) as EvidenceKind[];
 
 export interface Evidence {
   kind: EvidenceKind;
@@ -91,9 +97,20 @@ export interface Link {
   evidence: Evidence[];
 }
 
-/** Tag and digest contradict each other (same name:tag, different digests). */
+/**
+ * Identifiers that contradict each other. Reported, never linked.
+ * - `tag_digest_mismatch`: the same name:tag was seen with different digests
+ *   (a moved tag, or a deployment running something other than the build).
+ *   Reported once per tag and pair of digests.
+ * - `digest_commit_mismatch`: builds of the same digest claim different
+ *   commits (e.g. an OCI label and an attestation disagree).
+ */
+export const CONFLICT_KINDS = ["tag_digest_mismatch", "digest_commit_mismatch"] as const;
+export type ConflictKind = (typeof CONFLICT_KINDS)[number];
+
 export interface Conflict {
-  kind: "tag_digest_mismatch";
+  kind: ConflictKind;
+  /** Two representative events, earlier first. */
   events: [string, string];
   key: string;
   detail: string;
@@ -124,19 +141,41 @@ export function isChangeEvent(e: CorrelationEvent): boolean {
   return e.action === "ref.pushed" || e.action === "ref.created";
 }
 
+/** Artifact events (AFE-21): an image was published, or its provenance was found later. */
+export function isArtifactEvent(e: CorrelationEvent): boolean {
+  return e.action === "artifact.published" || e.action === "artifact.provenance_resolved";
+}
+
 /**
- * Event that produced an image (an artifact). The prototype uses the proposed
- * `artifact.published` action (GitHub `registry_package` webhook or build
- * provenance attestation) and also accepts CI run/job events carrying images.
+ * Event that produced an image (an artifact): `artifact.published` (GitHub
+ * `registry_package`, with build provenance or OCI labels),
+ * `artifact.provenance_resolved` (the same artifact's provenance, found
+ * later), and CI run/job events carrying images.
  */
 export function isBuildEvent(e: CorrelationEvent): boolean {
   if (isDeployEvent(e) || isChangeEvent(e)) return false;
   if (!(e.correlation.imageRefs?.length || e.correlation.imageDigests?.length)) return false;
   return (
-    e.action === "artifact.published" ||
+    isArtifactEvent(e) ||
     e.action.startsWith("workflow_run.") ||
     e.action.startsWith("workflow_job.")
   );
+}
+
+/** Observation gap events (source `afe`), see `observationGapOpened` in `@afe/core`. */
+export function isGapEvent(e: Pick<CorrelationEvent, "action">): boolean {
+  return e.action === "observation_gap.opened" || e.action === "observation_gap.closed";
+}
+
+/**
+ * Whether an event takes part in correlation: it carries a correlation key
+ * (or a legacy hint), or it is an observation gap.
+ */
+export function isCorrelationRelevant(e: CorrelationEvent): boolean {
+  if (isGapEvent(e)) return true;
+  for (const v of Object.values(e.correlation)) if (Array.isArray(v) && v.length > 0) return true;
+  const h = hintsOf(e);
+  return h.upstreamCommitShas.length > 0 || h.deploymentUrls.length > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,15 +193,15 @@ export interface CorrelationHints {
   /** Full commit SHAs a change refers to in another repository (`correlation.upstreamCommitShas`). */
   upstreamCommitShas: string[];
   /**
-   * Image digests written by a config change. No correlation key yet (would be
-   * part of `imageDigests` on the push event); read from legacy hints only.
+   * Image digests written by a config change. No correlation key of its own
+   * (a config change carries them in `imageDigests`); read from legacy hints.
    */
   mentionedImageDigests: string[];
   /** Deployment URL hosts, lower case (`correlation.deploymentUrls`). */
   deploymentUrls: string[];
 }
 
-export function hintsOf(e: CorrelationEvent): CorrelationHints {
+export function hintsOf(e: Pick<CorrelationEvent, "correlation" | "data">): CorrelationHints {
   const h = asObject(e.data?.correlationHints);
   return {
     upstreamCommitShas: merge(e.correlation.upstreamCommitShas, strings(h?.mentionedCommitShas)),
@@ -229,8 +268,23 @@ export function commitPrefixFromTag(tag: string): string | undefined {
   return m?.[1]?.toLowerCase();
 }
 
-export function repositoriesOf(e: CorrelationEvent): string[] {
+export function repositoriesOf(e: Pick<CorrelationEvent, "correlation">): string[] {
   return e.correlation.repositories ?? [];
+}
+
+/** Every digest an event carries: `imageDigests` plus the digests of pinned `imageRefs`. */
+export function digestsOf(e: Pick<CorrelationEvent, "correlation">): string[] {
+  const out = new Set<string>(e.correlation.imageDigests ?? []);
+  for (const r of e.correlation.imageRefs ?? []) {
+    const d = parseImageRef(r).digest;
+    if (d) out.add(d);
+  }
+  return [...out];
+}
+
+/** Display name of whoever caused an event. */
+export function actorName(e: Pick<CorrelationEvent, "actor">): string | undefined {
+  return e.actor.login ?? e.actor.name ?? e.actor.id ?? undefined;
 }
 
 export function byTime(a: CorrelationEvent, b: CorrelationEvent): number {
@@ -243,4 +297,40 @@ export function byTime(a: CorrelationEvent, b: CorrelationEvent): number {
         : a.id > b.id
           ? 1
           : 0;
+}
+
+/**
+ * Sorted set of full commit SHAs with prefix lookup (binary search), for
+ * image tags that name a commit by a short SHA.
+ */
+export class ShaPrefixIndex {
+  readonly #shas: string[];
+  constructor(shas: Iterable<string>) {
+    this.#shas = [...new Set(shas)].sort();
+  }
+  get size(): number {
+    return this.#shas.length;
+  }
+  /** The one SHA starting with `prefix`; undefined when there is none or several. */
+  unique(prefix: string): string | undefined {
+    const list = this.#shas;
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (list[mid]! < prefix) lo = mid + 1;
+      else hi = mid;
+    }
+    const first = list[lo];
+    if (!first?.startsWith(prefix)) return undefined;
+    return list[lo + 1]?.startsWith(prefix) ? undefined : first;
+  }
+}
+
+/** Events in time order; returns the input itself when it is already sorted. */
+export function sortedByTime<T extends CorrelationEvent>(events: readonly T[]): readonly T[] {
+  for (let i = 1; i < events.length; i++) {
+    if (byTime(events[i - 1]!, events[i]!) > 0) return [...events].sort(byTime);
+  }
+  return events;
 }

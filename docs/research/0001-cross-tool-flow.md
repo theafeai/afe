@@ -298,7 +298,9 @@ Afe once the connectors exist, then check:
 Known prototype limits: pairwise linking inside each key bucket (fine for a
 prototype, quadratic for hot keys such as a busy repository's environment);
 digest conflict detection assumes one image per event; everything is
-recomputed from scratch.
+recomputed from scratch. AFE-20 removed the first two (linear-size linking,
+digest-pinned refs and per-tag conflicts) and kept the third on purpose,
+with caching; see [docs/correlation.md](../correlation.md).
 
 ## Proposed follow-up issues
 
@@ -324,10 +326,15 @@ recomputed from scratch.
 5. **Vercel connector: placement fidelity.** Capture Git meta, `source`,
    `aliasAssigned`, deployment URL; enrich promote/rollback events with the
    deployment's commit; reconcile the project's current production deployment.
-6. **Correlation service (server).** Productionise the prototype: derived,
+6. **(Done, AFE-20) Correlation service (server).** Productionise the prototype: derived,
    rebuildable `event_links` (tenant-scoped, derived from events) or
    compute-on-read for a time window; API for environment state and journeys
    on top of the AFE-14 query API. Decide incremental vs batch after measuring.
+   Measured and decided: compute-on-read over the retention window with a
+   per-tenant cache, incremental event loading and a throttled full recompute
+   (no derived tables); linear-size linking; mapping, gaps, artifacts and
+   containment integrated. See [docs/correlation.md](../correlation.md) and
+   [api.md](../api.md#environments-and-journeys).
 7. **UI: environment matrix (v1 landing view).** Service × environment
    matrix with confidence badges, unknown/ambiguous states and per-cell
    placement history, after AFE-16.

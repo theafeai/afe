@@ -122,3 +122,8 @@ export {
   type MappingChangeResult,
   type StoredMappingConfig,
 } from "./mapping.ts";
+export {
+  listCorrelationEvents,
+  type CorrelationEventRecord,
+  type ListCorrelationEventsOptions,
+} from "./correlation.ts";
