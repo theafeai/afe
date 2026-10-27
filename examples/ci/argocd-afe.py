@@ -176,6 +176,7 @@ def main(scratch):
             if phase in ("Failed", "Error"):
                 raise AssertionError(f"ArgoCD sync ended with {phase}")
             return (status.get("sync", {}).get("revision") == sha
+                    and status.get("sync", {}).get("status") == "Synced"
                     and phase == "Succeeded"
                     and status.get("health", {}).get("status") == "Healthy")
 
