@@ -5,7 +5,9 @@
  * stored since. Tenant-scoped (rules R5).
  *
  * Only the `data` fields correlation and mapping read are returned
- * (`aliasAssigned`, `headCommit`, `correlationHints`, `gap`, `projectName`).
+ * (`aliasAssigned`, `headCommit`, `correlationHints`, `gap`, `projectName`),
+ * plus ArgoCD's image override changes for drift detection (`change`
+ * fields/imageOverrides/removedImageOverrides, `spec.imageOverrides`).
  */
 import type { CanonicalEvent, JsonObject } from "@afe/core";
 import type { CorrelationEvent } from "@afe/core/correlation";
@@ -71,7 +73,20 @@ export async function listCorrelationEvents(
               'headCommit', e.data -> 'headCommit',
               'correlationHints', e.data -> 'correlationHints',
               'gap', e.data -> 'gap',
-              'projectName', e.data -> 'projectName')) AS data
+              'projectName', e.data -> 'projectName',
+              -- ArgoCD Application image overrides (drift detection, AFE-26).
+              'change', CASE
+                WHEN e.source <> 'argocd' THEN NULL
+                WHEN jsonb_typeof(e.data -> 'change') = 'object' THEN jsonb_strip_nulls(
+                  jsonb_build_object(
+                    'fields', e.data #> '{change,fields}',
+                    'imageOverrides', e.data #> '{change,imageOverrides}',
+                    'removedImageOverrides', e.data #> '{change,removedImageOverrides}'))
+                ELSE e.data -> 'change' END,
+              'spec', CASE
+                WHEN e.source = 'argocd' AND e.data #> '{spec,imageOverrides}' IS NOT NULL
+                THEN jsonb_build_object('imageOverrides', e.data #> '{spec,imageOverrides}')
+                END)) AS data
        FROM events e
       WHERE e.tenant_id = $1 AND e.seq > $2 AND e.seq <= $3 ${occurred}
         AND (e.correlation <> '{}'::jsonb OR e.action LIKE 'observation\\_gap.%')

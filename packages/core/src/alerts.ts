@@ -35,6 +35,27 @@ export interface AlertNotification {
   gapId: string | null;
   /** Start of the blind period (last successful observation). */
   blindSince: string | null;
+  /**
+   * Set for drift findings (AFE-26, kind `drift_<type>`). `connectionId` is
+   * then the connection that observed the finding's latest event ("" when
+   * unknown) and `alertId` the finding id.
+   */
+  drift?: DriftAlertDetail;
+}
+
+export interface DriftAlertDetail {
+  findingId: string;
+  type: string;
+  severity: string;
+  title: string;
+  targetKey: string;
+  targetLabel: string;
+  /** Mapped service/environment names (null = unmapped). */
+  service: string | null;
+  environment: string | null;
+  /** Link to the finding in the web UI (absolute when AFE_PUBLIC_URL is set). */
+  url: string;
+  evidenceEventIds: string[];
 }
 
 export interface AlertSink {

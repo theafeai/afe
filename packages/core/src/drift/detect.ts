@@ -421,8 +421,8 @@ function overrideEpisodes(
     // sync at the same instant runs the changed spec).
     type Step = { at: string; change?: CorrelationEvent; placement?: Placement };
     const steps: Step[] = [
-      ...changes.map((c) => ({ at: c.occurredAt, change: c })),
-      ...history.map((p) => ({ at: p.at, placement: p })),
+      ...changes.map((c): Step => ({ at: c.occurredAt, change: c })),
+      ...history.map((p): Step => ({ at: p.at, placement: p })),
     ].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.change ? -1 : b.change ? 1 : 0));
     const active = new Set<string>();
     let ep: OverrideEpisode | null = null;
