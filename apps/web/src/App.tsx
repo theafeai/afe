@@ -10,6 +10,7 @@ import {
 } from "./pages/Connect.tsx";
 import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
+import { EnvironmentMatrix } from "./pages/EnvironmentMatrix.tsx";
 import { EventDetailPage } from "./pages/EventDetail.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { MappingPage } from "./pages/Mapping.tsx";
@@ -24,13 +25,10 @@ import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx"
  */
 export function Routes() {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (pathname === "/" || pathname === "") navigate("/events", { replace: true });
-  }, [pathname, navigate]);
 
   let m: Record<string, string> | null;
-  if (pathname === "/" || matchPath("/events", pathname)) return <Timeline />;
+  if (pathname === "/" || pathname === "") return <EnvironmentMatrix />;
+  if (matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
   if (matchPath("/connections", pathname)) return <Connections />;
@@ -54,6 +52,7 @@ export function Routes() {
 }
 
 const NAV = [
+  { to: "/", label: "Environments" },
   { to: "/events", label: "Events" },
   { to: "/deployments", label: "Deployments" },
   { to: "/connections", label: "Connections" },
@@ -67,7 +66,7 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <Link to="/events" className="brand" aria-label="Afe home">
+      <Link to="/" className="brand" aria-label="Afe home">
         Afe
       </Link>
       <nav aria-label="Main">
@@ -134,7 +133,7 @@ function Shell() {
   // Signed in already: the login URL just continues to the app.
   useEffect(() => {
     if (auth.status === "signed-in" && pathname === "/login") {
-      navigate("/events", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [auth.status, pathname, navigate]);
 
