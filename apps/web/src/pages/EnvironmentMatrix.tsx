@@ -134,7 +134,14 @@ function CellButton({
           )}
         </span>
       )}
-      {uncertain && evidence && <span className="env-cell-note small">{evidence}</span>}
+      {uncertain && evidence && (
+        <span className="env-cell-note small">
+          {evidence.replace(
+            /[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/gi,
+            (id) => `event ${id.slice(0, 8)}`,
+          )}
+        </span>
+      )}
     </button>
   );
 }
@@ -231,7 +238,10 @@ function Matrix({
                 {env.unmapped ? (
                   <HeaderUnmappedHint what="environment" />
                 ) : (
-                  env.kind !== "other" && <span className="muted small"> {env.kind}</span>
+                  env.kind !== "other" &&
+                  env.kind !== env.name.toLowerCase() && (
+                    <span className="muted small"> {env.kind}</span>
+                  )
                 )}
               </th>
             ))}
@@ -270,7 +280,7 @@ function Matrix({
                     key={env.id}
                     role="gridcell"
                     aria-selected={isSelected}
-                    className={isSelected ? "env-selected" : undefined}
+                    className={`env-cellwrap${isSelected ? " env-selected" : ""}`}
                   >
                     <CellButton
                       cell={cell}

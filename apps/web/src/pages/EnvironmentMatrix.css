@@ -34,7 +34,7 @@
   }
 }
 
-.env-page {
+.page.env-page {
   max-width: 1600px;
 }
 
@@ -48,51 +48,51 @@
 }
 
 /* Badges */
-.conf-certain {
+.badge.conf-certain {
   color: var(--conf-certain);
   background: var(--conf-certain-bg);
   border-color: var(--conf-certain);
 }
-.conf-strong {
+.badge.conf-strong {
   color: var(--conf-strong);
   background: var(--conf-strong-bg);
   border-color: var(--conf-strong);
 }
-.conf-probable {
+.badge.conf-probable {
   color: var(--conf-probable);
   background: var(--conf-probable-bg);
   border-color: var(--conf-probable);
 }
-.conf-weak {
+.badge.conf-weak {
   color: var(--conf-weak);
   background: var(--conf-weak-bg);
   border-color: var(--conf-weak);
   border-style: dashed;
 }
-.conf-ambiguous {
+.badge.conf-ambiguous {
   color: var(--conf-ambiguous);
   background: var(--conf-ambiguous-bg);
   border-color: var(--conf-ambiguous);
   border-style: dashed;
 }
-.conf-unknown {
+.badge.conf-unknown {
   color: var(--conf-unknown);
   background: var(--conf-unknown-bg);
   border-color: var(--conf-unknown);
   border-style: dashed;
 }
-.kind {
+.badge.kind {
   font-weight: 500;
   background: transparent;
 }
-.kind-rollback,
-.kind-manual {
+.badge.kind-rollback,
+.badge.kind-manual {
   color: var(--warn);
   border-color: var(--warn-border);
   background: var(--warn-bg);
 }
-.env-inconsistent,
-.env-current {
+.badge.env-inconsistent,
+.badge.env-current {
   color: var(--accent);
   border-color: var(--accent);
   background: transparent;
@@ -154,6 +154,7 @@
 
 /* The matrix: horizontal scroll with a sticky first column */
 .env-scroll {
+  position: relative;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -319,8 +320,18 @@
 .env-cell-target {
   overflow-wrap: anywhere;
 }
+/* The cell button fills its table cell (height: 1px lets 100% resolve). */
+.env-matrix td.env-cellwrap {
+  height: 1px;
+  padding: 0;
+}
+.env-matrix td.env-cellwrap > .env-cell {
+  height: 100%;
+}
 .env-selected {
   background: var(--env-selected);
+}
+.env-selected > .env-cell {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 

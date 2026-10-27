@@ -332,7 +332,7 @@ describe("Environment matrix (AFE-24)", () => {
     const cols = within(grid)
       .getAllByRole("columnheader")
       .map((h) => h.textContent);
-    expect(cols).toEqual(["Service", "Staging staging", "Production production"]);
+    expect(cols).toEqual(["Service", "Staging", "Production"]);
     expect(
       within(grid)
         .getAllByRole("rowheader")

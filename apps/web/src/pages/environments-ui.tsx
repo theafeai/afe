@@ -250,7 +250,9 @@ export function PlacementContent({ p }: { p: PlacementSummary }) {
                   </Link>
                 </>
               )}
-              <div className="small muted env-via">{c.via}</div>
+              <div className="small muted env-via">
+                <ViaText text={c.via} />
+              </div>
             </li>
           ))}
         </ul>
@@ -308,8 +310,31 @@ const HOW_LABEL: Record<string, string> = {
   api: "API",
 };
 
+/** Actor names that only restate an automatic trigger. */
+const AUTOMATED = new Set(["automated", "automation", "system"]);
+
+const UUID_IN_TEXT = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+
+/** A `via` explanation; event ids in it become links to the event. */
+export function ViaText({ text }: { text: string }) {
+  const parts = text.split(UUID_IN_TEXT);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <Link key={i} to={`/events/${part}`} title={part}>
+            event {part.slice(0, 8)}
+          </Link>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
 /** "manual by alice", "automatic sync". */
 export function howText(p: { how: string; actor: string | null }): string {
   const how = HOW_LABEL[p.how] ?? p.how.replace(/_/g, " ");
-  return p.actor ? `${how} by ${p.actor}` : how;
+  return p.actor && !AUTOMATED.has(p.actor.toLowerCase()) ? `${how} by ${p.actor}` : how;
 }
