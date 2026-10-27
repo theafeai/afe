@@ -50,9 +50,33 @@ jobs:
   argocd:
     name: ArgoCD demo sync in kind
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: afe_argocd_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/afe_argocd_e2e
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare browser capture
+        run: |
+          npm install --prefix "$RUNNER_TEMP/afe-preview" --no-package-lock --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/afe-preview/node_modules/.bin/playwright" install --with-deps chromium
+          cp examples/ci/capture.mjs "$RUNNER_TEMP/afe-preview/capture.mjs"
       - uses: helm/kind-action@v1
         with:
           version: v0.33.0
@@ -64,6 +88,11 @@ jobs:
           kubectl apply --server-side -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml
           kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s
           kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=300s
+          kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
+          kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"accounts.afe":"apiKey"}}'
+          kubectl -n argocd patch configmap argocd-rbac-cm --type merge -p '{"data":{"policy.default":"","policy.csv":"p, role:afe-readonly, applications, get, */*, allow\np, role:afe-readonly, projects, get, *, allow\np, role:afe-readonly, clusters, get, *, allow\ng, afe, role:afe-readonly"}}'
+          kubectl -n argocd rollout restart deployment/argocd-server
+          kubectl -n argocd rollout status deployment/argocd-server --timeout=300s
       - name: Reconcile the real Git source
         env:
           DEMO_REPO: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
@@ -88,6 +117,20 @@ jobs:
           kubectl -n afe-demo rollout status deployment/afe-demo --timeout=180s
           kubectl -n afe-demo port-forward service/afe-demo 8090:8080 >/tmp/afe-demo-forward.log 2>&1 &
           curl --retry 10 --retry-all-errors --retry-max-time 30 --retry-delay 1 -fsS http://127.0.0.1:8090/ | grep 'Version 1'
+          kubectl -n argocd delete application afe-demo
+          kubectl delete namespace afe-demo --wait=true --timeout=120s
+      - name: Validate two real ArgoCD deployments through Afe and capture evidence
+        env:
+          AFE_CAPTURE_SCRIPT: ${{ runner.temp }}/afe-preview/capture.mjs
+        run: python3 examples/ci/argocd-afe.py
+      - name: Upload screenshots, recordings and event evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argocd-afe-evidence
+          path: argocd-evidence/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Diagnose failed reconciliation
         if: failure()
         run: |
