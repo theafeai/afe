@@ -11,6 +11,7 @@ export {
 } from "./jobs.ts";
 export * from "./health/index.ts";
 export * from "./anchoring/index.ts";
+export * from "./mapping/index.ts";
 export {
   createEventsApiModule,
   deploymentRow,

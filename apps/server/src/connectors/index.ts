@@ -2,6 +2,7 @@ import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
 import { healthModule } from "../health/index.ts";
 import { anchorModule } from "../anchoring/index.ts";
+import { mappingModule } from "../mapping/index.ts";
 import { argocdModule } from "./argocd.ts";
 import { githubModule } from "./github.ts";
 import { vercelModule } from "./vercel.ts";
@@ -20,4 +21,6 @@ export const defaultModules: ConnectorModule[] = [
   eventsApiModule,
   // Chain anchoring outside the database (AFE-29).
   anchorModule,
+  // Environment and service mapping (AFE-19).
+  mappingModule,
 ];
