@@ -558,6 +558,109 @@ export interface ProductionState {
   lastSeenAt: number;
   /** When Afe recorded the change to `deploymentId` (epoch ms). */
   changedAt: number;
+  /**
+   * Recent production changes of the project, oldest first (at most
+   * `PRODUCTION_HISTORY_LIMIT`), with the idempotency key each was given.
+   * Empty for state stored before AFE-30 (see `legacyProductionChange`).
+   */
+  changes: ProductionChangeRecord[];
+}
+
+/**
+ * Where an occurrence time of a production change comes from (AFE-30):
+ * - `lastAliasRequest`: Vercel's `requestedAt` of the promote/rollback request (exact, and
+ *   the same for webhook and poll);
+ * - `webhook`: the signed `createdAt` of the `deployment.promoted` webhook (exact);
+ * - `observed`: Afe's first observation (a poll), an upper bound only;
+ * - `legacy`: synthesised for state stored before AFE-30; the change time is unknown.
+ */
+export type OccurrenceSource = "lastAliasRequest" | "webhook" | "observed" | "legacy";
+
+/** How Afe knows when a production change happened. */
+export interface ProductionOccurrence {
+  source: OccurrenceSource;
+  /** Epoch ms: the exact time, or for `observed`/`legacy` the latest it can have happened. */
+  at: number;
+  /** For `observed`/`legacy`: the earliest it can have happened (last sighting of the previous production); null if unknown. */
+  notBefore: number | null;
+}
+
+/** One production change Afe recorded (or chose not to emit an event for), and its key. */
+export interface ProductionChangeRecord extends ProductionOccurrence {
+  /** `sourceEventId` of the change's promotion/rollback event (if any was emitted). */
+  key: string;
+  from: string | null;
+  to: string;
+}
+
+/** How many production changes per project `ProductionState.changes` keeps. */
+export const PRODUCTION_HISTORY_LIMIT = 20;
+
+/**
+ * Slack when comparing occurrence times that are not both a `requestedAt`:
+ * a webhook's `createdAt` trails the request by the promote job's duration, and
+ * Afe's and Vercel's clocks may differ slightly.
+ */
+export const OCCURRENCE_TOLERANCE_MS = 2 * 60_000;
+
+const isExact = (o: ProductionOccurrence) =>
+  o.source === "lastAliasRequest" || o.source === "webhook";
+
+/**
+ * Whether two sightings of a change to the same deployment can be the same
+ * occurrence. Two `requestedAt`s must be equal; otherwise exact times must lie
+ * within the other's window (widened by `OCCURRENCE_TOLERANCE_MS`).
+ */
+export function sameOccurrence(a: ProductionOccurrence, b: ProductionOccurrence): boolean {
+  const T = OCCURRENCE_TOLERANCE_MS;
+  if (a.source === "lastAliasRequest" && b.source === "lastAliasRequest") return a.at === b.at;
+  const lo = (o: ProductionOccurrence) => (isExact(o) ? o.at : (o.notBefore ?? -Infinity)) - T;
+  const hi = (o: ProductionOccurrence) => o.at + T;
+  return lo(a) <= hi(b) && lo(b) <= hi(a);
+}
+
+/**
+ * The newest recorded change to `to` that `occurrence` can be (and, when both
+ * name one, from the same deployment).
+ */
+export function findProductionChange(
+  changes: readonly ProductionChangeRecord[],
+  to: string,
+  occurrence: ProductionOccurrence,
+  from?: string | null,
+): ProductionChangeRecord | null {
+  for (let i = changes.length - 1; i >= 0; i--) {
+    const c = changes[i]!;
+    if (c.to !== to) continue;
+    if (from && c.from && from !== c.from) continue;
+    if (sameOccurrence(c, occurrence)) return c;
+  }
+  return null;
+}
+
+/**
+ * For state stored before AFE-30 (no `changes`): the change that made the
+ * stored deployment production, under the old key
+ * `production_alias:<project>:<from or none>:<to>`, so a late webhook for it
+ * still deduplicates against an event recorded before the upgrade.
+ */
+export function legacyProductionChange(
+  projectId: string,
+  state: ProductionState,
+): ProductionChangeRecord {
+  return {
+    key: sourceEventId(
+      "production_alias",
+      projectId,
+      state.previousDeploymentId ?? "none",
+      state.deploymentId,
+    ),
+    from: state.previousDeploymentId,
+    to: state.deploymentId,
+    source: "legacy",
+    at: state.changedAt,
+    notBefore: null,
+  };
 }
 
 export type ProductionChangeKind = "promotion" | "rollback";
@@ -654,16 +757,28 @@ export function classifyProductionChange(input: {
 }
 
 /**
- * `production_alias:<projectId>:<from dpl_id or "none">:<to dpl_id>`. Derived
- * only from Vercel ids, so the webhook and the poll that see the same change
- * produce the same key whichever of them names it a promotion or a rollback.
+ * `production_alias:<projectId>:<from dpl_id or "none">:<to dpl_id>:<occurrence ms>`
+ * (AFE-30). The from/to part names the transition, not its interpretation, so
+ * the webhook and the poll that see the same change produce the same key
+ * whichever of them names it a promotion or a rollback. The occurrence time
+ * tells repeated identical changes (A→B, B→A, A→B) apart; it is Vercel's
+ * `lastAliasRequest.requestedAt` when available, so both paths derive it
+ * independently, else the first sighting's time, which the other path finds
+ * in `ProductionState.changes`.
  */
 export function productionChangeSourceEventId(
   projectId: string,
   fromDeploymentId: string | null,
   toDeploymentId: string,
+  occurrenceAt: number,
 ): string {
-  return sourceEventId("production_alias", projectId, fromDeploymentId ?? "none", toDeploymentId);
+  return sourceEventId(
+    "production_alias",
+    projectId,
+    fromDeploymentId ?? "none",
+    toDeploymentId,
+    Math.trunc(occurrenceAt),
+  );
 }
 
 export function productionChangeEvent(input: {
@@ -673,9 +788,13 @@ export function productionChangeEvent(input: {
   provenance: Provenance;
   /** Who promoted or rolled back, if Vercel reported it (webhook `payload.user`). */
   actor?: ActorRef | null;
+  /** What tells this occurrence apart from an identical earlier change (AFE-30). */
+  occurrence: ProductionOccurrence;
+  /** The key, when the change was already recorded under one (see `ProductionState.changes`). */
+  sourceEventId?: string;
   raw: unknown;
 }): CanonicalEventInputLike {
-  const { deployment: d, change, provenance } = input;
+  const { deployment: d, change, provenance, occurrence } = input;
   const data: JsonObject = {
     projectId: input.projectId,
     toDeploymentId: d.id,
@@ -683,6 +802,8 @@ export function productionChangeEvent(input: {
     confidence: change.confidence,
     reason: change.reason,
     triggerKind: change.kind,
+    occurrenceSource: occurrence.source,
+    occurrenceAt: new Date(occurrence.at).toISOString(),
   };
   if (change.fromDeploymentId) data.fromDeploymentId = change.fromDeploymentId;
   if (d.name) data.projectName = d.name;
@@ -705,7 +826,9 @@ export function productionChangeEvent(input: {
   );
   return {
     source: SOURCE,
-    sourceEventId: productionChangeSourceEventId(input.projectId, change.fromDeploymentId, d.id),
+    sourceEventId:
+      input.sourceEventId ??
+      productionChangeSourceEventId(input.projectId, change.fromDeploymentId, d.id, occurrence.at),
     connectionId: provenance.connectionId,
     action:
       change.kind === "rollback" ? ACTIONS.DEPLOYMENT_ROLLED_BACK : ACTIONS.DEPLOYMENT_PROMOTED,

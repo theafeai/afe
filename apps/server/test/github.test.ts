@@ -15,6 +15,8 @@ import {
 } from "../../../packages/connector-github/test/fixtures.ts";
 import { buildAfe, InlineJobQueue, type AfeApp } from "../src/index.ts";
 import { createGitHubModule, type GitHubModuleOptions } from "../src/connectors/github.ts";
+import type { AuthProvider } from "@afe/core";
+import { tokenMapAuth, trustedTestAuth } from "./helpers/auth.ts";
 
 const WEBHOOK_SECRET = "whsec-TEST-SECRET";
 const { privatePem } = testKeyPair();
@@ -41,6 +43,22 @@ function githubApi() {
         expires_at: new Date(Date.now() + 3_600_000).toISOString(),
         permissions: { actions: "read" },
       }),
+    // Installer verification (AFE-27): OAuth code exchange and the user's installations.
+    "POST /login/oauth/access_token": (req) => {
+      const code = (req.body as { code?: string }).code;
+      if (code === "code-owner") return json(200, { access_token: "ghu_OWNER_USER_TOKEN" });
+      if (code === "code-stranger") return json(200, { access_token: "ghu_STRANGER_TOKEN" });
+      return json(200, { error: "bad_verification_code" });
+    },
+    "GET /user/installations": (req) =>
+      json(200, {
+        total_count: 1,
+        installations:
+          req.headers.authorization === "Bearer ghu_OWNER_USER_TOKEN"
+            ? [{ id: 4242 }]
+            : [{ id: 7 }],
+      }),
+    "DELETE /applications/Iv1.test/token": () => new Response(null, { status: 204 }),
     "GET /installation/repositories": () =>
       json(200, {
         total_count: 2,
@@ -68,7 +86,7 @@ describe("GitHub connector module", () => {
     await pool.end();
   });
 
-  async function start(options: GitHubModuleOptions = {}) {
+  async function start(options: GitHubModuleOptions = {}, authProvider?: AuthProvider) {
     api = githubApi();
     jobs = new InlineJobQueue();
     sink = createMemoryEventSink();
@@ -80,6 +98,7 @@ describe("GitHub connector module", () => {
       },
     });
     afe = await buildAfe({
+      authProvider: authProvider ?? trustedTestAuth(),
       pool,
       jobs,
       sink,
@@ -560,6 +579,108 @@ describe("GitHub connector module", () => {
     });
   });
 
+  describe("installer verification and tenant binding (AFE-27)", () => {
+    const verifyInstaller = {
+      clientId: "Iv1.test",
+      clientSecret: new Secret("OAUTH-CLIENT-SECRET"),
+    };
+
+    async function startInstall(headers: Record<string, string> = {}) {
+      const res = await afe.app.inject({
+        method: "GET",
+        url: "/api/connections/github/install",
+        headers,
+      });
+      expect(res.statusCode).toBe(302);
+      const location = new URL(res.headers.location as string);
+      const cookie = String(res.headers["set-cookie"]).split(";")[0]!;
+      return { state: location.searchParams.get("state")!, cookie };
+    }
+
+    const setup = (state: string, cookie: string, extra = "", headers = {}) =>
+      afe.app.inject({
+        method: "GET",
+        url: `/api/connections/github/setup?installation_id=4242&setup_action=install&state=${encodeURIComponent(state)}${extra}`,
+        headers: { cookie, ...headers },
+      });
+
+    it("connects only when the user coming back can access the installation", async () => {
+      await afe.app.close();
+      await start({ verifyInstaller });
+      let flow = await startInstall();
+      const noCode = await setup(flow.state, flow.cookie);
+      expect(noCode.statusCode).toBe(403);
+      expect(noCode.json().error).toMatch(/Request user authorization/);
+
+      flow = await startInstall();
+      const stranger = await setup(flow.state, flow.cookie, "&code=code-stranger");
+      expect(stranger.statusCode).toBe(403);
+      expect(stranger.json()).toEqual({ error: "you do not have access to this installation" });
+
+      flow = await startInstall();
+      const bad = await setup(flow.state, flow.cookie, "&code=code-bogus");
+      expect(bad.statusCode).toBe(403);
+      expect(await listConnections(pool, "default")).toHaveLength(0);
+
+      flow = await startInstall();
+      const owner = await setup(flow.state, flow.cookie, "&code=code-owner");
+      expect(owner.statusCode).toBe(200);
+      expect((await only()).externalId).toBe("4242");
+
+      // The user token was used for /user/installations only and then revoked.
+      const userCalls = api.requests.filter((r) => r.url.includes("/user/installations"));
+      expect(userCalls.map((r) => r.headers.authorization)).toContain(
+        "Bearer ghu_OWNER_USER_TOKEN",
+      );
+      expect(api.requests.filter((r) => r.method === "DELETE")).toHaveLength(2);
+      const logs = logLines.join("");
+      expect(logs).not.toContain("ghu_");
+      expect(logs).not.toContain("OAUTH-CLIENT-SECRET");
+    });
+
+    it("is configured from the environment and fails fast when incomplete", async () => {
+      await afe.app.close();
+      await expect(start({ env: { AFE_GITHUB_VERIFY_INSTALLER: "true" } })).rejects.toThrow(
+        /AFE_GITHUB_APP_CLIENT_SECRET/,
+      );
+      await start({
+        env: {
+          AFE_GITHUB_VERIFY_INSTALLER: "true",
+          AFE_GITHUB_APP_CLIENT_ID: "Iv1.test",
+          AFE_GITHUB_APP_CLIENT_SECRET: "OAUTH-CLIENT-SECRET",
+        },
+      });
+      const flow = await startInstall();
+      expect((await setup(flow.state, flow.cookie)).statusCode).toBe(403);
+      expect((await setup(flow.state, flow.cookie, "&code=code-owner")).statusCode).toBe(200);
+    });
+
+    it("an install flow started by one tenant cannot be completed by another", async () => {
+      await afe.app.close();
+      await pool.query(
+        "INSERT INTO tenants (id, name) VALUES ('other', 'Other') ON CONFLICT DO NOTHING",
+      );
+      await start(
+        { adoptInstallationsInto: null },
+        tokenMapAuth({
+          "tok-a": { tenantId: "default", roles: ["admin"] },
+          "tok-b": { tenantId: "other", roles: ["admin"] },
+        }),
+      );
+      const flow = await startInstall({ authorization: "Bearer tok-a" });
+      const other = await setup(flow.state, flow.cookie, "", { authorization: "Bearer tok-b" });
+      expect(other.statusCode).toBe(400);
+      expect(await listConnections(pool, "other")).toHaveLength(0);
+      expect(await listConnections(pool, "default")).toHaveLength(0);
+      // Without authentication the callback is rejected before any GitHub call.
+      const before = api.requests.length;
+      expect((await setup(flow.state, flow.cookie)).statusCode).toBe(401);
+      expect(api.requests.length).toBe(before);
+      const ok = await setup(flow.state, flow.cookie, "", { authorization: "Bearer tok-a" });
+      expect(ok.statusCode).toBe(200);
+    });
+  });
+
   describe("manifest flow (self-host)", () => {
     it("registers an App and stores its credentials encrypted", async () => {
       await afe.app.close();
@@ -579,6 +700,7 @@ describe("GitHub connector module", () => {
       });
       jobs = new InlineJobQueue();
       afe = await buildAfe({
+        authProvider: trustedTestAuth(),
         pool,
         jobs,
         sink,

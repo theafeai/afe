@@ -11,6 +11,7 @@ import { ingestEvent } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import { buildAfe, createEventsApiModule } from "../src/index.ts";
 import { runVerifyExport } from "../src/verify-export-cli.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const SHA1 = "1111111111111111111111111111111111111111";
 const SHA2 = "2222222222222222222222222222222222222222";
@@ -95,7 +96,12 @@ describe("events API", () => {
       tenantResolver: { resolveTenant: (r) => (r.headers["x-test-tenant"] as string) ?? "default" },
       signer: createEd25519ExportSigner(key.privateKey),
     });
-    ({ app } = await buildAfe({ pool, logLevel: "silent", connectors: [mod] }));
+    ({ app } = await buildAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "silent",
+      connectors: [mod],
+    }));
   });
   afterAll(async () => {
     await app.close();
@@ -293,6 +299,7 @@ describe("events API", () => {
 
   it("is registered by default", async () => {
     const { app: def } = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       connectors: (await import("../src/index.ts")).defaultModules,

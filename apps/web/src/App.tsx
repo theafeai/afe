@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError, onUnauthorized } from "./api/client.ts";
+import type { SessionInfo } from "./api/types.ts";
 import { Empty } from "./components.tsx";
 import {
   ConnectArgoCD,
@@ -9,6 +11,7 @@ import {
 import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
 import { EventDetailPage } from "./pages/EventDetail.tsx";
+import { LoginPage } from "./pages/Login.tsx";
 import { Timeline } from "./pages/Timeline.tsx";
 import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx";
 
@@ -54,7 +57,7 @@ const NAV = [
   { to: "/connections", label: "Connections" },
 ];
 
-function Nav() {
+function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () => void }) {
   const { pathname } = useLocation();
   return (
     <header className="site-header">
@@ -78,17 +81,88 @@ function Nav() {
           })}
         </ul>
       </nav>
+      {session && (
+        <div className="session">
+          <span className="muted">
+            {session.principal.roles.includes("admin") ? "Admin" : "Viewer (read-only)"}
+          </span>
+          {session.principal.kind === "session" && (
+            <button type="button" className="btn" onClick={onLogout}>
+              Sign out
+            </button>
+          )}
+        </div>
+      )}
     </header>
+  );
+}
+
+/**
+ * Session state (ADR 0006): the app asks `GET /api/session` once; when it, or
+ * any later API call, answers 401 the login screen is shown. Until then the
+ * app renders normally (no flash of the login screen for a signed-in user).
+ */
+type AuthState =
+  { status: "unknown" } | { status: "anonymous" } | { status: "signed-in"; session: SessionInfo };
+
+function Shell() {
+  const [auth, setAuth] = useState<AuthState>({ status: "unknown" });
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const off = onUnauthorized(() => setAuth({ status: "anonymous" }));
+    const ctrl = new AbortController();
+    api
+      .session(ctrl.signal)
+      .then((session) => {
+        // Ignore unexpected bodies (e.g. a proxy page); 401s are handled below.
+        if (Array.isArray(session?.principal?.roles)) setAuth({ status: "signed-in", session });
+      })
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) setAuth({ status: "anonymous" });
+      });
+    return () => {
+      off();
+      ctrl.abort();
+    };
+  }, []);
+
+  // Signed in already: the login URL just continues to the app.
+  useEffect(() => {
+    if (auth.status === "signed-in" && pathname === "/login") {
+      navigate("/events", { replace: true });
+    }
+  }, [auth.status, pathname, navigate]);
+
+  const logout = useCallback(() => {
+    void api
+      .logout()
+      .catch(() => {})
+      .finally(() => setAuth({ status: "anonymous" }));
+  }, []);
+
+  if (auth.status === "anonymous" || (auth.status === "unknown" && pathname === "/login")) {
+    return (
+      <main id="main" tabIndex={-1}>
+        <LoginPage onLogin={(session) => setAuth({ status: "signed-in", session })} />
+      </main>
+    );
+  }
+  return (
+    <>
+      <Nav session={auth.status === "signed-in" ? auth.session : null} onLogout={logout} />
+      <main id="main" tabIndex={-1}>
+        <Routes />
+      </main>
+    </>
   );
 }
 
 export function App() {
   return (
     <Router>
-      <Nav />
-      <main id="main" tabIndex={-1}>
-        <Routes />
-      </main>
+      <Shell />
     </Router>
   );
 }

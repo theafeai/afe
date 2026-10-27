@@ -43,6 +43,7 @@ import {
   type GitHubReconcileRepoJob,
 } from "../src/connectors/github.ts";
 import type { ConnectorModule } from "../src/context.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const WEBHOOK_SECRET = "whsec-AFE8-TEST-SECRET";
 const TOKEN = "ghs_FAKE_INSTALLATION_TOKEN_AFE8";
@@ -91,6 +92,7 @@ describe("GitHub reconciliation and backfill (AFE-8)", () => {
       reconcile: { backfillDays: 0, ...options.reconcile },
     });
     afe = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       jobs,
       sink: createPgEventSink(pool),

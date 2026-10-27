@@ -11,6 +11,7 @@ import type {
   GitHubAppStatus,
   Page,
   ProjectSelection,
+  SessionInfo,
   VercelConnectionView,
   VercelIntegrationStatus,
   VercelProjects,
@@ -42,11 +43,14 @@ const FRIENDLY: Record<string, string> = {
   vercel_unavailable: "Vercel did not answer. Try again later.",
   token_rejected: "Vercel rejected the token.",
   team_not_accessible: "The token cannot access that team (check the team id and token scope).",
-  invalid_token: "Enter a Vercel access token.",
   invalid_team_id: "The team id is not valid (letters, digits, _ and - only).",
   invalid_webhook_secret: "The webhook secret must be 16 to 512 characters.",
   invalid_selection: "The project selection is not valid.",
   unknown_projects: "Some selected projects no longer exist in Vercel.",
+  unauthorized: "Sign in to continue.",
+  invalid_token: "Enter a Vercel access token.",
+  forbidden: "Your access token does not allow this (read-only viewer).",
+  csrf_failed: "Your session is out of date. Reload the page and try again.",
   token_not_read_only:
     "The token can modify ArgoCD. Create a dedicated account with the read-only role.",
 };
@@ -84,6 +88,35 @@ export function setFetch(f: FetchLike): void {
   fetchImpl = f;
 }
 
+/** Session login/logout endpoint (ADR 0006). */
+export const SESSION_URL = "/api/session";
+export const CSRF_COOKIE = "afe_csrf";
+export const CSRF_HEADER = "x-afe-csrf";
+
+const unauthorizedListeners = new Set<() => void>();
+
+/** Called when any API request answers 401 (the session ended): the app shows the login screen. */
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
+
+/**
+ * The session's CSRF token, from the readable `afe_csrf` cookie the server
+ * sets at login. Sent on every mutating request (the session cookie itself
+ * is HttpOnly and never touched by JavaScript; nothing is kept in storage).
+ */
+export function csrfToken(): string | null {
+  if (typeof document === "undefined") return null;
+  for (const part of document.cookie.split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === CSRF_COOKIE) return v.join("=") || null;
+  }
+  return null;
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 export async function request<T>(
   method: string,
   url: string,
@@ -91,12 +124,14 @@ export async function request<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   let res: Response;
+  const csrf = SAFE_METHODS.has(method.toUpperCase()) ? null : csrfToken();
   try {
     res = await fetchImpl(url, {
       method,
       headers: {
         accept: "application/json",
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
+        ...(csrf ? { [CSRF_HEADER]: csrf } : {}),
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       ...(signal ? { signal } : {}),
@@ -107,6 +142,9 @@ export async function request<T>(
     throw new ApiError(0, "network_error", "Cannot reach the Afe server. Is it running?");
   }
   const parsed = await parseBody(res);
+  if (res.status === 401 && url !== SESSION_URL) {
+    for (const listener of unauthorizedListeners) listener();
+  }
   if (!res.ok) throw toApiError(res.status, parsed);
   if (parsed === null || typeof parsed !== "object") {
     throw new ApiError(res.status, "invalid_response", "The server sent an unexpected response.");
@@ -122,6 +160,10 @@ function withQuery(path: string, params: URLSearchParams | Record<string, string
 }
 
 export const api = {
+  session: (signal?: AbortSignal) => get<SessionInfo>(SESSION_URL, signal),
+  login: (token: string) => request<SessionInfo>("POST", SESSION_URL, { token }),
+  logout: () => request<{ ok: boolean }>("DELETE", SESSION_URL),
+
   events: (params: URLSearchParams, signal?: AbortSignal) =>
     get<Page<EventItem>>(withQuery("/api/events", params), signal),
   event: (id: string, signal?: AbortSignal) =>

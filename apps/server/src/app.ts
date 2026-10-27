@@ -1,9 +1,19 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import type pg from "pg";
-import type { EventSink } from "@afe/core";
+import { randomBytes } from "node:crypto";
+import {
+  denyAllAuthProvider,
+  principalTenantResolver,
+  StaticTokenAuthProvider,
+  type AuthProvider,
+  type EventSink,
+  type TenantResolver,
+} from "@afe/core";
 import { LOG_REDACT_OPTIONS, type KeyProvider } from "@afe/core/security";
 import { createPgEventSink } from "@afe/db";
-import { loadConfig, type AfeConfig } from "./config.ts";
+import { registerAuth, type RegisteredRoute } from "./auth/index.ts";
+import { deriveSessionKey, SessionCodec } from "./auth/session.ts";
+import { DEFAULT_SESSION_TTL_MS, loadConfig, type AfeConfig } from "./config.ts";
 import type { ConnectorModule, ServerContext } from "./context.ts";
 import { InlineJobQueue, type JobDefinition, type JobQueue } from "./jobs.ts";
 import { registerWebUi } from "./web.ts";
@@ -29,6 +39,18 @@ export interface CreateAfeOptions {
   connectors?: ConnectorModule[];
   /** Built web UI to serve; defaults to `config.webDir` (`AFE_WEB_DIR`). */
   webDir?: string;
+  /**
+   * Authentication (ADR 0006). Default: `StaticTokenAuthProvider` from
+   * `config.auth` (AFE_ADMIN_TOKEN, AFE_VIEWER_TOKEN); with no token
+   * configured every /api request is rejected.
+   */
+  authProvider?: AuthProvider;
+  /** Tenant of an authenticated request. Default: the principal's tenant. */
+  tenantResolver?: TenantResolver;
+  /** HMAC key material for web UI sessions; default `config.auth.sessionSecret`, else derived from the tokens. */
+  sessionSecret?: string;
+  /** Clock for session expiry (tests). */
+  clock?: () => number;
 }
 
 export interface AfeApp {
@@ -36,6 +58,8 @@ export interface AfeApp {
   context: ServerContext;
   /** All job definitions from registered connectors and features. */
   jobDefinitions: JobDefinition[];
+  /** Every registered HTTP route with its access level (ADR 0006). */
+  routes: RegisteredRoute[];
 }
 
 const missingKeys: KeyProvider = {
@@ -79,15 +103,58 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     }
   });
 
+  const config = options.config ?? loadConfig({ DATABASE_URL: "unused" });
+  const authConfig = config.auth;
+  let authProvider = options.authProvider;
+  if (!authProvider) {
+    if (authConfig?.adminToken) {
+      authProvider = new StaticTokenAuthProvider({
+        adminToken: authConfig.adminToken.reveal(),
+        ...(authConfig.viewerToken ? { viewerToken: authConfig.viewerToken.reveal() } : {}),
+      });
+    } else {
+      app.log.warn("no AFE_ADMIN_TOKEN configured: every /api request is rejected");
+      authProvider = denyAllAuthProvider;
+    }
+  }
+  const sessionSecret = options.sessionSecret ?? authConfig?.sessionSecret?.reveal();
+  const sessionKey = sessionSecret
+    ? deriveSessionKey("secret", sessionSecret)
+    : authConfig?.adminToken
+      ? // Rotating either token invalidates every session.
+        deriveSessionKey(
+          "tokens",
+          authConfig.adminToken.reveal(),
+          authConfig.viewerToken?.reveal() ?? "",
+        )
+      : randomBytes(32); // sessions end when the process restarts
+  const sessions = new SessionCodec(
+    sessionKey,
+    authConfig?.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS,
+    options.clock,
+  );
+
   const context: ServerContext = {
     pool: options.pool,
     sink: options.sink ?? createPgEventSink(options.pool),
     keys: options.keys ?? missingKeys,
     jobs: options.jobs ?? new InlineJobQueue(),
-    config: options.config ?? loadConfig({ DATABASE_URL: "unused" }),
+    config,
     log: app.log,
     modules: options.connectors ?? [],
+    auth: authProvider,
+    tenantResolver: options.tenantResolver ?? principalTenantResolver,
   };
+
+  const webDir = options.webDir ?? options.config?.webDir;
+  // Before any route: every route gets an access level, /api/* is authenticated.
+  const routes = registerAuth(app, {
+    provider: context.auth,
+    tenantResolver: context.tenantResolver,
+    sessions,
+    ...(config.publicUrl ? { publicUrl: config.publicUrl } : {}),
+    uiEnabled: Boolean(webDir),
+  });
 
   app.get("/healthz", async (_req, reply) => {
     try {
@@ -104,10 +171,9 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     jobDefinitions.push(...(connector.jobs?.(context) ?? []));
   }
 
-  const webDir = options.webDir ?? options.config?.webDir;
   if (webDir) await registerWebUi(app, webDir);
 
-  return { app, context, jobDefinitions };
+  return { app, context, jobDefinitions, routes };
 }
 
 /** Convenience wrapper returning only the HTTP app. */

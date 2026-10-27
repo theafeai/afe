@@ -10,7 +10,6 @@
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
-  DEFAULT_TENANT_ID,
   type Connection,
   type ConnectorHealthHooks,
   type JsonObject,
@@ -52,6 +51,7 @@ import {
   type CaptureObservation,
   type ConnectionTestResult,
 } from "@afe/connector-argocd";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import type { JobDefinition } from "../jobs.ts";
 import { createPgCaptureStateStore } from "./argocd-state.ts";
@@ -234,11 +234,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
     source: CONNECTOR_SOURCE,
 
     routes(app: FastifyInstance, ctx: ServerContext) {
-      // No AuthProvider exists yet (ADR 0002); until it does, these admin
-      // routes act on the built-in default tenant. The tenant must come from
-      // the authenticated principal once auth lands, never from the request.
-      const tenantId = DEFAULT_TENANT_ID;
-
+      // The tenant is the authenticated principal's (ADR 0006), never a request field.
       const runTest = async (handle: ArgoCdClientHandle): Promise<ConnectionTestResult> => {
         try {
           return await testArgoCdConnection(handle.client);
@@ -247,7 +243,8 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
         }
       };
 
-      app.get("/api/connections/argocd", async () => {
+      app.get("/api/connections/argocd", async (req) => {
+        const tenantId = requestTenant(req);
         const rows = await listConnections(ctx.pool, tenantId, { source: CONNECTOR_SOURCE });
         return { connections: rows.map(connectionView) };
       });
@@ -256,6 +253,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
         "/api/connections/argocd",
         { schema: { body: connectBodySchema }, bodyLimit: 512 * 1024 },
         async (req, reply) => {
+          const tenantId = requestTenant(req);
           const body = req.body;
           const policy = argocdOutboundPolicy(ctx);
           let serverUrl: string;
@@ -373,6 +371,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
         "/api/connections/argocd/:id/test",
         { schema: { params: idParamsSchema } },
         async (req, reply) => {
+          const tenantId = requestTenant(req);
           const connection = await getConnection(ctx.pool, tenantId, req.params.id);
           if (!connection || connection.source !== CONNECTOR_SOURCE) {
             return reply.code(404).send({ error: "not_found" });
@@ -406,6 +405,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
         "/api/connections/argocd/:id",
         { schema: { params: idParamsSchema } },
         async (req, reply) => {
+          const tenantId = requestTenant(req);
           const client = await ctx.pool.connect();
           try {
             await client.query("BEGIN");

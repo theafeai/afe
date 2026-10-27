@@ -29,6 +29,7 @@ import {
   ANCHOR_JOBS,
 } from "../src/index.ts";
 import { runVerifyExport } from "../src/verify-export-cli.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 function ev(n: number): CanonicalEventInputLike {
   return {
@@ -106,6 +107,7 @@ describe("chain anchoring", () => {
 
     for (let i = 1; i <= 3; i++) await ingestEvent(pool, "default", ev(i));
     const built = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       jobs: queue,
@@ -283,12 +285,14 @@ describe("anchor configuration", () => {
     const pool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
     await expect(
       buildAfe({
+        authProvider: trustedTestAuth(),
         pool,
         logLevel: "silent",
         connectors: [createAnchorModule({ env: { AFE_ANCHOR_DIR: "/tmp/x" } })],
       }),
     ).rejects.toThrow(/signing key/);
     const { jobDefinitions, app } = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       connectors: [createAnchorModule({ env: {} })],

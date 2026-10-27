@@ -287,3 +287,16 @@ export interface VercelProjects {
     selected: boolean;
   }[];
 }
+
+/** `GET/POST /api/session` (ADR 0006). */
+export interface SessionInfo {
+  principal: {
+    id: string;
+    tenantId: string;
+    roles: ("admin" | "viewer")[];
+    kind: string;
+    name: string | null;
+  };
+  csrfToken: string | null;
+  expiresAt: string | null;
+}

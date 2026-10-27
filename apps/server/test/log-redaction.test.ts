@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
 import { createTestPool } from "@afe/db/testing";
 import { createAfe } from "../src/index.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 describe("server logging", () => {
   let pool: pg.Pool;
@@ -21,7 +22,12 @@ describe("server logging", () => {
         cb();
       },
     });
-    const app = await createAfe({ pool, logLevel: "info", logStream });
+    const app = await createAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "info",
+      logStream,
+    });
     app.get("/probe", async (req) => {
       req.log.info({ req: { headers: req.headers } }, "headers");
       req.log.info({ connection: { token: "tok-SECRET", url: "https://x" } }, "connection");

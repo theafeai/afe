@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Secret } from "@afe/core/security";
+import { parseDuration } from "./health/config.ts";
 
 export interface VercelIntegrationConfig {
   clientId: string;
@@ -7,6 +8,20 @@ export interface VercelIntegrationConfig {
   /** The integration's URL slug: https://vercel.com/integrations/<slug>. */
   integrationSlug: string;
 }
+
+/** API authentication settings (ADR 0006, docs/self-hosting/configuration.md "Authentication"). */
+export interface AuthConfig {
+  /** AFE_ADMIN_TOKEN / _FILE: full API access. */
+  adminToken?: Secret<string>;
+  /** AFE_VIEWER_TOKEN / _FILE: optional read-only API access. */
+  viewerToken?: Secret<string>;
+  /** AFE_SESSION_SECRET / _FILE: HMAC key of web UI session cookies. Default: derived from the tokens. */
+  sessionSecret?: Secret<string>;
+  /** AFE_SESSION_TTL: lifetime of a web UI session. Default 12h. */
+  sessionTtlMs: number;
+}
+
+export const DEFAULT_SESSION_TTL_MS = 12 * 3600_000;
 
 export interface AfeConfig {
   databaseUrl: string;
@@ -23,6 +38,8 @@ export interface AfeConfig {
   vercel?: VercelIntegrationConfig;
   /** Directory with the built web UI to serve (`AFE_WEB_DIR`); unset serves no UI. */
   webDir?: string;
+  /** API authentication; absent tokens mean every /api request is rejected (see cli startup check). */
+  auth?: AuthConfig;
 }
 
 /**
@@ -57,6 +74,29 @@ function loadVercelConfig(env: NodeJS.ProcessEnv): VercelIntegrationConfig | und
   return { clientId, clientSecret: new Secret(clientSecret), integrationSlug };
 }
 
+function loadAuthConfig(env: NodeJS.ProcessEnv): AuthConfig {
+  const adminToken = readSecretEnv(env, "AFE_ADMIN_TOKEN")?.trim();
+  const viewerToken = readSecretEnv(env, "AFE_VIEWER_TOKEN")?.trim();
+  const sessionSecret = readSecretEnv(env, "AFE_SESSION_SECRET")?.trim();
+  if (viewerToken && !adminToken) {
+    throw new Error("AFE_VIEWER_TOKEN requires AFE_ADMIN_TOKEN (or AFE_ADMIN_TOKEN_FILE)");
+  }
+  if (sessionSecret !== undefined && sessionSecret.length < 32) {
+    throw new Error("AFE_SESSION_SECRET must be at least 32 characters (openssl rand -hex 32)");
+  }
+  const ttl = env.AFE_SESSION_TTL?.trim();
+  const sessionTtlMs = ttl ? parseDuration(ttl, "AFE_SESSION_TTL") : DEFAULT_SESSION_TTL_MS;
+  if (sessionTtlMs < 60_000 || sessionTtlMs > 30 * 24 * 3600_000) {
+    throw new Error("AFE_SESSION_TTL must be between 1m and 30d");
+  }
+  return {
+    ...(adminToken ? { adminToken: new Secret(adminToken) } : {}),
+    ...(viewerToken ? { viewerToken: new Secret(viewerToken) } : {}),
+    ...(sessionSecret ? { sessionSecret: new Secret(sessionSecret) } : {}),
+    sessionTtlMs,
+  };
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
   const databaseUrl = readSecretEnv(env, "DATABASE_URL");
   if (!databaseUrl) throw new Error("DATABASE_URL (or DATABASE_URL_FILE) is required");
@@ -72,5 +112,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
     ...(publicUrl ? { publicUrl } : {}),
     ...(vercel ? { vercel } : {}),
     ...(env.AFE_WEB_DIR ? { webDir: env.AFE_WEB_DIR } : {}),
+    auth: loadAuthConfig(env),
   };
 }

@@ -19,6 +19,7 @@ import {
   type HealthModule,
   type HealthService,
 } from "../src/index.ts";
+import { trustedTestAuth } from "./helpers/auth.ts";
 
 const MIN = 60_000;
 
@@ -81,6 +82,7 @@ describe("connection health", () => {
       alertSink: { send: async (a) => void alerts.push(a) },
     });
     afe = await buildAfe({
+      authProvider: trustedTestAuth(),
       pool,
       logLevel: "silent",
       jobs,
