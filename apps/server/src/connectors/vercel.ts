@@ -15,7 +15,6 @@ import {
   type JsonObject,
   type ObservationGapReason,
   type ProbeResult,
-  DEFAULT_TENANT_ID,
   EventValidationError,
 } from "@afe/core";
 import { Secret } from "@afe/core/security";
@@ -62,6 +61,7 @@ import {
   updateConnectionConfig,
   upsertConnection,
 } from "@afe/db";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import type { JobDefinition } from "../jobs.ts";
 import { pgVercelCaptureStore, withVercelPollLock } from "./vercel-state.ts";
@@ -120,7 +120,7 @@ export interface VercelModuleOptions {
   fetch?: FetchLike;
   /** Base URL override, tests only. */
   apiBaseUrl?: string;
-  /** Tenant of the authenticated API caller. Defaults to the single self-host tenant. */
+  /** Tenant of the authenticated API caller. Default: the principal's (`requestTenant`). */
   resolveTenant?: (req: FastifyRequest) => string | Promise<string>;
   now?: () => number;
   webhookToleranceMs?: number;
@@ -218,7 +218,7 @@ function publicView(c: Connection) {
 
 export function createVercelModule(options: VercelModuleOptions = {}): ConnectorModule {
   const now = options.now ?? Date.now;
-  const resolveTenant = options.resolveTenant ?? (() => DEFAULT_TENANT_ID);
+  const resolveTenant = options.resolveTenant ?? requestTenant;
   const toleranceMs = options.webhookToleranceMs ?? DEFAULT_WEBHOOK_TOLERANCE_MS;
 
   function clientWith(token: Secret<string> | (() => Promise<Secret<string>>)): VercelClient {

@@ -2,6 +2,7 @@
 import { createPool, migrate, reencryptAllTenants } from "@afe/db";
 import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe } from "./app.ts";
+import { ensureAdminToken } from "./auth/startup.ts";
 import { defaultModules } from "./connectors/index.ts";
 import { PgBossJobRunner } from "./jobs.ts";
 import { loadConfig } from "./config.ts";
@@ -43,6 +44,9 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
   if (!["all", "server", "worker"].includes(role)) throw new Error(USAGE);
+  // Never serve the API without authentication (ADR 0006): refuses to start
+  // without AFE_ADMIN_TOKEN unless bound to loopback.
+  if (role === "all" || role === "server") ensureAdminToken(config);
 
   await migrate(pool, migrationsDir);
   const jobs = new PgBossJobRunner(config.databaseUrl);

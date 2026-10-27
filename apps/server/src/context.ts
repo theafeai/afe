@@ -1,6 +1,12 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type pg from "pg";
-import type { ConnectorHealthHooks, EventSink, HealthReporter } from "@afe/core";
+import type {
+  AuthProvider,
+  ConnectorHealthHooks,
+  EventSink,
+  HealthReporter,
+  TenantResolver,
+} from "@afe/core";
 import type { KeyProvider } from "@afe/core/security";
 import type { AfeConfig } from "./config.ts";
 import type { JobDefinition, JobQueue } from "./jobs.ts";
@@ -21,6 +27,14 @@ export interface ServerContext {
    * registered. Connectors call `ctx.health?.reportSuccess/reportFailure`.
    */
   health?: HealthReporter;
+  /**
+   * Authentication (ADR 0006). The server authenticates every `/api/*`
+   * request before handlers run; handlers read the tenant with
+   * `requestTenant(req)` (apps/server/src/auth), never from request fields.
+   */
+  auth: AuthProvider;
+  /** Maps the authenticated principal to its tenant (ADR 0002). */
+  tenantResolver: TenantResolver;
 }
 
 /**

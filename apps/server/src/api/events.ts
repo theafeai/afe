@@ -2,10 +2,9 @@
  * Audit query API and verifiable export (AFE-14). Reference: docs/api.md and
  * docs/export-verification.md.
  *
- * Authentication: none yet. The `AuthProvider` extension point (ADR 0002) is
- * not implemented; until it is, do not expose these routes beyond a trusted
- * network. The tenant comes from the `TenantResolver` (OSS: always "default"),
- * never from a request field.
+ * Authentication (AFE-27, ADR 0006): the server's auth hook authenticates
+ * every request before these handlers run; the tenant is the authenticated
+ * principal's (`requestTenant`), never a request field.
  */
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -13,7 +12,6 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   createDefaultAuditExporter,
   DEPLOYMENT_VIEW_ACTIONS,
-  defaultTenantResolver,
   EventFilterError,
   ExportFormatError,
   exportSignerFromEnv,
@@ -36,10 +34,14 @@ import {
   queryEvents,
   verifyTenantChain,
 } from "@afe/db";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 
 export interface EventsApiOptions {
-  /** Defaults to the OSS resolver (always the "default" tenant). */
+  /**
+   * Overrides the tenant of a request (receives the authenticated principal).
+   * Default: the tenant set by the server's auth hook.
+   */
   tenantResolver?: TenantResolver;
   /** Defaults to CSV/JSON with integrity proof, signed when a signer is available. */
   exporter?: AuditExporter;
@@ -148,7 +150,7 @@ function sendError(reply: FastifyReply, err: unknown) {
 }
 
 export function createEventsApiModule(options: EventsApiOptions = {}): ConnectorModule {
-  const tenants = options.tenantResolver ?? defaultTenantResolver;
+  const tenants = options.tenantResolver;
   return {
     source: "api",
     routes(app, ctx: ServerContext) {
@@ -159,7 +161,12 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
             ? null
             : exportSignerFromEnv();
       const exporter = options.exporter ?? createDefaultAuditExporter({ signer });
-      const tenantOf = (req: FastifyRequest) => tenants.resolveTenant({ headers: req.headers });
+      const tenantOf = async (req: FastifyRequest) => {
+        const tenantId = requestTenant(req);
+        return tenants
+          ? tenants.resolveTenant({ headers: req.headers, principal: req.principal })
+          : tenantId;
+      };
       const query = (req: FastifyRequest) => (req.query ?? {}) as Record<string, unknown>;
 
       app.get("/api/events", async (req, reply) => {

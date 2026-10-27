@@ -5,7 +5,8 @@
  * backfill / alert-check jobs and the read API.
  */
 import type { FastifyRequest } from "fastify";
-import { DEFAULT_TENANT_ID, type AlertSink, type ConnectorHealthHooks } from "@afe/core";
+import type { AlertSink, ConnectorHealthHooks } from "@afe/core";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import type { JobDefinition } from "../jobs.ts";
 import { createDefaultAlertSink, createLogAlertSink } from "./alert-sink.ts";
@@ -19,7 +20,7 @@ export interface HealthModuleOptions {
   env?: NodeJS.ProcessEnv;
   /** Replaces the default (log + optional webhook) sink: the ADR 0002 AlertSink extension point. */
   alertSink?: AlertSink;
-  /** Tenant of API requests. Defaults to the single built-in tenant (OSS). */
+  /** Tenant of API requests. Default: the authenticated principal's (`requestTenant`). */
   resolveTenant?: (req: FastifyRequest) => string | Promise<string>;
   /** Cron for probe and alert-check jobs. Default every minute. */
   schedule?: string;
@@ -86,7 +87,7 @@ export function createHealthModule(options: HealthModuleOptions = {}): HealthMod
           },
         });
       }
-      registerHealthRoutes(app, ctx.pool, options.resolveTenant ?? (() => DEFAULT_TENANT_ID));
+      registerHealthRoutes(app, ctx.pool, options.resolveTenant ?? requestTenant);
     },
     jobs(ctx): JobDefinition[] {
       const s = service(ctx);

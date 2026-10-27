@@ -92,6 +92,7 @@ import {
   storeCredential,
   upsertConnection,
 } from "@afe/db";
+import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import { parseDuration } from "../health/config.ts";
 
@@ -110,8 +111,8 @@ export interface GitHubModuleOptions {
   /** Public base URL of this instance (AFE_PUBLIC_URL); needed for the manifest flow. */
   publicUrl?: string;
   /**
-   * Tenant of an authenticated install/manifest request. Until the
-   * AuthProvider/TenantResolver land, the default is the built-in tenant.
+   * Tenant of an authenticated install/manifest request. Default: the
+   * authenticated principal's (`requestTenant`, ADR 0006).
    */
   resolveTenant?: (req: FastifyRequest) => string | Promise<string>;
   /**
@@ -675,13 +676,17 @@ function flowCookie(rt: GitHubRuntime, req: FastifyRequest, value: string, maxAg
   ].join("; ");
 }
 
+function tenantOfRequest(rt: GitHubRuntime, req: FastifyRequest): string | Promise<string> {
+  return rt.options.resolveTenant ? rt.options.resolveTenant(req) : requestTenant(req);
+}
+
 async function startFlow(
   rt: GitHubRuntime,
   req: FastifyRequest,
   reply: FastifyReply,
   purpose: StatePurpose,
 ): Promise<string> {
-  const tenantId = await (rt.options.resolveTenant?.(req) ?? DEFAULT_TENANT_ID);
+  const tenantId = await tenantOfRequest(rt, req);
   const nonce = newNonce();
   const state = signState(await rt.stateKey(), { purpose, tenantId, nonce }, rt.clock());
   reply.header("set-cookie", flowCookie(rt, req, nonce, 15 * 60));
