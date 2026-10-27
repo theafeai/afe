@@ -51,37 +51,41 @@ export const environmentInputSchema = z.strictObject({
 });
 export type EnvironmentInput = z.output<typeof environmentInputSchema>;
 
-export const ruleInputSchema = z
-  .strictObject({
-    kind: z.enum(RULE_KINDS),
-    field: z
-      .string()
-      .max(300)
-      .refine(isMappingField, { message: "unknown field (see MAPPING_FIELDS or argocd.label:<key>)" }),
-    match: z.enum(MATCH_TYPES),
-    pattern: z.string().min(1).max(256).refine(noControl, {
-      message: "must not contain control characters",
-    }),
-    caseSensitive: z.boolean().default(false),
-    priority: z.number().int().min(0).max(1_000_000_000).optional(),
-    targetId: mappingIdSchema,
-    enabled: z.boolean().default(true),
-    note: text(512).nullish(),
-  })
-  .superRefine((r, ctx) => {
-    try {
-      compileMatcher(r);
-    } catch (err) {
-      ctx.addIssue({ code: "custom", path: ["pattern"], message: (err as Error).message });
-    }
-  });
+const ruleShape = {
+  kind: z.enum(RULE_KINDS),
+  field: z
+    .string()
+    .max(300)
+    .refine(isMappingField, { message: "unknown field (see MAPPING_FIELDS or argocd.label:<key>)" }),
+  match: z.enum(MATCH_TYPES),
+  pattern: z.string().min(1).max(256).refine(noControl, {
+    message: "must not contain control characters",
+  }),
+  caseSensitive: z.boolean().default(false),
+  priority: z.number().int().min(0).max(1_000_000_000).optional(),
+  targetId: mappingIdSchema,
+  enabled: z.boolean().default(true),
+  note: text(512).nullish(),
+};
+
+function checkPattern(
+  r: { match: MappingRule["match"]; pattern: string; caseSensitive: boolean },
+  ctx: z.RefinementCtx,
+) {
+  try {
+    compileMatcher(r);
+  } catch (err) {
+    ctx.addIssue({ code: "custom", path: ["pattern"], message: (err as Error).message });
+  }
+}
+
+export const ruleInputSchema = z.strictObject(ruleShape).superRefine(checkPattern);
 export type RuleInput = z.output<typeof ruleInputSchema>;
 
 /** A rule as proposed in a preview (an id is optional; new rules get a placeholder). */
-export const proposedRuleSchema = z.intersection(
-  ruleInputSchema,
-  z.object({ id: z.string().max(64).optional() }),
-);
+export const proposedRuleSchema = z
+  .strictObject({ ...ruleShape, id: z.string().max(64).optional() })
+  .superRefine(checkPattern);
 
 export const reorderInputSchema = z.strictObject({
   kind: z.enum(RULE_KINDS),

@@ -13,6 +13,7 @@ import type {
   Outcome,
   Trigger,
 } from "@afe/core/types";
+import type { PlacementView } from "./mapping.ts";
 
 export type {
   CanonicalEvent,
@@ -113,6 +114,8 @@ export interface DeploymentRow {
   };
   how: Trigger;
   provenance: Provenance;
+  /** Service/environment from the tenant's mapping (AFE-19), resolved when read. */
+  placement?: PlacementView | null;
 }
 
 /** `ChainBreak` from @afe/core hash-chain.ts (not importable in the browser: node:crypto). */

@@ -340,12 +340,25 @@ describe("mapping API (AFE-19)", () => {
     const before = (await call("GET", "/api/mapping", V)).json();
     const res = await call("POST", "/api/mapping/preview", V, {
       rules: [
+        // Existing rules keep their ids; new ones have none.
+        ...before.rules.map((r: Record<string, unknown>) => ({
+          id: r.id,
+          kind: r.kind,
+          field: r.field,
+          match: r.match,
+          pattern: r.pattern,
+          caseSensitive: r.caseSensitive,
+          targetId: r.targetId,
+          enabled: r.enabled,
+          priority: r.priority,
+        })),
         {
           kind: "environment",
           field: "vercel.target",
           match: "exact",
           pattern: "production",
           targetId: "staging",
+          priority: 1,
         },
       ],
     });
@@ -357,7 +370,7 @@ describe("mapping API (AFE-19)", () => {
     expect(vercel).toMatchObject({
       changed: true,
       observations: { "vercel.target": ["production"] },
-      proposed: { environment: { id: "staging" }, service: null },
+      proposed: { environment: { id: "staging" }, service: { id: "web-shop" } },
     });
     expect(
       (
