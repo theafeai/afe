@@ -490,6 +490,23 @@ from Afe (no `state`, e.g. installed from the App's GitHub page) are adopted int
 the `default` tenant. Disable with `AFE_GITHUB_ADOPT_INSTALLATIONS=false`; the
 hosted service always disables it (`adoptInstallationsInto: null`).
 
+**Authentication (ADR 0006):** the install start, setup callback and manifest
+routes need an admin session; the setup callback must come from the tenant
+that started the flow. A browser without a session is sent to the login page
+and back.
+
+**Installer verification (hosted, AFE-27).** `installation_id` in the setup
+redirect can be edited, so on a multi-tenant instance a user could try to
+claim an installation they do not own. Set `AFE_GITHUB_VERIFY_INSTALLER=true`
+with the App's `AFE_GITHUB_APP_CLIENT_ID` / `AFE_GITHUB_APP_CLIENT_SECRET`, and
+enable **Request user authorization (OAuth) during installation** on the App.
+GitHub then adds a `code` to the setup redirect; Afe exchanges it
+(`POST https://github.com/login/oauth/access_token`), checks the installation
+is in `GET /user/installations`, revokes the user token and only then connects
+(otherwise `403`). Self-host default: off. The risk there is small (single
+tenant, admin session, signed browser-bound state, installation must not
+predate the flow), but enable it if several people administer installations.
+
 ### Registering the App (self-host)
 
 **Option A — one click (App Manifest flow).** Set `AFE_PUBLIC_URL` to the
@@ -519,6 +536,8 @@ set:
 | `AFE_GITHUB_STATE_SECRET`                                         | Optional key for signing redirect state; defaults to one derived from the App key |
 | `AFE_PUBLIC_URL`                                                  | Needed for the manifest flow                                                      |
 | `AFE_GITHUB_ADOPT_INSTALLATIONS`                                  | `false` to require the Afe install flow for every installation                    |
+| `AFE_GITHUB_VERIFY_INSTALLER`                                     | `true` to verify the installing user via OAuth (below)                            |
+| `AFE_GITHUB_APP_CLIENT_SECRET` (or `_FILE`)                       | OAuth client secret; needed with `AFE_GITHUB_VERIFY_INSTALLER`                    |
 
 Environment config wins over a manifest-registered App. A partly set
 environment fails at startup.

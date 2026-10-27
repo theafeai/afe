@@ -27,6 +27,31 @@ one exists. Setting both `X` and `X_FILE` is an error. See [secrets](secrets.md)
 | `NODE_EXTRA_CA_CERTS`               | unset                     | no     | Path to a PEM bundle of extra CA certificates trusted for all outbound TLS (e.g. a private CA for ArgoCD). Mount the file read-only. TLS verification is never disabled.                                                             |
 | `NODE_OPTIONS`                      | `--enable-source-maps`    | no     | Node.js runtime options. Do not add `--inspect` in production.                                                                                                                                                                       |
 
+## Authentication
+
+Every `/api/*` route requires a token or a UI session
+([ADR 0006](../decisions/0006-api-authentication.md), [API](../api.md#authentication)).
+Webhooks, `/healthz` and the static UI are public.
+
+| Variable                      | Default         | Secret | Description                                                                                                                                                                                                                               |
+| ----------------------------- | --------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AFE_ADMIN_TOKEN`             | (see below)     | yes    | Full access to the API and UI (connections, install flows, export key). At least 32 characters, e.g. `openssl rand -hex 32`. Prefer `AFE_ADMIN_TOKEN_FILE`; docker-compose.yml sets it to `/run/secrets/afe_admin_token`.                 |
+| `AFE_VIEWER_TOKEN`            | unset           | yes    | Optional read-only access (events, deployments, export, audit verification, connection status). At least 32 characters, different from the admin token. `_FILE` variant supported.                                                        |
+| `AFE_SESSION_SECRET`          | from the tokens | yes    | HMAC key for UI session cookies (at least 32 characters). Unset: derived from the admin and viewer tokens, so rotating a token signs everyone out. Rotate it to end all sessions. `_FILE` supported.                                      |
+| `AFE_SESSION_TTL`             | `12h`           | no     | Lifetime of a UI session (`1m` to `30d`).                                                                                                                                                                                                 |
+| `AFE_GITHUB_VERIFY_INSTALLER` | `false`         | no     | Hosted/multi-tenant: verify via OAuth that the user completing a GitHub App install can access the installation. Needs `AFE_GITHUB_APP_CLIENT_ID` and `AFE_GITHUB_APP_CLIENT_SECRET` (or `_FILE`). See [GitHub](../connectors/github.md). |
+
+**Startup safety.** Without `AFE_ADMIN_TOKEN`, `afe server` and `afe all`
+refuse to start unless `AFE_HOST` is a loopback address (`127.0.0.1`, `::1`,
+`localhost`). On loopback (e.g. `pnpm dev` with `AFE_HOST=127.0.0.1`) they
+generate a one-time admin token and print it once to stderr; it changes on
+every restart. The docker-compose setup listens on `0.0.0.0` inside the
+container and therefore always needs the token. `afe worker` does not need it.
+
+Set `AFE_PUBLIC_URL` to the https address users open, so session cookies are
+`Secure` and the CSRF Origin check compares against it. API clients send
+`Authorization: Bearer <token>`.
+
 ## Chain anchoring
 
 Signed checkpoints of each tenant's audit chain head, published outside the
@@ -80,8 +105,8 @@ Read by `docker compose` itself; see [`.env.example`](../../.env.example).
 | `AFE_HTTP_PORT`     | `8080`                 | no     | Host port, always bound to `127.0.0.1`.                                          |
 
 All other variables in `.env` are passed into the Afe containers. The compose
-file sets `DATABASE_URL` and `AFE_ENCRYPTION_KEY_FILE` itself; do not set
-`AFE_ENCRYPTION_KEY` in `.env` as well.
+file sets `DATABASE_URL`, `AFE_ENCRYPTION_KEY_FILE` and `AFE_ADMIN_TOKEN_FILE`
+itself; do not set `AFE_ENCRYPTION_KEY` or `AFE_ADMIN_TOKEN` in `.env` as well.
 
 ## Pending settings
 
@@ -94,7 +119,6 @@ These are being built concurrently and will be documented here when they land:
 | ArgoCD connector                     | Server URL, token (stored encrypted), per-connection CA bundle                                            | AFE-9  |
 | Vercel connector                     | Token and webhook secret (stored encrypted), team id                                                      | AFE-11 |
 | Connection health and reconciliation | Probe and reconciliation polling intervals                                                                | AFE-13 |
-| Query API / UI authentication        | Admin token for the single built-in tenant                                                                | AFE-14 |
 
 Connector credentials are, by design, stored encrypted in the database
 ([rules R2](../security/rules.md#r2--credentials)), not in environment

@@ -477,6 +477,7 @@ describe("API authentication (AFE-27)", () => {
         "/api/connections/argocd",
         "/api/export?format=json",
         "/api/audit/verify",
+        "/api/audit/anchors",
       ];
       for (const url of lists) {
         const b = await inject("GET", url, B);

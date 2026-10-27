@@ -2,6 +2,7 @@
 #
 #   mkdir -p secrets && chmod 700 secrets
 #   openssl rand -base64 32 > secrets/afe_encryption_key
+#   openssl rand -hex 32 > secrets/afe_admin_token     # API/UI login token
 #   cp .env.example .env        # then set POSTGRES_PASSWORD (and pin AFE_VERSION)
 #   docker compose up -d
 #
@@ -32,6 +33,9 @@ x-afe: &afe
   environment:
     DATABASE_URL: postgres://afe:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/afe
     AFE_ENCRYPTION_KEY_FILE: /run/secrets/afe_encryption_key
+    # Admin token for the API and web UI login (ADR 0006). Required: the server
+    # refuses to start without it when not bound to loopback.
+    AFE_ADMIN_TOKEN_FILE: /run/secrets/afe_admin_token
     AFE_LOG_LEVEL: ${AFE_LOG_LEVEL:-info}
     AFE_ALLOW_PRIVATE_NETWORK_TARGETS: ${AFE_ALLOW_PRIVATE_NETWORK_TARGETS:-false}
     AFE_ALLOW_INSECURE_HTTP_TARGETS: ${AFE_ALLOW_INSECURE_HTTP_TARGETS:-false}
@@ -40,6 +44,7 @@ x-afe: &afe
   env_file: .env
   secrets:
     - afe_encryption_key
+    - afe_admin_token
   # Hardening: nothing is written to the image filesystem at runtime.
   read_only: true
   tmpfs:
@@ -83,6 +88,8 @@ services:
 secrets:
   afe_encryption_key:
     file: ./secrets/afe_encryption_key
+  afe_admin_token:
+    file: ./secrets/afe_admin_token
 
 volumes:
   afe-pgdata:
