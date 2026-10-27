@@ -7,7 +7,9 @@ import {
   VercelPoller,
   captureWebhookEvent,
   classifyProductionChange,
+  PRODUCTION_HISTORY_LIMIT,
   normalizeDeployment,
+  productionChangeEvent,
   type VercelDeployment,
   type VercelWebhookInput,
 } from "../src/index.ts";
@@ -67,6 +69,10 @@ describe("vercel event capture", () => {
     });
   const events = () => sink.events(TENANT);
   const byKey = (key: string) => events().find((e) => e.sourceEventId === key);
+  /** Promotion/rollback events from→to, oldest first (keys end in the occurrence time, AFE-30). */
+  const aliasEvents = (from: string, to: string) =>
+    events().filter((e) => e.sourceEventId.startsWith(`production_alias:prj_web:${from}:${to}:`));
+  const aliasEvent = (from: string, to: string) => aliasEvents(from, to)[0];
   const keys = () => events().map((e) => e.sourceEventId);
 
   function deploy(id: string, over: Partial<VercelDeployment> = {}, projectId = "prj_web") {
@@ -453,7 +459,7 @@ describe("vercel event capture", () => {
       clock += 5 * MIN;
       api.setProduction(TEAM.id, "prj_web", "dpl_a");
       await poller().poll();
-      const rollback = byKey("production_alias:prj_web:dpl_b:dpl_a")!;
+      const rollback = aliasEvent("dpl_b", "dpl_a")!;
       expect(rollback).toMatchObject({
         action: "deployment.rolled_back",
         trigger: { type: "rollback", sourceValue: "inferred" },
@@ -486,11 +492,15 @@ describe("vercel event capture", () => {
         jobStatus: "succeeded",
       });
       await poller().poll();
-      expect(byKey("production_alias:prj_web:dpl_a:dpl_b")).toMatchObject({
+      expect(byKey(`production_alias:prj_web:dpl_a:dpl_b:${clock - MIN}`)).toMatchObject({
         action: "deployment.promoted",
         trigger: { type: "promotion" },
         occurredAt: new Date(clock - MIN).toISOString(),
-        data: { confidence: "reported" },
+        data: {
+          confidence: "reported",
+          occurrenceSource: "lastAliasRequest",
+          occurrenceAt: new Date(clock - MIN).toISOString(),
+        },
       });
 
       // Promote a preview build to production without rebuilding.
@@ -499,7 +509,7 @@ describe("vercel event capture", () => {
       clock += 5 * MIN;
       api.setProduction(TEAM.id, "prj_web", "dpl_p", null);
       await poller().poll();
-      expect(byKey("production_alias:prj_web:dpl_b:dpl_p")).toMatchObject({
+      expect(aliasEvent("dpl_b", "dpl_p")).toMatchObject({
         action: "deployment.promoted",
         data: { confidence: "inferred" },
       });
@@ -513,7 +523,7 @@ describe("vercel event capture", () => {
       clock += 5 * MIN;
       api.setProduction(TEAM.id, "prj_web", "dpl_staged");
       await poller().poll();
-      expect(byKey("production_alias:prj_web:dpl_p:dpl_staged")).toMatchObject({
+      expect(aliasEvent("dpl_p", "dpl_staged")).toMatchObject({
         action: "deployment.promoted",
         data: { confidence: "inferred" },
       });
@@ -534,7 +544,7 @@ describe("vercel event capture", () => {
       api.setProduction(TEAM.id, "prj_web", "dpl_b");
       const res = await capture(hook("deployment.promoted", "dpl_b"));
       expect(res.status).toBe("ingested");
-      expect(byKey("production_alias:prj_web:dpl_a:dpl_b")).toMatchObject({
+      expect(aliasEvent("dpl_a", "dpl_b")).toMatchObject({
         action: "deployment.promoted",
         actor: { type: "user", id: USER.id },
         observation: { method: "webhook" },
@@ -561,6 +571,296 @@ describe("vercel event capture", () => {
       expect(res.status).toBe("duplicate");
       expect(alias()).toHaveLength(1);
       expect(alias()[0]!.observation.method).toBe("reconciliation");
+    });
+  });
+
+  describe("repeated identical production changes (AFE-30)", () => {
+    // dpl_a: an older production build; dpl_b: a preview build. A→B is a
+    // promotion and B→A a rollback, whether reported or inferred.
+    let live = "dpl_a";
+    let hookSeq = 0;
+    beforeEach(() => {
+      live = "dpl_a";
+      deploy("dpl_a", {
+        source: "git",
+        target: "production",
+        meta: githubMeta(),
+        createdAt: T0 - DAY,
+        ready: T0 - DAY + MIN,
+      });
+      deploy("dpl_b", {
+        source: "git",
+        target: null,
+        meta: githubMeta(),
+        createdAt: T0 - DAY / 2,
+        ready: T0 - DAY / 2 + MIN,
+      });
+      api.setProduction(TEAM.id, "prj_web", "dpl_a");
+    });
+
+    const other = (id: string) => (id === "dpl_a" ? "dpl_b" : "dpl_a");
+    /** Production moves to the other deployment now; with `reported`, Vercel sets lastAliasRequest. */
+    function change(reported: boolean): VercelWebhookInput {
+      const to = other(live);
+      api.setProduction(
+        TEAM.id,
+        "prj_web",
+        to,
+        reported
+          ? {
+              type: to === "dpl_a" ? "rollback" : "promote",
+              fromDeploymentId: live,
+              toDeploymentId: to,
+              requestedAt: clock,
+              jobStatus: "succeeded",
+            }
+          : null,
+      );
+      live = to;
+      // The webhook Vercel sends for it (delivered whenever the test says).
+      return hook("deployment.promoted", to, { deliveryId: `promoted-${++hookSeq}` });
+    }
+    const alias = () =>
+      events().filter(
+        (e) => e.action === "deployment.promoted" || e.action === "deployment.rolled_back",
+      );
+    const transitions = () =>
+      alias().map((e) => [e.data.fromDeploymentId, e.data.toDeploymentId, e.observation.method]);
+    const expectThreeDistinct = (method: string | string[]) => {
+      const methods = Array.isArray(method) ? method : [method, method, method];
+      expect(transitions()).toEqual([
+        ["dpl_a", "dpl_b", methods[0]],
+        ["dpl_b", "dpl_a", methods[1]],
+        ["dpl_a", "dpl_b", methods[2]],
+      ]);
+      expect(new Set(alias().map((e) => e.sourceEventId)).size).toBe(3);
+    };
+    const step = () => {
+      clock += 5 * MIN;
+    };
+
+    it.each([false, true])("poll only (lastAliasRequest: %s)", async (reported) => {
+      await poller().poll(); // baseline: dpl_a
+      for (let i = 0; i < 3; i++) {
+        step();
+        change(reported);
+        step();
+        await poller().poll();
+      }
+      expectThreeDistinct("reconciliation");
+      expect(alias().map((e) => e.data.occurrenceSource)).toEqual(
+        Array(3).fill(reported ? "lastAliasRequest" : "observed"),
+      );
+      expect(alias().map((e) => e.action)).toEqual([
+        "deployment.promoted",
+        "deployment.rolled_back",
+        "deployment.promoted",
+      ]);
+      // Further polls of unchanged production record nothing.
+      step();
+      await poller().poll();
+      expect(alias()).toHaveLength(3);
+    });
+
+    it.each([false, true])("webhooks only (lastAliasRequest: %s)", async (reported) => {
+      await poller().poll(); // baseline: dpl_a
+      for (let i = 0; i < 3; i++) {
+        step();
+        const res = await capture(change(reported));
+        expect(res.status).toBe("ingested");
+      }
+      expectThreeDistinct("webhook");
+      expect(alias().map((e) => e.data.occurrenceSource)).toEqual(
+        Array(3).fill(reported ? "lastAliasRequest" : "webhook"),
+      );
+      expect(alias()[2]!.actor).toEqual({ type: "user", id: USER.id });
+    });
+
+    it.each([false, true])("webhook first, then poll (lastAliasRequest: %s)", async (reported) => {
+      await poller().poll();
+      for (let i = 0; i < 3; i++) {
+        step();
+        expect((await capture(change(reported))).status).toBe("ingested");
+        step();
+        await poller().poll();
+      }
+      expectThreeDistinct("webhook");
+    });
+
+    it.each([false, true])("poll first, then webhook (lastAliasRequest: %s)", async (reported) => {
+      await poller().poll();
+      for (let i = 0; i < 3; i++) {
+        step();
+        const webhook = change(reported);
+        step();
+        await poller().poll();
+        // The webhook arrives late, with its original time.
+        expect((await capture(webhook)).status).toBe("duplicate");
+      }
+      expectThreeDistinct("reconciliation");
+    });
+
+    it("alternating first observers", async () => {
+      await poller().poll();
+      step();
+      expect((await capture(change(false))).status).toBe("ingested"); // A→B by webhook
+      step();
+      await poller().poll();
+      step();
+      const late = change(true); // B→A seen by the poll first
+      step();
+      await poller().poll();
+      expect((await capture(late)).status).toBe("duplicate");
+      step();
+      expect((await capture(change(true))).status).toBe("ingested"); // A→B by webhook
+      step();
+      await poller().poll();
+      expectThreeDistinct(["webhook", "reconciliation", "webhook"]);
+    });
+
+    it.each([false, true])(
+      "outage in between: late webhooks fill in the missed changes (lastAliasRequest: %s)",
+      async (reported) => {
+        await poller().poll();
+        step();
+        expect((await capture(change(reported))).status).toBe("ingested"); // A→B
+        step();
+        await poller().poll();
+        // Outage: B→A and A→B happen; neither webhooks nor polls get through.
+        step();
+        const missed1 = change(reported);
+        step();
+        const missed2 = change(reported);
+        step();
+        await poller().poll(); // production is dpl_b again
+        // With lastAliasRequest the poll alone notices that A→B happened again.
+        expect(alias()).toHaveLength(reported ? 2 : 1);
+        // Vercel retries the webhooks after the outage, in order.
+        step();
+        expect((await capture(missed1)).status).toBe("ingested");
+        expect((await capture(missed2)).status).toBe(reported ? "duplicate" : "ingested");
+        // In occurrence order (the late B→A was appended after the second A→B).
+        const byTime = [...alias()].sort(
+          (a, b) =>
+            Date.parse(a.data.occurrenceAt as string) - Date.parse(b.data.occurrenceAt as string),
+        );
+        expect(
+          byTime.map((e) => [e.data.fromDeploymentId, e.data.toDeploymentId, e.observation.method]),
+        ).toEqual([
+          ["dpl_a", "dpl_b", "webhook"],
+          ["dpl_b", "dpl_a", "webhook"],
+          ["dpl_a", "dpl_b", reported ? "reconciliation" : "webhook"],
+        ]);
+        expect(new Set(alias().map((e) => e.sourceEventId)).size).toBe(3);
+        // The late rollback did not move the stored production deployment.
+        expect(store.production.get("prj_web")!.deploymentId).toBe("dpl_b");
+        step();
+        await poller().poll();
+        expect(alias()).toHaveLength(3);
+      },
+    );
+
+    it("outage without webhooks or lastAliasRequest: B→A→B is invisible (observation gap)", async () => {
+      await poller().poll();
+      step();
+      change(false);
+      step();
+      await poller().poll();
+      step();
+      change(false);
+      step();
+      change(false);
+      step();
+      await poller().poll();
+      expect(transitions()).toEqual([["dpl_a", "dpl_b", "reconciliation"]]);
+    });
+
+    it("upgrade: state and events stored under the old key are the baseline", async () => {
+      // As stored before AFE-30: production dpl_b, reached from dpl_a, recorded
+      // under the old key, and no `changes`.
+      const recordedAt = clock;
+      const legacyKey = "production_alias:prj_web:dpl_a:dpl_b";
+      await sink.ingest(
+        TENANT,
+        productionChangeEvent({
+          projectId: "prj_web",
+          deployment: normalizeDeployment({ id: "dpl_b", projectId: "prj_web", target: null }),
+          change: {
+            kind: "promotion",
+            confidence: "inferred",
+            reason: "legacy",
+            fromDeploymentId: "dpl_a",
+            occurredAt: recordedAt - MIN,
+          },
+          provenance: {
+            method: "reconciliation",
+            observedAt: new Date(recordedAt),
+            connectionId: CONN,
+          },
+          occurrence: { source: "observed", at: recordedAt, notBefore: null },
+          sourceEventId: legacyKey,
+          raw: {},
+        }),
+      );
+      store.production.set("prj_web", {
+        deploymentId: "dpl_b",
+        deploymentCreatedAt: T0 - DAY / 2,
+        previousDeploymentId: "dpl_a",
+        previousDeploymentCreatedAt: T0 - DAY,
+        lastSeenAt: recordedAt,
+        changedAt: recordedAt,
+        changes: [],
+      });
+      api.setProduction(TEAM.id, "prj_web", "dpl_b", {
+        type: "promote",
+        fromDeploymentId: "dpl_a",
+        toDeploymentId: "dpl_b",
+        requestedAt: recordedAt - MIN,
+      });
+      live = "dpl_b";
+      // After the upgrade: polls (also reading lastAliasRequest) and a late
+      // webhook for the same change emit nothing new.
+      step();
+      await poller().poll();
+      const late = hook("deployment.promoted", "dpl_b", {
+        deliveryId: "late",
+        createdAt: recordedAt - MIN,
+      });
+      expect((await capture(late)).status).toBe("duplicate");
+      expect(alias().map((e) => e.sourceEventId)).toEqual([legacyKey]);
+      // New changes, including a repeat of A→B, get new keys.
+      step();
+      change(true);
+      step();
+      await poller().poll();
+      step();
+      change(true);
+      step();
+      await poller().poll();
+      expect(transitions()).toEqual([
+        ["dpl_a", "dpl_b", "reconciliation"],
+        ["dpl_b", "dpl_a", "reconciliation"],
+        ["dpl_a", "dpl_b", "reconciliation"],
+      ]);
+      expect(alias()[0]!.sourceEventId).toBe(legacyKey);
+      expect(alias()[2]!.sourceEventId).toMatch(/^production_alias:prj_web:dpl_a:dpl_b:\d+$/);
+      // The legacy change stays in the history.
+      expect(store.production.get("prj_web")!.changes[0]).toMatchObject({
+        key: legacyKey,
+        source: "legacy",
+      });
+    });
+
+    it("keeps a bounded history", async () => {
+      await poller().poll();
+      for (let i = 0; i < PRODUCTION_HISTORY_LIMIT + 5; i++) {
+        step();
+        change(true);
+        step();
+        await poller().poll();
+      }
+      expect(alias()).toHaveLength(PRODUCTION_HISTORY_LIMIT + 5);
+      expect(store.production.get("prj_web")!.changes).toHaveLength(PRODUCTION_HISTORY_LIMIT);
     });
   });
 
