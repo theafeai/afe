@@ -153,6 +153,8 @@ with no gap open — is a single upsert with no lock held across other work.
 | `AFE_HEALTH_DOWNTIME_THRESHOLD`  | `15m`   | Unattempted for longer = Afe was not watching. |
 | `AFE_ALERT_WEBHOOK_URL`          | unset   | JSON webhook for alerts (validated, R6).       |
 
+Drift findings can alert through the same sink: `AFE_DRIFT_ALERTS` ([drift.md](drift.md)).
+
 Durations accept `ms`, `s`, `m`, `h`, `d` suffixes.
 
 ## Known limitations / follow-ups

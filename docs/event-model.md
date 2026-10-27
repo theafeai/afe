@@ -150,6 +150,7 @@ here. Never rename or remove one: stored events keep their names.
 | `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                                                                       |
 | `connection.suspended` / `.resumed`                    | afe            | Access was suspended / resumed at the source (e.g. GitHub App suspend).                                                               |
 | `config.mapping.changed`                               | afe            | Environment/service mapping changed; who, and before/after ([mapping](environment-mapping.md)).                                       |
+| `drift.finding.opened` / `.resolved`                   | afe            | Afe found / resolved drift: content that does not trace to Git, `data.finding` ([drift](drift.md)).                                   |
 
 The validator accepts any action that matches the pattern, so connectors can
 ship a new action before the shared list is updated; `isKnownAction()` tells
@@ -332,6 +333,7 @@ state transition of one source object. Keys below are written as
 | afe    | observation gap                     | `observation_gap`, `<gapId>`, `opened\|closed`                                                                           |
 | afe    | connection alert                    | `connection_alert`, `<alertId>`, `opened\|resolved`                                                                      |
 | afe    | mapping change                      | `config_mapping`, `<mapping revision>`                                                                                   |
+| afe    | drift finding                       | `drift_finding`, `<finding id>`, `opened\|resolved`                                                                      |
 
 GitHub keys are built by `packages/connector-github/src/event-ids.ts` and listed,
 with AFE-7's refinements (run attempt in review keys, `repository_dispatch`), in

@@ -279,7 +279,7 @@ describe("drift (AFE-26)", () => {
     };
     const { event } = await ingestEvent(pool, "default", input);
     const resolved = await one("untracked_deploy");
-    expect(resolved).toMatchObject({ id: ut.id, status: "resolved", resolvedByEventId: event.id });
+    expect(resolved).toMatchObject({ id: ut.id, status: "resolved", resolvedByEventId: event!.id });
     await runJob();
     await runJob();
     expect(alerts("resolved", ut.id)).toHaveLength(1);
