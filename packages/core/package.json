@@ -9,6 +9,7 @@
     "./security": "./src/security/index.ts",
     "./correlation": "./src/correlation/index.ts",
     "./mapping": "./src/mapping/index.ts",
+    "./drift": "./src/drift/index.ts",
     "./types": "./src/types.ts"
   },
   "dependencies": {
