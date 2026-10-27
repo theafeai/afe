@@ -16,13 +16,36 @@ export const REQUIRED_PERMISSIONS = {
 } as const satisfies PermissionMap;
 
 /**
- * Read permissions an operator may additionally grant to enable optional
- * events. Not requested by default; never required.
+ * Read permissions that enable optional features. Never required: a
+ * connection without them stays `active` and the feature is simply off
+ * (listed in `PermissionCheck.optionalMissing`).
  * - contents: `push`, `create`, `delete`, `release` webhooks (ref.pushed...).
- *   Afe still never downloads file contents.
- * - pull_requests: `pull_request` webhooks (pull_request.merged).
+ *   Afe still never downloads file contents. Not requested by default.
+ * - pull_requests: `pull_request` webhooks (pull_request.merged). Not
+ *   requested by default.
+ * - packages: `registry_package` webhooks (artifact.published, AFE-21).
+ *   Requested by the manifest (REQUESTED_OPTIONAL_PERMISSIONS).
+ * - attestations: build provenance lookups
+ *   (`GET /repos/{o}/{r}/attestations/{digest}`, AFE-21). Requested by the manifest.
  */
-export const OPTIONAL_READ_PERMISSIONS = ["contents", "pull_requests"] as const;
+export const OPTIONAL_READ_PERMISSIONS = [
+  "attestations",
+  "contents",
+  "packages",
+  "pull_requests",
+] as const;
+
+/**
+ * Optional permissions the App manifest requests by default (read only), so
+ * new Apps capture artifacts out of the box. Installations that decline them
+ * (or were installed before AFE-21) keep working without artifact capture.
+ */
+export const REQUESTED_OPTIONAL_PERMISSIONS = {
+  /** Container package publications (`registry_package` webhook). */
+  packages: "read",
+  /** Build provenance attestations of published images. */
+  attestations: "read",
+} as const satisfies PermissionMap;
 
 export interface PermissionCheck {
   /** True when every required permission is granted at least as read and nothing is writable. */
@@ -33,6 +56,12 @@ export interface PermissionCheck {
   writable: string[];
   /** Read permissions granted beyond the required set (allowed, reported for review). */
   extra: string[];
+  /**
+   * Optional read permissions (OPTIONAL_READ_PERMISSIONS) that are not
+   * granted, i.e. the optional features that are off. Not a problem: `ok`
+   * ignores it. Absent on checks stored before AFE-21.
+   */
+  optionalMissing?: string[];
 }
 
 /**
@@ -53,7 +82,23 @@ export function checkPermissions(granted: PermissionMap | null | undefined): Per
     .filter(([k, v]) => v === "read" && !(k in REQUIRED_PERMISSIONS))
     .map(([k]) => k)
     .sort();
-  return { ok: missing.length === 0 && writable.length === 0, missing, writable, extra };
+  const optionalMissing = OPTIONAL_READ_PERMISSIONS.filter((k) => !isGranted(perms[k]));
+  return {
+    ok: missing.length === 0 && writable.length === 0,
+    missing,
+    writable,
+    extra,
+    optionalMissing,
+  };
+}
+
+function isGranted(level: unknown): boolean {
+  return level === "read" || level === "write" || level === "admin";
+}
+
+/** Whether a permission is granted at least as read (e.g. `packages` for artifact capture). */
+export function hasPermission(granted: PermissionMap | null | undefined, name: string): boolean {
+  return isGranted(granted?.[name]);
 }
 
 /** Human-readable summary of a failed check, for the connection's status reason. */

@@ -8,6 +8,7 @@
  * Reference: docs/connectors/github.md "Event capture" and
  * docs/event-model.md "Idempotency keys".
  */
+import { createHash } from "node:crypto";
 import { sourceEventId } from "@afe/core";
 
 /** Workflow run transitions Afe records (one event per run attempt and transition). */
@@ -152,6 +153,39 @@ export function pullRequestEventId(
  */
 export function repositoryDispatchEventId(p: { repositoryId: number; deliveryId: string }): string {
   return sourceEventId("repository_dispatch", p.repositoryId, p.deliveryId);
+}
+
+export type PackageVersionAction = "published" | "updated";
+
+/**
+ * `package_version:<version id>:<action>:<tags>` for a container package
+ * version publication (`registry_package` / `package` webhook, AFE-21);
+ * tags sorted and comma-joined (`-` when untagged), or `sha256-<hex>` of that
+ * list when it is long.
+ *
+ * The tags are part of the key because GitHub may report one version
+ * (digest) several times as tags are added; a redelivery carries the same
+ * tags and is stored once.
+ */
+export function packageVersionEventId(p: {
+  versionId: number;
+  action: PackageVersionAction;
+  tags: string[];
+}): string {
+  const tags = [...new Set(p.tags)].sort().join(",") || "-";
+  const tagPart =
+    tags.length > 200 ? `sha256-${createHash("sha256").update(tags).digest("hex")}` : tags;
+  return sourceEventId("package_version", p.versionId, p.action, tagPart);
+}
+
+/**
+ * `artifact_provenance:<repository id>:<digest>`: the build provenance of one
+ * image digest, resolved after its `artifact.published` event was stored
+ * without it (AFE-21). One per digest and repository, however many tags or
+ * lookups.
+ */
+export function artifactProvenanceEventId(p: { repositoryId: number; digest: string }): string {
+  return sourceEventId("artifact_provenance", p.repositoryId, p.digest.toLowerCase());
 }
 
 function normaliseEnvironments(envs: string[]): string[] {

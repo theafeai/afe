@@ -1,4 +1,4 @@
-import { REQUIRED_PERMISSIONS } from "./permissions.ts";
+import { REQUESTED_OPTIONAL_PERMISSIONS, REQUIRED_PERMISSIONS } from "./permissions.ts";
 
 /**
  * Webhook events the App subscribes to. Each needs one of the permissions in
@@ -21,6 +21,18 @@ export const SUBSCRIBED_EVENTS = [
   "workflow_run",
 ] as const;
 
+/**
+ * Events the manifest subscribes to that need an optional permission from
+ * REQUESTED_OPTIONAL_PERMISSIONS (`packages`). An installation that declines
+ * the permission simply does not receive them.
+ *
+ * `registry_package` rather than the newer `package` event: its payload
+ * carries the container tag, digest and OCI labels (see "To verify" in
+ * docs/connectors/github.md). `package` deliveries are mapped the same way
+ * (same idempotency key) if an operator subscribes to them.
+ */
+export const OPTIONAL_SUBSCRIBED_EVENTS = ["registry_package"] as const;
+
 /** Lifecycle events handled by the server module itself (not subscribable). */
 export const LIFECYCLE_EVENTS = [
   "installation",
@@ -35,6 +47,7 @@ export const LIFECYCLE_EVENTS = [
 export const OPTIONAL_EVENTS = {
   contents: ["push", "create", "delete", "release"],
   pull_requests: ["pull_request"],
+  packages: ["registry_package", "package"],
 } as const;
 
 export interface ManifestOptions {
@@ -73,8 +86,8 @@ export function buildAppManifest(options: ManifestOptions) {
     setup_url: `${base}${GITHUB_ROUTES.setup}`,
     setup_on_update: true,
     public: options.public ?? false,
-    default_permissions: { ...REQUIRED_PERMISSIONS },
-    default_events: [...SUBSCRIBED_EVENTS],
+    default_permissions: { ...REQUIRED_PERMISSIONS, ...REQUESTED_OPTIONAL_PERMISSIONS },
+    default_events: [...SUBSCRIBED_EVENTS, ...OPTIONAL_SUBSCRIBED_EVENTS],
   };
 }
 

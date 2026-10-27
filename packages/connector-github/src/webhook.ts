@@ -81,7 +81,14 @@ export interface GitHubConnectionConfig {
   repositories: "all" | RepoRef[];
   permissions: Record<string, string>;
   events: string[];
-  permissionCheck: { ok: boolean; missing: string[]; writable: string[]; extra: string[] };
+  permissionCheck: {
+    ok: boolean;
+    missing: string[];
+    writable: string[];
+    extra: string[];
+    /** Optional features that are off (AFE-21); absent on configs stored earlier. */
+    optionalMissing?: string[];
+  };
   suspendedAt: string | null;
 }
 

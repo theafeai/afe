@@ -1,8 +1,15 @@
 import { Secret } from "@afe/core/security";
 import type { GitHubAppConfig } from "./config.ts";
-import { GitHubHttp, nextPageUrl, type GitHubHttpOptions, type GitHubRequest } from "./http.ts";
+import {
+  GitHubApiError,
+  GitHubHttp,
+  nextPageUrl,
+  type GitHubHttpOptions,
+  type GitHubRequest,
+} from "./http.ts";
 import { AppJwtSource } from "./jwt.ts";
 import { InstallationTokenCache, type InstallationToken, type TokenRequest } from "./tokens.ts";
+import type { GitHubAttestationsResponse } from "./artifact.ts";
 import type {
   GitHubDeployment,
   GitHubDeploymentStatus,
@@ -287,6 +294,31 @@ export class InstallationClient {
       filters,
       (p) => p ?? [],
       options,
+    );
+  }
+
+  /**
+   * GET /repos/{owner}/{repo}/attestations/{subject_digest} (AFE-21): artifact
+   * attestations (Sigstore bundles) for an image digest (`sha256:<hex>`).
+   * Needs `attestations: read`. One page of up to 30; GitHub answers 404 when
+   * there are none. https://docs.github.com/en/rest/repos/attestations
+   */
+  async listAttestations(
+    owner: string,
+    repo: string,
+    subjectDigest: string,
+  ): Promise<GitHubAttestationsResponse> {
+    // Validated, then sent unencoded: `sha256:<hex>` is a valid path segment.
+    if (!/^sha256:[0-9a-f]{64}$/.test(subjectDigest)) {
+      throw new GitHubApiError("invalid attestation subject digest", 0, null);
+    }
+    return (
+      (
+        await this.#get<GitHubAttestationsResponse>(
+          `/repos/${seg(owner)}/${seg(repo)}/attestations/${subjectDigest}`,
+          { per_page: 30 },
+        )
+      ).data ?? {}
     );
   }
 
