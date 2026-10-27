@@ -1,0 +1,90 @@
+{
+  "event": "registry_package",
+  "payload": {
+    "action": "published",
+    "registry_package": {
+      "id": 7700001,
+      "name": "api",
+      "namespace": "acme",
+      "description": "",
+      "ecosystem": "CONTAINER",
+      "package_type": "CONTAINER",
+      "html_url": "https://github.com/orgs/acme/packages/container/package/api",
+      "created_at": "2026-01-05T09:00:00Z",
+      "updated_at": "2026-10-26T10:03:20Z",
+      "owner": {
+        "login": "acme",
+        "id": 9001,
+        "type": "Organization",
+        "html_url": "https://github.com/acme"
+      },
+      "package_version": {
+        "id": 88001,
+        "version": "sha256:3b1f8e2a7c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+        "name": "sha256:3b1f8e2a7c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+        "description": "",
+        "summary": "",
+        "html_url": "https://github.com/acme/api/pkgs/container/api/88001?tag=v1.4.0",
+        "target_commitish": "",
+        "target_oid": "",
+        "created_at": "2026-10-26T10:03:20Z",
+        "updated_at": "2026-10-26T10:03:20Z",
+        "metadata": [],
+        "container_metadata": {
+          "tag": {
+            "name": "v1.4.0",
+            "digest": "sha256:3b1f8e2a7c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b"
+          },
+          "labels": {
+            "description": "Acme API",
+            "source": "https://github.com/acme/api",
+            "revision": "8f3c2a1b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+            "image_url": "https://github.com/acme/api",
+            "licenses": "Apache-2.0",
+            "all_labels": {
+              "org.opencontainers.image.revision": "8f3c2a1b9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f70",
+              "org.opencontainers.image.source": "https://github.com/acme/api"
+            }
+          },
+          "manifest": {
+            "digest": "sha256:3b1f8e2a7c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+            "media_type": "application/vnd.oci.image.index.v1+json",
+            "uri": "repositories/acme/api/manifests/sha256:3b1f8e2a7c9d0e4f5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+            "size": 1609
+          }
+        },
+        "package_files": [],
+        "installation_command": "docker pull ghcr.io/acme/api:v1.4.0",
+        "package_url": "ghcr.io/acme/api:v1.4.0",
+        "author": {
+          "login": "github-actions[bot]",
+          "id": 41898282,
+          "type": "Bot"
+        }
+      },
+      "registry": {
+        "about_url": "https://docs.github.com/packages/learn-github-packages/introduction-to-github-packages",
+        "name": "GitHub CRegistry",
+        "type": "docker",
+        "url": "https://ghcr.io/acme",
+        "vendor": "GitHub Inc"
+      }
+    },
+    "repository": {
+      "id": 11,
+      "name": "api",
+      "full_name": "acme/api",
+      "private": true,
+      "owner": { "login": "acme", "id": 9001, "type": "Organization" },
+      "html_url": "https://github.com/acme/api",
+      "default_branch": "main"
+    },
+    "organization": { "login": "acme", "id": 9001 },
+    "sender": {
+      "login": "github-actions[bot]",
+      "id": 41898282,
+      "type": "Bot"
+    },
+    "installation": { "id": 4242 }
+  }
+}

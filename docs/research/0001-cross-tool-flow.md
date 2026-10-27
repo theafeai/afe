@@ -306,10 +306,14 @@ recomputed from scratch.
    and `deploymentUrls` to `correlationSchema`, document the digest-pinned
    `imageRefs` form, add `artifact.published` to `ACTIONS`. Additive; update
    docs/event-model.md.
-2. **GitHub connector: artifact events.** Ingest `registry_package` and look up
+2. **(Done, AFE-21) GitHub connector: artifact events.** Ingest `registry_package` and look up
    build provenance attestations (fallback OCI labels) to emit
    `artifact.published` with image tag, digest, commit and run id. Read-only
-   permissions only.
+   permissions only. Implemented as `artifact.published` (inline attestation lookup,
+   OCI labels from the webhook as fallback) plus a separate
+   `artifact.provenance_resolved` when the attestation appears later; see
+   [docs/connectors/github.md](../connectors/github.md#artifacts). Signature
+   verification, package reconciliation and registry label reads are follow-ups there.
 3. **GitHub connector: fill all correlation keys.** Per the table above,
    including SHAs extracted from push/PR messages (no message text stored)
    and deployment status URLs. Add fixture tests per event type.

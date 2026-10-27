@@ -1,7 +1,7 @@
 # GitHub connector
 
 - Issues: AFE-6 (App and install flow), AFE-7 (event capture, below), AFE-8
-  ([reconciliation and backfill](#reconciliation)).
+  ([reconciliation and backfill](#reconciliation)), AFE-21 ([artifacts](#artifacts)).
 - Code: `packages/connector-github` (pure logic) and `apps/server/src/connectors/github.ts`
   (routes, jobs, health hooks).
 
@@ -20,6 +20,8 @@ for write access (docs/security/rules.md R1).
 | `actions`      | read   | Workflow runs and jobs: REST `GET /repos/{o}/{r}/actions/runs` and the `workflow_run` / `workflow_job` webhooks. This is how Afe sees who triggered a run and how (push, PR, dispatch, schedule, API, re-run, reusable workflows). |
 | `deployments`  | read   | Deployments and deployment statuses: REST `GET /repos/{o}/{r}/deployments[/{id}/statuses]` and the `deployment`, `deployment_status` and `deployment_review` webhooks (environment approvals and rejections).                      |
 | `environments` | read   | Environments and their protection rules (required reviewers, branch policies), so Afe can tell what gated a deployment. Part of the R1 baseline; used by AFE-7/AFE-8.                                                              |
+| `packages`     | read   | **Optional** (requested by the manifest, not required). `registry_package` webhooks: container images pushed to ghcr.io, for `artifact.published` (AFE-21, [Artifacts](#artifacts)). Afe never pulls images.                       |
+| `attestations` | read   | **Optional** (requested by the manifest, not required). `GET /repos/{o}/{r}/attestations/{digest}`: build provenance (commit, run) of a published image.                                                                           |
 
 Not requested, by design:
 
@@ -39,7 +41,10 @@ Every time Afe learns an installation's permissions (install, setup callback,
   widened the App, or an operator registered the App by hand with too much access);
 - **missing**: a required permission above that is not granted (the org owner has
   not accepted an update yet);
-- **extra**: other read permissions (allowed, reported for review).
+- **extra**: other read permissions (allowed, reported for review);
+- **optionalMissing**: optional read permissions (`attestations`, `contents`, `packages`,
+  `pull_requests`) that are not granted, i.e. the optional features that are off. Not a
+  problem: the connection stays `active` without a status reason (AFE-21).
 
 The result is stored in the connection's `config.permissionCheck`, a problem is
 written to the connection's `status_reason` (e.g.
@@ -52,7 +57,8 @@ over-privileged installation only ever yields read-only tokens.
 ## Webhook events
 
 Subscribed (manifest `default_events`): `workflow_run`, `workflow_job`,
-`deployment`, `deployment_status`, `deployment_review`.
+`deployment`, `deployment_status`, `deployment_review`, and `registry_package`
+(needs the optional `packages` permission; AFE-21).
 
 Always delivered to Apps (not subscribable): `installation`,
 `installation_repositories`, `github_app_authorization`.
@@ -172,7 +178,7 @@ approvals come from `deployment_review`, deployments from `deployment`), the
 `workflow_dispatch` webhook (needs `contents`; the run carries the dispatcher; its
 `inputs` may be sensitive), `create`/`delete` (the `push` event already reports
 `created`/`deleted`), `check_suite`/`check_run` (third-party CI is out of scope; Actions
-is covered by `workflow_run`), `release`, `registry_package` (follow-up), and any other
+is covered by `workflow_run`), `release`, and any other
 event. These are acknowledged and ignored.
 
 ### Correlation (AFE-15)
@@ -256,6 +262,157 @@ https://docs.github.com/en/rest/deployments). Check:
   re-run by another user, a reusable workflow, `repository_dispatch`, a workflow chained
   by `workflow_run`, an environment with required reviewers approved once and rejected
   once, a REST-created deployment) and compare the events with the fixtures.
+
+## Artifacts
+
+- Issue: AFE-21. Code: `packages/connector-github/src/artifact.ts` (attestation and
+  label parsing, `lookupProvenance`, `artifactProvenanceEvent`), `packagePublication` /
+  `artifactPublishedEvent` in `mapping.ts`, `packageVersionEventId` /
+  `artifactProvenanceEventId` in `event-ids.ts`, and the package branch of
+  `processGitHubWebhook` plus `runArtifactProvenanceJob` in
+  `apps/server/src/connectors/github.ts`.
+- Fixtures: `test/fixtures/webhooks/registry_package.published.json`,
+  `test/fixtures/attestations.ts`.
+
+Goal: link each image Afe sees deployed (ArgoCD, by digest) to the commit and the
+workflow run that built it.
+
+### What is recorded
+
+`registry_package` (and the newer `package` event, mapped identically) with action
+`published` or `updated`, for **container** packages linked to a selected repository:
+
+| Field                      | Value                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `action`                   | `artifact.published`                                                                                        |
+| `actor`                    | `sender` (usually `github-actions[bot]`)                                                                    |
+| `target`                   | `{type: other, id: ghcr.io/<namespace>/<name>@sha256:…, name: ghcr.io/<namespace>/<name>, repository, url}` |
+| `trigger`                  | `upstream` when pushed by `github-actions[bot]` or attested (detail names the run), else `unknown`          |
+| `outcome`                  | `none`                                                                                                      |
+| `occurredAt`               | `package_version.created_at` (`published`) / `updated_at` (`updated`)                                       |
+| `correlation.imageRefs`    | `ghcr.io/<namespace>/<name>:<tag>@sha256:<hex>` per tag (`…@sha256:<hex>` when untagged)                    |
+| `correlation.imageDigests` | the version digest (`package_version.name`, else `container_metadata.tag.digest` / `.manifest.digest`)      |
+| `correlation.repositories` | the package's repository, plus the provenance repository                                                    |
+| `correlation.commitShas`   | provenance commit (attestation, else OCI label `org.opencontainers.image.revision`; full SHAs only)         |
+| `correlation.runIds`       | `github:<run id>` from the attestation's `runDetails.metadata.invocationId`                                 |
+| `correlation.refs`         | the attested workflow ref (`refs/heads/main`)                                                               |
+| `data.provenance`          | `source` (`attestation`/`oci_labels`), `verification: "unverified"`, commit, run id/attempt, workflow, …    |
+| `data.provenanceLookup`    | outcome of the attestation lookup: `resolved`, `not_found`, `failed` or `not_attempted`, with a detail      |
+
+Tags come from `container_metadata.tag.name` and, when present, `metadata.container.tags`
+(the REST package version shape), so a delivery that lists several tags keeps all of them.
+Not recorded: other actions, non-container ecosystems (npm, Maven, …), versions without a
+`sha256:` digest, packages not linked to a repository (no repository to select or to read
+attestations from). They are acknowledged and ignored.
+
+### Provenance: design
+
+Stored events are immutable, so provenance is never added to an event afterwards:
+
+1. **Inline, bounded.** While processing the delivery, Afe calls
+   `GET /repos/{owner}/{repo}/attestations/{digest}` once (timeout 5 s, no retries), takes
+   the first DSSE envelope whose in-toto statement has predicate
+   `https://slsa.dev/provenance/v1` and lists the digest as a subject, and reads
+   `buildDefinition.resolvedDependencies[].digest.gitCommit`,
+   `runDetails.metadata.invocationId` (`https://github.com/<o>/<r>/actions/runs/<id>/attempts/<n>`),
+   `externalParameters.workflow` and `internalParameters.github.event_name`. SBOM and other
+   attestations are skipped. Whatever happens, `artifact.published` is then ingested with the
+   base facts; a failed or empty lookup never blocks or fails ingestion.
+2. **Fallback.** Without an attested provenance, the OCI labels GitHub copies into the
+   payload (`container_metadata.labels.revision` / `.source`, or `all_labels`) are used,
+   marked `source: "oci_labels"`.
+3. **Late attestation.** `actions/attest-build-provenance` usually runs _after_ the push,
+   so the first lookup often finds nothing. Then a `github.artifact-provenance` job is
+   enqueued (delays 1 min, 5 min, 30 min; one job at a time; lookup errors do not throw,
+   so the schedule is the retry policy). When it finds the attestation it ingests a
+   separate **`artifact.provenance_resolved`** event (`sourceEventId`
+   `artifact_provenance:<repository id>:<digest>`, `observation.method = poll`, actor
+   `unknown`, same `imageRefs`/`imageDigests` plus `commitShas`/`runIds`/`refs`, raw
+   payload = the attestation). It links to the artifact by digest and to the run by run id
+   and commit. After the last attempt Afe gives up (logged).
+
+This was chosen over delaying ingestion until the attestation exists (which would hold back
+or lose base facts) and over mutating the stored event (forbidden). The artifact event's
+raw payload is the webhook delivery; `data.provenance.statementSha256` is the SHA-256 of the
+decoded statement, so it can be matched against GitHub's copy.
+
+**Attestation signatures are not verified** (follow-up). `data.provenance.verification` is
+always `"unverified"` and `note` says "unverified attestation"; treat the commit/run as the
+attestation's claim. OCI labels are a claim of whoever built the image.
+
+`triggeredBy` is not set on `artifact.published`: the person behind a CI build is on the
+linked `workflow_run` events (same `runIds`); Afe does not fetch the run again.
+
+Configuration (`createGitHubModule({ artifacts })`): `provenance` (env
+`AFE_GITHUB_ARTIFACT_PROVENANCE=false` disables lookups), `lookupTimeoutMs`,
+`followUpTimeoutMs`, `retryDelaysMs` (`[]` disables follow-ups).
+
+### Permissions
+
+`packages: read` (the `registry_package` webhook) and `attestations: read` (the lookup) are
+**optional**: the manifest requests both, but `checkPermissions` does not require them.
+Without `packages` the delivery is ignored (logged "artifact capture disabled"; GitHub does
+not send it anyway); without `attestations` no lookup is made (`provenanceLookup.status =
+not_attempted`) and only labels are used. Both show up in
+`config.permissionCheck.optionalMissing` while not granted. Installations created before
+AFE-21 must accept the App's new permissions (`new_permissions_accepted` refreshes the
+check).
+
+### Idempotency
+
+| Object          | `sourceEventId`                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| package version | `package_version:<version id>:published\|updated:<tags sorted, comma-joined, "-" when untagged>` |
+| late provenance | `artifact_provenance:<repository id>:<digest>`                                                   |
+
+The tags are part of the version key because GitHub may report one version (digest) more
+than once as tags are added; a redelivery carries the same tags and dedupes. `registry_package`
+and `package` deliveries of the same publication produce the same key. A long tag list is
+replaced by `sha256-<hex>` of it.
+
+### Not done (follow-ups)
+
+- **Reconciliation of package versions.** It would need `GET /orgs/{org}/packages?package_type=container`
+  (filtered to packages linked to selected repositories) and
+  `GET /orgs/{org}/packages/container/{name}/versions` per package each pass (users:
+  `/users/{user}/packages/…`), plus attestation lookups for new versions. Not cheap per
+  pass, and REST lists the version's _current_ tags (a different key from webhooks), so it is
+  left for a follow-up; missed deliveries can be redelivered from GitHub.
+- **Reading OCI labels from the registry** (image index → manifest → config blob on
+  ghcr.io) when the webhook has none: GHCR documents only personal access tokens (classic)
+  and `GITHUB_TOKEN` for registry access, not GitHub App installation tokens, so this is not
+  possible with read-only App permissions. Labels are only taken from the webhook payload.
+- **Verifying attestations** (Sigstore bundle: certificate chain to GitHub's / Sigstore's
+  root, transparency log or timestamp, certificate identity = the expected workflow).
+- Add `artifact.provenance_resolved` to core `ACTIONS` and docs/event-model.md (the
+  validator already accepts it).
+
+### To verify against docs / a test org (AFE-21)
+
+Written without access to GitHub docs
+(https://docs.github.com/en/webhooks/webhook-events-and-payloads#registry_package,
+https://docs.github.com/en/webhooks/webhook-events-and-payloads#package,
+https://docs.github.com/en/rest/repos/attestations,
+https://docs.github.com/en/rest/packages/packages):
+
+- That `attestations` is the GitHub App permission name (manifest key) for the attestations
+  API, and that registering a manifest with it works; otherwise remove it from
+  `REQUESTED_OPTIONAL_PERMISSIONS`.
+- That `registry_package` needs `packages: read` and is subscribable by an App; whether the
+  newer `package` event carries `container_metadata` (Afe subscribes to `registry_package`).
+- `registry_package` payload: `registry_package.package_type`/`ecosystem` value for containers
+  (`CONTAINER`), `namespace`, `package_version.name` = digest, `container_metadata.tag`,
+  `container_metadata.labels` (incl. `all_labels`), and whether one delivery is sent per tag
+  (as `published` or `updated`) when several tags are pushed.
+- Attestations response: `attestations[].bundle.dsseEnvelope.{payload,payloadType}`; whether
+  `bundle` can be null with only `bundle_url` (then Afe finds nothing; fetching `bundle_url`
+  is not implemented), 404 vs empty list when there are none, the digest in the path unencoded.
+- SLSA predicate written by `actions/attest-build-provenance`: field names above, and
+  `invocationId` format.
+- **Manual "done when" check:** in a test org, push an image with
+  `docker/build-push-action` + `actions/attest-build-provenance` and check that
+  `artifact.published` (labels only) is followed by `artifact.provenance_resolved` with the
+  run id and commit; push a second tag for the same digest.
 
 ## Reconciliation
 
