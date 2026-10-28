@@ -130,3 +130,9 @@ Optional SMTP supports user invitations and credential-reset links. See
 [SMTP and account emails](email.md) for settings, secret files, TLS, sender
 verification and delivery troubleshooting. Email remains disabled unless
 `AFE_SMTP_HOST` is configured.
+
+## Personal ArgoCD SSO
+
+Administrators configure a dedicated OIDC client on each ArgoCD connection
+detail page. See [ArgoCD browser SSO](argocd-sso.md) for IdP/ArgoCD audience
+configuration, encrypted secrets, callback registration and verification.

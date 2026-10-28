@@ -1,3 +1,4 @@
+import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
 import { useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
@@ -267,6 +268,7 @@ export function ConnectionDetail({ id }: { id: string }) {
         </div>
       </header>
 
+      {admin && c.source === "argocd" && <ArgocdOidcSettings id={id} />}
       {h.openGap && (
         <div className="callout callout-gap" role="status">
           <strong>Observation gap open.</strong> Afe has not been able to observe this connection

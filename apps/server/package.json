@@ -22,6 +22,7 @@
     "@afe/core": "workspace:*",
     "@afe/db": "workspace:*",
     "fastify": "^5.2.0",
+    "jose": "^6.2.13",
     "nodemailer": "^10.2.1",
     "pg": "^8.13.1",
     "pg-boss": "^10.1.5",

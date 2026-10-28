@@ -41,6 +41,8 @@ export interface UpsertConnectionInput {
   name: string;
   status?: ConnectionStatus;
   config?: JsonObject;
+  /** Non-secret settings owned by another feature which reconnecting must preserve atomically. */
+  preserveConfigKeys?: string[];
 }
 
 /**
@@ -57,7 +59,9 @@ export async function upsertConnection(
     `INSERT INTO connections (tenant_id, id, source, external_id, name, status, config)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (tenant_id, source, external_id) DO UPDATE
-       SET name = EXCLUDED.name, config = EXCLUDED.config, status = EXCLUDED.status,
+       SET name = EXCLUDED.name,
+           config = EXCLUDED.config || (SELECT COALESCE(jsonb_object_agg(key,value),'{}'::jsonb) FROM jsonb_each(connections.config) WHERE key=ANY($8::text[])),
+           status = EXCLUDED.status,
            status_reason = NULL, updated_at = now()
      RETURNING ${COLUMNS}`,
     [
@@ -68,6 +72,7 @@ export async function upsertConnection(
       input.name,
       input.status ?? "pending",
       input.config ?? {},
+      input.preserveConfigKeys ?? [],
     ],
   );
   return toConnection(rows[0]!);

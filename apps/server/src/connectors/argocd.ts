@@ -336,6 +336,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
               name,
               status: "active",
               config,
+              preserveConfigKeys: ["userOidc"],
             });
             if (existing) {
               const old = (await getConnectionCredentialIds(client, tenantId, existing.id))[

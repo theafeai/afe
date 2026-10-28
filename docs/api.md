@@ -743,3 +743,29 @@ consumed atomically with credential rotation. Public reset requests cannot
 select a tenant; built-in local recovery is disabled for custom auth/tenant
 providers. GET never consumes a link. SMTP-disabled installations retain manual
 provisioning and return 503 for email actions. See [email setup](self-hosting/email.md).
+
+## Personal ArgoCD OIDC
+
+- `GET /api/connections/argocd/:id/oidc` (admin): non-secret OIDC configuration,
+  whether a client secret is configured, and the callback URI.
+- `PUT /api/connections/argocd/:id/oidc` (admin): `{issuer,clientId,authMethod,
+scopes,clientSecret?,caPem?}`. `authMethod` is `none`, `client_secret_basic` or
+  `client_secret_post`. Allowed scopes: `openid` (required), `profile`, `email`,
+  `groups`. Omitted secret keeps an existing secret for the same issuer/client;
+  changing either requires an explicit secret. Discovery/configuration failures
+  return 400. Saving changes the configuration revision and requires relinking.
+- `DELETE /api/connections/argocd/:id/oidc` (admin): disables browser SSO and
+  destroys its client secret. Existing SSO source grants are invalidated.
+- `POST /api/profile/tools/argocd/login` (viewer, managed user browser session,
+  CSRF): `{connectionId}` returns an authorization URL. Requires source or
+  combined ArgoCD policy and an active configured connection.
+- `GET /api/profile/tools/argocd/callback` (same authenticated viewer session):
+  consumes the bound OAuth state, exchanges code with PKCE, validates the signed
+  ID token and checks ArgoCD identity/application reads before saving the account.
+  Success redirects to `/profile?linked=argocd`; replay/mismatch returns 400,
+  source-policy denial 403, and provider/token/ArgoCD rejection 502.
+
+The profile's ArgoCD tool entry includes `oidcConnections: [{id,name}]` only for
+source-enabled users. The existing personal-token and unlink endpoints remain.
+The operator must provision a compatible OIDC client; see
+[ArgoCD SSO setup](self-hosting/argocd-sso.md).

@@ -44,6 +44,8 @@ jobs:
         run: node examples/ci/user-access-afe.mjs
       - name: Verify built SMTP invitation delivery
         run: node examples/ci/email-afe.mjs
+      - name: Verify built ArgoCD OIDC linking
+        run: node examples/ci/argocd-oidc-afe.mjs
       - name: Smoke-test the bundled server
         run: DATABASE_URL="$TEST_DATABASE_URL" node apps/server/dist/cli.js migrate
 

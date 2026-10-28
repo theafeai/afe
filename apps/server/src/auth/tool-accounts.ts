@@ -1,3 +1,10 @@
+import type pg from "pg";
+import {
+  argocdOidcConfig,
+  argocdOidcChoices,
+  clearArgocdOidcStates,
+  registerArgocdOidcRoutes,
+} from "./argocd-oidc.ts";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { GitHubHttp, exchangeUserCode } from "@afe/connector-github";
@@ -22,7 +29,7 @@ export interface ToolAccount {
   tool: string;
   account_name: string;
   credential_id: string;
-  context: { connectionId?: string; teamId?: string };
+  context: { connectionId?: string; teamId?: string; oidcRevision?: string; expiresAt?: number };
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const binding = (req: FastifyRequest) =>
@@ -58,12 +65,15 @@ async function saveAccount(
   name: string,
   token: string,
   context: ToolAccount["context"],
+  guard?: (db: pg.PoolClient) => Promise<void>,
 ) {
   const client = await ctx.pool.connect();
   try {
     await client.query("BEGIN");
     // Serialize replacement/disconnection for the same user's accounts.
     await client.query("SELECT id FROM users WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [tid, uid]);
+    if (guard) await guard(client);
+    else if (tool === "argocd") await clearArgocdOidcStates(client, tid, uid);
     const old = await client.query<ToolAccount>(
       "SELECT credential_id FROM user_tool_accounts WHERE tenant_id=$1 AND user_id=$2 AND tool=$3",
       [tid, uid, tool],
@@ -128,6 +138,13 @@ export async function sourceAccess(
       typeof c.config.serverUrl !== "string"
     )
       return [];
+    if (
+      account.context.oidcRevision &&
+      (argocdOidcConfig(c.config.userOidc)?.revision !== account.context.oidcRevision ||
+        !account.context.expiresAt ||
+        account.context.expiresAt <= Date.now() / 1000)
+    )
+      return [];
     const handle = createArgoCdClient({
       config: {
         serverUrl: c.config.serverUrl,
@@ -163,6 +180,7 @@ export async function sourceAccess(
 }
 
 export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerContext) {
+  registerArgocdOidcRoutes(app, ctx, saveAccount);
   app.get("/api/profile", { config: { access: "viewer" } }, async (req) => {
     const tid = requestTenant(req),
       uid = req.principal?.localUserId;
@@ -173,14 +191,23 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       const policy = await getUserToolPolicy(ctx.pool, tid, uid, tool);
       if (policy.mode === "none") continue;
       const account = accounts.find((a) => a.tool === tool);
+      const oidcConnections =
+        tool === "argocd" && ["source", "source + custom"].includes(policy.mode)
+          ? await argocdOidcChoices(ctx, tid)
+          : [];
       tools.push({
+        ...(tool === "argocd" ? { oidcConnections } : {}),
         tool,
         mode: policy.mode,
         linked: Boolean(account),
         accountName: account?.account_name ?? null,
         oauthAvailable: Boolean(
           ctx.config.publicUrl &&
-          (tool === "github" ? githubConfig() : tool === "vercel" ? vercelConfig() : null),
+          (tool === "github"
+            ? githubConfig()
+            : tool === "vercel"
+              ? vercelConfig()
+              : oidcConnections.length),
         ),
         sourceAvailable: tool !== "terraform",
         sourceEnabled: policy.mode === "source" || policy.mode === "source + custom",
@@ -443,6 +470,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           tid,
           uid,
         ]);
+        if (req.params.tool === "argocd") await clearArgocdOidcStates(client, tid, uid);
         const old = await client.query<ToolAccount>(
           "DELETE FROM user_tool_accounts WHERE tenant_id=$1 AND user_id=$2 AND tool=$3 RETURNING credential_id",
           [tid, uid, req.params.tool],
