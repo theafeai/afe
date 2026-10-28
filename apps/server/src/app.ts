@@ -13,6 +13,7 @@ import {
 } from "@afe/core";
 import { LOG_REDACT_OPTIONS, type KeyProvider } from "@afe/core/security";
 import { createPgEventSink } from "@afe/db";
+import { emailJobs, registerEmailRoutes } from "./email.ts";
 import { registerToolAccountRoutes } from "./auth/tool-accounts.ts";
 import { withLocalUsers } from "./auth/local-users.ts";
 import { registerUserRoutes } from "./auth/user-routes.ts";
@@ -130,6 +131,8 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
 
   const config = options.config ?? loadConfig({ DATABASE_URL: "unused" });
   const authConfig = config.auth;
+  if (config.smtp && !options.keys)
+    throw new Error("SMTP requires a KeyProvider (set AFE_ENCRYPTION_KEY)");
   let authProvider = options.authProvider;
   if (!authProvider) {
     if (authConfig?.adminToken) {
@@ -185,6 +188,9 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
   });
 
   registerUserRoutes(app, options.pool);
+  registerEmailRoutes(app, context, {
+    localAuth: !options.authProvider && !options.tenantResolver,
+  });
   registerToolAccountRoutes(app, context);
 
   app.get("/healthz", async (_req, reply) => {
@@ -196,7 +202,7 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     }
   });
 
-  const jobDefinitions: JobDefinition[] = [];
+  const jobDefinitions: JobDefinition[] = emailJobs(context);
   for (const connector of options.connectors ?? []) {
     await connector.routes?.(app, context);
     jobDefinitions.push(...(connector.jobs?.(context) ?? []));

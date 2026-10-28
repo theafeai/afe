@@ -106,3 +106,22 @@ deployed what, and keeps them only for the retention window. Self-hosters are
 the controller. An erasure request for a person can be met by waiting for the
 window to pass, or by deleting that person's events earlier with SQL; events
 have no hash chain, so nothing else needs to change.
+
+## Local account email
+
+User records may include an administrator-provided email address, normalized to
+lowercase and unique within the tenant. It is used only for invitations and
+credential recovery. SMTP is an optional outbound account-notification channel;
+sending these requested account messages requires SMTP writes, independently of
+read-only delivery-tool connectors (R1). There are no inbound mail webhooks.
+
+Email-action records contain tenant/user IDs, purpose, email address, credential
+version, timestamps, and a SHA-256 digest of a random 256-bit single-use token.
+Outbox records contain state, attempts, timestamps and a credential reference.
+The recipient, subject, body and link token are encrypted only through the
+credentials repository, never stored in plaintext job/config payloads. The
+ciphertext is destroyed after acceptance, expiry/invalidation or five failed
+attempts. Metadata and link records are purged seven days after expiry while
+the worker is running. User email stays until cleared/replaced by an admin.
+SMTP relay delivery can put these emails in provider/recipient mailboxes;
+provider retention and bounce reporting are outside Afe.

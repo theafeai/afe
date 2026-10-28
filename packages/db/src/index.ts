@@ -151,3 +151,4 @@ export {
 } from "./drift.ts";
 
 export * from "./users.ts";
+export * from "./email.ts";

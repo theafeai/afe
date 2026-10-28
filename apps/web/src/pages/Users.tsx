@@ -3,7 +3,7 @@ import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx";
 import { useAccess } from "../access.tsx";
 
-type User = { id: string; username: string; disabled: boolean };
+type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
 const MODES = ["none", "source", "custom", "source + custom"];
 type Policy = { mode: string; custom: { resource: string; action: string }[] };
@@ -14,6 +14,20 @@ export function UsersPage() {
     (s) => request<{ users: User[] }>("GET", "/api/admin/users", undefined, s),
     [],
   );
+  const { data: mail, reload: reloadMail } = useAsync(
+    (s) =>
+      request<{
+        enabled: boolean;
+        configured: boolean;
+        from: string | null;
+        deliveries: { id: string; state: string; attempts: number }[];
+      }>("GET", "/api/admin/email", undefined, s),
+    [],
+  );
+  const [email, setEmail] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [testEmail, setTestEmail] = useState("");
+  const [invite, setInvite] = useState(false);
   const [username, setUsername] = useState("");
   const [selected, setSelected] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -37,16 +51,25 @@ export function UsersPage() {
   async function create(e: FormEvent) {
     e.preventDefault();
     await run(async () => {
-      const r = await request<{ user: User; token: string }>("POST", "/api/admin/users", {
-        username,
-      });
-      setToken(r.token);
+      const r = await request<{ user: User; token?: string }>(
+        "POST",
+        invite ? "/api/admin/users/invite" : "/api/admin/users",
+        {
+          ...(invite ? { email } : {}),
+          username,
+        },
+      );
+      setToken(r.token ?? null);
+      if (invite) setNotice("Invitation queued. Delivery status appears below.");
       setUsername("");
+      setEmail("");
+      reloadMail();
       reload();
     });
   }
   async function select(u: User) {
     setSelected(u);
+    setUserEmail(u.email ?? "");
     setPolicies(null);
     setToken(null);
     await run(async () => {
@@ -73,7 +96,7 @@ export function UsersPage() {
       <h1>Users</h1>
       <p>
         Create a user and share their generated access credential directly. Email is not required.
-        New users start with no tool access.
+        New users start with no tool access. Invitations are available when email is configured.
       </p>
       <form className="form card" onSubmit={(e) => void create(e)}>
         <label htmlFor="new-username">Username</label>
@@ -85,8 +108,33 @@ export function UsersPage() {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
+        {mail?.enabled && (
+          <>
+            <label>
+              <input
+                type="checkbox"
+                checked={invite}
+                onChange={(e) => setInvite(e.target.checked)}
+              />{" "}
+              Send an invitation by email
+            </label>
+            {invite && (
+              <>
+                <label htmlFor="invite-email">Email address</label>
+                <input
+                  id="invite-email"
+                  type="email"
+                  required
+                  maxLength={254}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </>
+            )}
+          </>
+        )}
         <button className="btn btn-primary" disabled={busy}>
-          Create user
+          {invite ? "Invite user" : "Create user"}
         </button>
       </form>
       {token && (
@@ -115,6 +163,51 @@ export function UsersPage() {
           ))}
         </ul>
       )}
+      <section className="card">
+        <h2>Email delivery</h2>
+        {mail?.configured ? (
+          <>
+            <p>Sender: {mail.from}</p>
+            <form
+              className="form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  await request("POST", "/api/admin/email/test", { email: testEmail });
+                  setNotice("Test email queued.");
+                  reloadMail();
+                });
+              }}
+            >
+              <label htmlFor="test-email">Test recipient</label>
+              <input
+                id="test-email"
+                type="email"
+                required
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+              />
+              <button className="btn" disabled={busy}>
+                Send test email
+              </button>
+            </form>
+            <button className="btn" onClick={reloadMail}>
+              Refresh delivery status
+            </button>
+            <ul>
+              {mail.deliveries.map((d) => (
+                <li key={d.id}>
+                  {d.state} — {d.attempts} attempt(s)
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p>
+            Email is disabled. An operator can configure SMTP to enable invitations and reset links.
+          </p>
+        )}
+      </section>
       {selected && (
         <section className="card">
           <h2>{selected.username}</h2>
@@ -150,6 +243,57 @@ export function UsersPage() {
               {selected.disabled ? "Enable user" : "Disable user"}
             </button>
           </div>
+          {mail?.enabled && (
+            <form
+              className="form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  await request("PATCH", `/api/admin/users/${selected.id}`, {
+                    email: userEmail || null,
+                  });
+                  setSelected({ ...selected, email: userEmail || null });
+                  setNotice("Email saved. Earlier email links are invalidated.");
+                  reload();
+                });
+              }}
+            >
+              <label htmlFor="user-email">Email address</label>
+              <input
+                id="user-email"
+                type="email"
+                maxLength={254}
+                value={userEmail}
+                onChange={(e) => setUserEmail(e.target.value)}
+              />
+              <button className="btn" disabled={busy}>
+                Save email
+              </button>
+              {selected.email && (
+                <div className="actions">
+                  {(["invitation", "reset"] as const).map((purpose) => (
+                    <button
+                      key={purpose}
+                      type="button"
+                      className="btn"
+                      disabled={busy || selected.disabled}
+                      onClick={() =>
+                        void run(async () => {
+                          await request("POST", `/api/admin/users/${selected.id}/email`, {
+                            purpose,
+                          });
+                          setNotice("Email queued. Previous links are invalidated.");
+                          reloadMail();
+                        })
+                      }
+                    >
+                      {purpose === "invitation" ? "Resend invitation" : "Email reset link"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </form>
+          )}
           <h3>Tool permissions</h3>
           <p>
             Source uses the user's linked tool account. Custom grants add read access to specific

@@ -103,12 +103,19 @@ describe("API authentication (AFE-27)", () => {
   const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
 
   describe("route policy", () => {
-    it("registers many /api routes, and only login/logout are public", () => {
+    it("registers explicit public login and account recovery routes", () => {
       expect(apiRoutes().length).toBeGreaterThan(20);
       const pub = apiRoutes()
         .filter((r) => r.access === "public")
         .map((r) => `${r.method} ${r.url}`);
-      expect(pub.sort()).toEqual(["DELETE /api/session", "POST /api/session"]);
+      expect(pub.sort()).toEqual([
+        "DELETE /api/session",
+        "GET /api/account/email",
+        "HEAD /api/account/email",
+        "POST /api/account/redeem",
+        "POST /api/account/reset",
+        "POST /api/session",
+      ]);
       // Webhooks, /healthz and the UI stay public.
       for (const r of afe.routes.filter((r) => !r.url.startsWith("/api/"))) {
         expect(r.access, `${r.method} ${r.url}`).toBe("public");
