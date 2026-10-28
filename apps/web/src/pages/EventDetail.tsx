@@ -242,8 +242,10 @@ export function EventDetailPage({ id }: { id: string }) {
         )}
       </section>
 
-      {!managed && <JourneyLinks event={e} />}
-      {subject && <ContainmentPanel repository={subject.repository} commit={subject.commit} />}
+      <JourneyLinks event={e} />
+      {!managed && subject && (
+        <ContainmentPanel repository={subject.repository} commit={subject.commit} />
+      )}
 
       <section className="card">
         <h2>Event data</h2>

@@ -9,8 +9,9 @@
  * plus ArgoCD's image override changes for drift detection (`change`
  * fields/imageOverrides/removedImageOverrides, `spec.imageOverrides`).
  */
-import type { CanonicalEvent, JsonObject } from "@afe/core";
+import type { CanonicalEvent, EventAccessRule, JsonObject } from "@afe/core";
 import type { CorrelationEvent } from "@afe/core/correlation";
+import { eventAccessSql } from "./event-query.ts";
 import type { Queryable } from "./event-store.ts";
 
 export interface CorrelationEventRecord extends CorrelationEvent {
@@ -21,6 +22,7 @@ export interface CorrelationEventRecord extends CorrelationEvent {
 }
 
 export interface ListCorrelationEventsOptions {
+  access?: readonly EventAccessRule[];
   /** Only events with seq > afterSeq. */
   afterSeq: number;
   /** Only events with seq <= throughSeq (pin a snapshot). */
@@ -64,6 +66,7 @@ export async function listCorrelationEvents(
     params.push(options.occurredFrom.toISOString());
     occurred = `AND e.occurred_at >= $${params.length}::timestamptz`;
   }
+  const access = eventAccessSql(options.access, params);
   const { rows } = await db.query<Row>(
     `SELECT e.id, e.seq, e.source, e.action, e.actor, e.target, e.trigger, e.outcome,
             e.occurred_at, e.connection_id, e.correlation,
@@ -89,6 +92,7 @@ export async function listCorrelationEvents(
                 END)) AS data
        FROM events e
       WHERE e.tenant_id = $1 AND e.seq > $2 AND e.seq <= $3 ${occurred}
+        AND ${access}
         AND (e.correlation <> '{}'::jsonb OR e.action LIKE 'observation\\_gap.%')
       ORDER BY e.seq
       LIMIT $4`,

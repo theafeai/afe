@@ -32,17 +32,14 @@ import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx"
  */
 export function Routes() {
   const { pathname } = useLocation();
-  const { admin, managed } = useAccess();
+  const { admin } = useAccess();
   if (pathname === "/users") return <UsersPage />;
   if (pathname === "/profile") return <ProfilePage />;
-  if (
-    (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname)) ||
-    (managed && /^\/(journeys|drift|settings)(\/|$)/.test(pathname))
-  )
+  if (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname))
     return <div className="page">This view is unavailable for this account.</div>;
 
   let m: Record<string, string> | null;
-  if (pathname === "/" || pathname === "") return managed ? <Timeline /> : <EnvironmentMatrix />;
+  if (pathname === "/" || pathname === "") return <EnvironmentMatrix />;
   if (matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
@@ -102,10 +99,6 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [pathname]);
   const admin = session?.principal.roles.includes("admin") ?? false;
-  const items = NAV.filter(
-    (n) =>
-      !session?.principal.managedUser || ["/events", "/deployments", "/connections"].includes(n.to),
-  );
   const name = session?.principal.name ?? (admin ? "Administrator" : "Viewer");
   return (
     <header className={open ? "sidebar open" : "sidebar"}>
@@ -130,7 +123,7 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       </div>
       <nav aria-label="Main" id="main-nav">
         {NAV_GROUPS.map((g) => {
-          const groupItems = items.filter((n) => n.group === g.id);
+          const groupItems = NAV.filter((n) => n.group === g.id);
           if (groupItems.length === 0) return null;
           return (
             <div className="nav-group" key={g.id}>

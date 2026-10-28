@@ -11,6 +11,7 @@ import {
   type CanonicalEvent,
   type CanonicalEventInputLike,
   type EventSink,
+  type EventAccessRule,
 } from "@afe/core";
 import {
   compileMapping,
@@ -150,9 +151,13 @@ export class MappingService {
   }
 
   /** The most recent deployment-view events (the sample for preview and unmapped values). */
-  async recentDeploymentEvents(tenantId: string, limit: number): Promise<CanonicalEvent[]> {
+  async recentDeploymentEvents(
+    tenantId: string,
+    limit: number,
+    access?: readonly EventAccessRule[],
+  ): Promise<CanonicalEvent[]> {
     const filter = normaliseEventFilter({ actions: [...DEPLOYMENT_VIEW_ACTIONS] });
-    const page = await queryEvents(this.pool, tenantId, { filter, order: "desc", limit });
+    const page = await queryEvents(this.pool, tenantId, { filter, order: "desc", limit, access });
     return page.events;
   }
 

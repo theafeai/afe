@@ -15,7 +15,7 @@
  */
 import type pg from "pg";
 import type { FastifyBaseLogger } from "fastify";
-import type { RetentionPolicy } from "@afe/core";
+import type { EventAccessRule, RetentionPolicy } from "@afe/core";
 import {
   buildCorrelationGraph,
   GapIndex,
@@ -114,7 +114,8 @@ export class CorrelationService {
   }
 
   /** The tenant's current snapshot (refreshing the window first). */
-  async snapshot(tenantId: string): Promise<Snapshot> {
+  async snapshot(tenantId: string, access?: readonly EventAccessRule[]): Promise<Snapshot> {
+    if (access !== undefined) return this.#scopedSnapshot(tenantId, access);
     let w = this.#tenants.get(tenantId);
     if (w) {
       // LRU: most recently used last.
@@ -141,6 +142,53 @@ export class CorrelationService {
     });
     w.refreshing = run;
     return run;
+  }
+
+  /** User views never reuse tenant graphs: filter before linking and deriving any counts. */
+  async #scopedSnapshot(tenantId: string, access: readonly EventAccessRule[]): Promise<Snapshot> {
+    const now = this.#now(),
+      cutoff = await this.retention.cutoff(tenantId, now);
+    const latest = await getLatestSeq(this.pool, tenantId);
+    let after = 0;
+    const records: CorrelationEventRecord[] = [];
+    let truncated = false;
+    if (access.length)
+      for (;;) {
+        const page = await listCorrelationEvents(this.pool, tenantId, {
+          afterSeq: after,
+          throughSeq: latest,
+          occurredFrom: cutoff,
+          limit: this.#pageSize,
+          access,
+        });
+        records.push(...page);
+        if (records.length > this.#maxEvents) {
+          records.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+          records.length = this.#maxEvents;
+          truncated = true;
+        }
+        if (page.length < this.#pageSize) break;
+        after = page.at(-1)!.seq;
+      }
+    const visible = truncated
+      ? records.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)).slice(0, this.#maxEvents)
+      : records;
+    const graph = buildCorrelationGraph(visible, this.#graphOptions);
+    return {
+      graph,
+      events: new Map(visible.map((e) => [e.id, e])),
+      gaps: new GapIndex(graph.gaps, now.toISOString()),
+      now,
+      window: {
+        from: cutoff?.toISOString() ?? null,
+        to: now.toISOString(),
+        events: visible.length,
+        asOfSeq: visible.reduce((n, e) => Math.max(n, e.seq), 0),
+        stale: false,
+        truncated,
+        computedAt: now.toISOString(),
+      },
+    };
   }
 
   async #refresh(tenantId: string, w: TenantWindow): Promise<Snapshot> {

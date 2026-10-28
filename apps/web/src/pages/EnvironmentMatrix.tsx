@@ -1,3 +1,4 @@
+import { ScopeNotice, useAccess } from "../access.tsx";
 /**
  * Environment matrix (AFE-24), the landing view: services × environments,
  * what is live in each cell, since when, how it got there and how sure Afe
@@ -357,6 +358,16 @@ function Legend() {
 }
 
 function EmptyMatrix({ connected, days }: { connected: boolean | null; days: number }) {
+  const { managed } = useAccess();
+  if (managed)
+    return (
+      <Empty title="No permitted deployments">
+        <p>
+          Open your <Link to="/profile">profile</Link> to link assigned tool accounts, or contact
+          your administrator for resource access.
+        </p>
+      </Empty>
+    );
   return (
     <Empty
       title={
@@ -481,6 +492,7 @@ export function EnvironmentMatrix() {
           </button>
         </div>
       </header>
+      <ScopeNotice />
 
       {connections.data && <GapBanners connections={connections.data.connections} />}
 
