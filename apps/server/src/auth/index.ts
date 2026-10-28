@@ -235,6 +235,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
         routeUrl === SESSION_ROUTE ||
         routeUrl?.startsWith("/api/profile") ||
         [
+          "/api/actions/github/events/:eventId",
           "/api/events",
           "/api/deployments",
           "/api/events/:id",

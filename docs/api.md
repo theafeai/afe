@@ -769,3 +769,8 @@ The profile's ArgoCD tool entry includes `oidcConnections: [{id,name}]` only for
 source-enabled users. The existing personal-token and unlink endpoints remain.
 The operator must provision a compatible OIDC client; see
 [ArgoCD SSO setup](self-hosting/argocd-sso.md).
+
+## Opt-in GitHub run controls
+
+See [GitHub action API and setup](github-actions.md) for capability discovery and
+confirmed cancel/re-run requests at `/api/actions/github/events/:eventId`.

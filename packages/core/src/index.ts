@@ -19,3 +19,10 @@ export * from "./tenant.ts";
 export * from "./auth.ts";
 
 export * from "./tool-permissions.ts";
+export {
+  GITHUB_RUN_ACTIONS,
+  type GitHubRunAction,
+  type GitHubRunControls,
+  type GitHubActionState,
+  type GitHubActionReceipt,
+} from "./github-actions.ts";

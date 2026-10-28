@@ -185,17 +185,23 @@ describe("API authentication (AFE-27)", () => {
   });
 
   describe("roles", () => {
-    it("the admin token reaches every /api route", async () => {
+    it("the admin token reaches every non-personal /api route", async () => {
       for (const r of apiRoutes().filter((r) => r.access !== "public")) {
         const res = await call(r.method, fill(r.url), bearer(ADMIN_TOKEN));
-        expect([401, 403], `${r.method} ${r.url}: ${res.statusCode}`).not.toContain(res.statusCode);
+        if (r.url === "/api/actions/github/events/:eventId") {
+          expect(res.statusCode).toBe(403); // Personal source identity and explicit grants are required.
+        } else {
+          expect([401, 403], `${r.method} ${r.url}: ${res.statusCode}`).not.toContain(
+            res.statusCode,
+          );
+        }
       }
     });
 
     it("the viewer token can read but not change anything", async () => {
       for (const r of apiRoutes().filter((r) => r.access !== "public")) {
         const res = await call(r.method, fill(r.url), bearer(VIEWER_TOKEN));
-        if (r.access === "admin") {
+        if (r.access === "admin" || r.url === "/api/actions/github/events/:eventId") {
           expect(res.statusCode, `${r.method} ${r.url}`).toBe(403);
         } else {
           expect([401, 403], `${r.method} ${r.url}`).not.toContain(res.statusCode);

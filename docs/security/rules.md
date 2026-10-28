@@ -11,7 +11,11 @@ agent, alert sinks.
 
 Helpers referenced below live in `@afe/core/security` and `@afe/db`.
 
-## R1 – Least privilege: read-only everywhere
+## R1 – Least privilege: observation read-only, actions opt-in
+
+The explicit action-route exception in [ADR 0011](../decisions/0011-opt-in-delivery-actions.md)
+supersedes the blanket mutation prohibition below for the documented GitHub run
+controls only. Observation clients and installation tokens remain read-only.
 
 1. Request **read-only** access in every connected tool, wherever the tool
    allows it. Afe never needs to write to a delivery tool.

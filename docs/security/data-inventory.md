@@ -146,3 +146,10 @@ ArgoCD API calls. There are no inbound webhooks in this flow. Callback state is
 single-use and bound to the tenant, user, session and connection. No client
 secrets, token/code/state values, upstream response bodies or PKCE material are
 logged. Settings API responses contain no secret values.
+
+## GitHub action receipts (AFE-57)
+
+`github_action_requests` stores tenant/request UUID, Afe actor ID, connection ID,
+repository, run ID, attempt, action, acceptance state and creation time. No
+credentials, inputs, upstream bodies or log output. The hourly
+`github-actions.purge` job deletes receipts outside the tenant retention window.
