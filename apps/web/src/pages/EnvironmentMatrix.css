@@ -146,8 +146,8 @@
   }
   .env-layout-open .env-panel {
     position: sticky;
-    top: 3.6rem;
-    max-height: calc(100vh - 4.5rem);
+    top: calc(var(--sticky-top) + 1rem);
+    max-height: calc(100vh - var(--sticky-top) - 2rem);
     overflow-y: auto;
   }
 }
