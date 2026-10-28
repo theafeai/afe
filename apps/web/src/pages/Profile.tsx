@@ -5,6 +5,7 @@ import type { ProfileInfo, ProfileTool } from "../access.tsx";
 function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }) {
   const [token, setToken] = useState("");
   const [context, setContext] = useState("");
+  const [oidcConnection, setOidcConnection] = useState(tool.oidcConnections?.[0]?.id ?? "");
   const [error, setError] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);
   async function run(action: () => Promise<void>) {
@@ -31,6 +32,23 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
       )}
       {tool.sourceEnabled && tool.sourceAvailable !== false && (
         <>
+          {tool.tool === "argocd" && tool.oauthAvailable && (
+            <>
+              <label htmlFor="argocd-sso-connection">ArgoCD connection</label>
+              <select
+                id="argocd-sso-connection"
+                value={oidcConnection}
+                onChange={(e) => setOidcConnection(e.target.value)}
+              >
+                {tool.oidcConnections?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <p>Signing in replaces your current ArgoCD account link.</p>
+            </>
+          )}
           {tool.oauthAvailable && (
             <button
               className="btn"
@@ -40,12 +58,14 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
                   const r = await request<{ url: string }>(
                     "POST",
                     `/api/profile/tools/${tool.tool}/login`,
+                    tool.tool === "argocd" ? { connectionId: oidcConnection } : undefined,
                   );
                   window.location.assign(r.url);
                 })
               }
             >
-              Sign in with {tool.tool === "github" ? "GitHub" : "Vercel"}
+              Sign in with{" "}
+              {tool.tool === "github" ? "GitHub" : tool.tool === "argocd" ? "ArgoCD" : "Vercel"}
             </button>
           )}
           {tool.tool === "github" && !tool.oauthAvailable && (

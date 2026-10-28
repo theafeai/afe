@@ -112,8 +112,10 @@ provide their own token and an existing Afe connection ID from their admin.
 Afe validates the credential against that tool before saving it. ArgoCD uses
 the existing connection URL and CA trust, and its normal safe-network policy.
 Only one account per user per tool is currently supported; relinking replaces it.
-ArgoCD browser SSO requires an OIDC client configured by the cluster operator;
-only validated personal tokens are currently supported. Arbitrary Google
+ArgoCD browser SSO is available after an administrator configures a dedicated
+OIDC client for that connection. See [ArgoCD browser SSO](self-hosting/argocd-sso.md)
+for audience, issuer, PKCE and operator setup requirements. Personal tokens
+remain available as a fallback. Arbitrary Google
 sign-in is not treated as proof of GitHub, Vercel or ArgoCD resource access.
 Google can be added as a tool when a Google integration defines its resources.
 

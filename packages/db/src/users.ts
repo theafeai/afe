@@ -117,7 +117,7 @@ export async function setUserToolPolicy(
   );
 }
 export async function getUserToolPolicy(
-  pool: pg.Pool,
+  pool: pg.Pool | pg.PoolClient,
   tenantId: string,
   userId: string,
   tool: string,

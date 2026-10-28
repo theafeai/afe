@@ -13,6 +13,7 @@ import {
 } from "@afe/core";
 import { LOG_REDACT_OPTIONS, type KeyProvider } from "@afe/core/security";
 import { createPgEventSink } from "@afe/db";
+import { argocdOidcJobs } from "./auth/argocd-oidc.ts";
 import { emailJobs, registerEmailRoutes } from "./email.ts";
 import { registerToolAccountRoutes } from "./auth/tool-accounts.ts";
 import { withLocalUsers } from "./auth/local-users.ts";
@@ -202,7 +203,7 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     }
   });
 
-  const jobDefinitions: JobDefinition[] = emailJobs(context);
+  const jobDefinitions: JobDefinition[] = [...emailJobs(context), ...argocdOidcJobs(context)];
   for (const connector of options.connectors ?? []) {
     await connector.routes?.(app, context);
     jobDefinitions.push(...(connector.jobs?.(context) ?? []));

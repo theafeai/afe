@@ -8,6 +8,7 @@ export interface ProfileTool {
   oauthAvailable: boolean;
   sourceEnabled: boolean;
   sourceAvailable?: boolean;
+  oidcConnections?: { id: string; name: string }[];
 }
 export interface ProfileInfo {
   managedUser: boolean;

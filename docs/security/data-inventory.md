@@ -125,3 +125,24 @@ attempts. Metadata and link records are purged seven days after expiry while
 the worker is running. User email stays until cleared/replaced by an admin.
 SMTP relay delivery can put these emails in provider/recipient mailboxes;
 provider retention and bounce reporting are outside Afe.
+
+## Personal ArgoCD OIDC
+
+A connection's non-secret configuration can include its trusted OIDC issuer,
+client ID, scope names, authentication method, optional public CA bundle and a
+random revision. Client secrets, PKCE verifiers/nonces and user ID tokens are
+stored only through the tenant-bound encrypted credentials repository. Temporary
+state metadata stores tenant/user/connection IDs, a state digest, hashed browser
+session binding, credential reference, expiry and consumption time. Flow payloads
+are destroyed on callback/unlink/replacement or expiry cleanup; state metadata
+is removed by the hourly worker cleanup (or the next login in that tenant).
+Personal account context adds the selected connection, configuration revision
+and ID-token expiry. Group/email claims are not separately copied into tables;
+the encrypted ID token inherently contains the provider's identity claims.
+
+OIDC authorization-code exchange is an authentication-lifecycle POST to the
+validated issuer's token endpoint. Application access continues to use read-only
+ArgoCD API calls. There are no inbound webhooks in this flow. Callback state is
+single-use and bound to the tenant, user, session and connection. No client
+secrets, token/code/state values, upstream response bodies or PKCE material are
+logged. Settings API responses contain no secret values.
