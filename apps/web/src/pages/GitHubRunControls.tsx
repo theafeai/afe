@@ -7,6 +7,7 @@ import type {
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync } from "../components.tsx";
 
+const CANCEL_ACTION: GitHubRunAction = "github.cancel";
 const labels: Record<GitHubRunAction, string> = {
   "github.cancel": "Cancel run",
   "github.rerun": "Re-run all jobs",
@@ -72,7 +73,7 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
             {data.capabilities.map((c) => (
               <span key={c.action}>
                 <button
-                  className="btn"
+                  className={c.action === CANCEL_ACTION ? "btn btn-danger" : "btn"}
                   disabled={busy || !c.enabled}
                   onClick={() => {
                     setSelected(c.action);
@@ -92,7 +93,11 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
                 {labels[selected]} for {data.context.repository}, run {data.context.runId}, attempt{" "}
                 {data.context.runAttempt}?
               </p>
-              <button className="btn btn-primary" disabled={busy} onClick={() => void execute()}>
+              <button
+                className={selected === CANCEL_ACTION ? "btn btn-danger" : "btn btn-primary"}
+                disabled={busy}
+                onClick={() => void execute()}
+              >
                 {busy ? "Submitting…" : `Confirm ${labels[selected].toLowerCase()}`}
               </button>{" "}
               <button className="btn" disabled={busy} onClick={() => setSelected(null)}>
