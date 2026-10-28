@@ -67,7 +67,7 @@ it("proxies an artifact without forwarding the GitHub credential to archive stor
 it("keeps archived attempts separate and refuses completed-only downloads for an active run", async () => {
   vi.stubGlobal("fetch", vi.fn());
   const response = await setup({ completed: false }).inject({
-    url: "/api/actions/github/repositories/acme/app/download?kind=logs&id=123&attempt=1&connectionId=c",
+    url: "/api/actions/github/repositories/acme/app/download?kind=logs&id=123&attempt=2&connectionId=c",
   });
   expect(response.statusCode).toBe(409);
   expect(fetch).not.toHaveBeenCalled();
@@ -110,4 +110,26 @@ it("bounds archive size and never follows an additional redirect", async () => {
       })
     ).statusCode,
   ).toBe(413);
+});
+
+it("downloads a completed historical attempt while a newer attempt is active", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://public.blob.core.windows.net/old-attempt.zip" },
+        }),
+    ),
+  );
+  transfer.mockResolvedValue(new Response(new Uint8Array([80, 75, 3, 4])));
+  const response = await setup({ completed: false }).inject({
+    url: "/api/actions/github/repositories/acme/app/download?kind=logs&id=123&attempt=1&connectionId=c",
+  });
+  expect(response.statusCode).toBe(200);
+  expect(fetch).toHaveBeenCalledWith(
+    expect.stringContaining("/attempts/1/logs"),
+    expect.anything(),
+  );
 });

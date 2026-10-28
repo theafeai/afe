@@ -506,8 +506,13 @@ export class GitHubOperations {
               throw fail(404, "Deployment branch policy not found.");
             path += `/${p.policyId}`;
             method = "PUT";
+            if (policies[0]!.type !== p.type)
+              throw fail(
+                409,
+                "GitHub branch policy types are immutable. Delete and create a new policy to change its type.",
+              );
           }
-          body = { name: p.name, type: p.type };
+          body = p.policyId !== undefined ? { name: p.name } : { name: p.name, type: p.type };
         }
       }
     } else if (
@@ -874,6 +879,13 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
               !["waiting", "requested", "pending"].includes(String(run.status)))
           )
             stateReasons["github.approve_run"] = "This run is not awaiting fork approval.";
+        }
+        if (q.runId && q.attempt) {
+          const selected = Number(q.attempt),
+            run = await service.run(c, Number(q.runId));
+          if (!Number.isSafeInteger(selected) || selected < 1 || selected > Number(run.run_attempt))
+            throw fail(400, "Select an existing run attempt.");
+          if (selected < Number(run.run_attempt)) delete stateReasons["github.logs_download"];
         }
         if (q.workflowId) {
           const id = Number(q.workflowId);

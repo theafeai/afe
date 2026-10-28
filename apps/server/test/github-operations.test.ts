@@ -374,10 +374,10 @@ const cases: [
   ],
   [
     "github.branch_policy_save",
-    { environment: "production", name: "release/*", type: "tag", policyId: 91 },
+    { environment: "production", name: "release/*", type: "branch", policyId: 91 },
     "PUT",
     "/environments/production/deployment-branch-policies/91",
-    { name: "release/*", type: "tag" },
+    { name: "release/*" },
   ],
   ["github.cache_delete", { cacheId: 92 }, "DELETE", "/actions/caches/92", undefined],
 ];
@@ -792,4 +792,18 @@ it("does not mistake a deployment-review receipt for a prior re-run in the legac
     controls.json().capabilities.find((c: { action: string }) => c.action === "github.rerun")
       .enabled,
   ).toBe(true);
+});
+
+it("rejects a branch policy type change because the source only permits name-pattern updates", async () => {
+  expect(
+    (
+      await prepare("github.branch_policy_save", {
+        environment: "production",
+        policyId: 91,
+        name: "release/*",
+        type: "tag",
+      })
+    ).statusCode,
+  ).toBe(409);
+  expect(mutations).toHaveLength(0);
 });

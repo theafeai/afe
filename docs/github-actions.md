@@ -88,6 +88,7 @@ pagination; jobs/log downloads preserve run attempts.
   registered GitHub App. A personal user cannot impersonate it. Afe supports
   configuring those integrations and native human environment reviews; it never
   bypasses an integration's decision or GitHub's reviewer rules.
+- Branch/tag policy updates change the name pattern only; GitHub makes the policy type immutable. To change type, delete and create a replacement from the same workspace.
 - GitHub exposes workflow deletion by removing its YAML file through Contents;
   there is no standalone “delete workflow definition” REST operation.
 - Workflow YAML reads/edits are limited to 128 KiB to bound parsing and request size.

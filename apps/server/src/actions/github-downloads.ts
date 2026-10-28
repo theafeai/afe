@@ -69,7 +69,7 @@ export function registerGitHubDownloads(app: FastifyInstance, service: GitHubOpe
         const attempt = Number(q.attempt);
         if (!Number.isSafeInteger(attempt) || attempt < 1) throw fail(400, "Select a run attempt.");
         const run = await service.run(c, id);
-        if (run.status !== "completed")
+        if (attempt === Number(run.run_attempt) && run.status !== "completed")
           throw fail(
             409,
             "GitHub exposes archived logs after completion. Live capture is tracked separately in AFE-52.",

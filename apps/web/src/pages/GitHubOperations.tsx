@@ -877,7 +877,6 @@ function RunPanel({
   item,
   read,
   button,
-  can,
   download,
 }: Omit<PanelProps, "prepare"> & {
   download: (kind: string, id: number, attempt?: number) => string;
@@ -899,6 +898,14 @@ function RunPanel({
     [item.id, attempt, jobPage],
   );
   const pending = useAsync(() => read<Page>("pending", { runId: String(item.id) }), [item.id]);
+  const archives = useAsync(
+    () =>
+      read<{ items: GitHubOperationCapability[] }>("capabilities", {
+        runId: String(item.id),
+        attempt: String(attempt),
+      }),
+    [item.id, attempt],
+  );
   const params = { runId: item.id, attempt: current.run_attempt ?? 1 };
   return (
     <section className="card">
@@ -939,7 +946,7 @@ function RunPanel({
         Attempts remain separate. These archives are completed output; full live source capture is
         being developed separately.
       </p>
-      {can("github.logs_download") && (
+      {archives.data?.items.find((c) => c.action === "github.logs_download")?.enabled && (
         <a className="btn" href={download("logs", item.id, attempt)}>
           Download this attempt's archived logs
         </a>
@@ -1458,7 +1465,11 @@ function EnvironmentEditor({
               <input required value={pattern} onChange={(e) => setPattern(e.target.value)} />
             </Field>
             <Field label="Policy type">
-              <select value={policyType} onChange={(e) => setPolicyType(e.target.value)}>
+              <select
+                disabled={policyId !== undefined}
+                value={policyType}
+                onChange={(e) => setPolicyType(e.target.value)}
+              >
                 <option value="branch">Branch</option>
                 <option value="tag">Tag</option>
               </select>
