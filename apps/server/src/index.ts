@@ -34,3 +34,5 @@ export {
   type CorrelationModuleOptions,
   type JourneyContainmentHook,
 } from "./correlation/index.ts";
+
+export { withLocalUsers } from "./auth/local-users.ts";

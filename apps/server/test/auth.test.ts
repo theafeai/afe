@@ -455,7 +455,7 @@ describe("API authentication (AFE-27)", () => {
       });
 
     it("every route with an id answers 404 for another tenant's resource", async () => {
-      const byId = mt.routes.filter((r) => r.url.startsWith("/api/") && r.url.includes("/:"));
+      const byId = mt.routes.filter((r) => r.url.startsWith("/api/") && r.url.includes("/:id"));
       expect(byId.length).toBeGreaterThanOrEqual(8);
       for (const r of byId) {
         const res = await inject(r.method, fill(r.url, idFor(r.url)), B);

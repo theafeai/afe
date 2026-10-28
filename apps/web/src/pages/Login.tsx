@@ -61,10 +61,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
   return (
     <div className="page narrow">
       <h1>Sign in to Afe</h1>
-      <p className="lede">
-        Enter the admin token (<code>AFE_ADMIN_TOKEN</code>) or the read-only viewer token (
-        <code>AFE_VIEWER_TOKEN</code>) of this Afe instance.
-      </p>
+      <p className="lede">Enter the access credential provided by your Afe administrator.</p>
       <section className="card">
         <form className="form" onSubmit={(e) => void submit(e)}>
           <div className="field">

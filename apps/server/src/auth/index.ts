@@ -228,6 +228,25 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
     if (access === "viewer" && !hasRole(principal, "viewer")) {
       return reply.code(403).send({ error: "forbidden", message: "Not allowed." });
     }
+    // Locally managed dashboard identities have no implicit tool, raw evidence or tenant-wide audit access.
+    // New API routes fail closed until explicitly integrated with resource authorization.
+    if (principal.localUserId) {
+      const allowed =
+        routeUrl === SESSION_ROUTE ||
+        routeUrl?.startsWith("/api/profile") ||
+        [
+          "/api/events",
+          "/api/deployments",
+          "/api/events/:id",
+          "/api/connections",
+          "/api/connections/:id/health",
+        ].includes(routeUrl ?? "");
+      if (!allowed)
+        return reply
+          .code(403)
+          .send({ error: "forbidden", message: "This endpoint requires administrator access." });
+      reply.header("cache-control", "no-store");
+    }
     req.principal = principal;
     req.tenantId = tenantId;
   });
@@ -260,6 +279,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
     roles: p.roles,
     kind: p.kind,
     name: p.name ?? null,
+    managedUser: Boolean(p.localUserId),
   });
 
   // Log in with a token: exchanges it for a session cookie.

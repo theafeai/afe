@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type pg from "pg";
 import { randomBytes } from "node:crypto";
 import {
@@ -13,6 +13,9 @@ import {
 } from "@afe/core";
 import { LOG_REDACT_OPTIONS, type KeyProvider } from "@afe/core/security";
 import { createPgEventSink } from "@afe/db";
+import { registerToolAccountRoutes } from "./auth/tool-accounts.ts";
+import { withLocalUsers } from "./auth/local-users.ts";
+import { registerUserRoutes } from "./auth/user-routes.ts";
 import { registerAuth, type RegisteredRoute } from "./auth/index.ts";
 import { deriveSessionKey, SessionCodec } from "./auth/session.ts";
 import { DEFAULT_SESSION_TTL_MS, loadConfig, type AfeConfig } from "./config.ts";
@@ -95,6 +98,15 @@ const missingKeys: KeyProvider = {
 export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
   const app = Fastify({
     logger: {
+      serializers: {
+        req: (req: FastifyRequest) => ({
+          method: req.method,
+          url: req.url?.split("?")[0],
+          ...(req.url ? {} : { headers: req.headers }),
+          hostname: req.hostname,
+          remoteAddress: req.ip,
+        }),
+      },
       level: options.logLevel ?? "info",
       // Never log credentials, tokens or webhook signatures (docs/security/rules.md).
       redact: { paths: [...LOG_REDACT_OPTIONS.paths], censor: LOG_REDACT_OPTIONS.censor },
@@ -130,6 +142,7 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
       authProvider = denyAllAuthProvider;
     }
   }
+  if (!options.authProvider) authProvider = withLocalUsers(options.pool, authProvider);
   const sessionSecret = options.sessionSecret ?? authConfig?.sessionSecret?.reveal();
   const sessionKey = sessionSecret
     ? deriveSessionKey("secret", sessionSecret)
@@ -170,6 +183,9 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     ...(config.publicUrl ? { publicUrl: config.publicUrl } : {}),
     uiEnabled: Boolean(webDir),
   });
+
+  registerUserRoutes(app, options.pool);
+  registerToolAccountRoutes(app, context);
 
   app.get("/healthz", async (_req, reply) => {
     try {

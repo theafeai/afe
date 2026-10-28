@@ -166,7 +166,7 @@ describe("Mapping settings page", () => {
       await screen.findByRole("heading", { name: "Environment and service mapping" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mapping" }).getAttribute("aria-current")).toBe("page");
-    const services = screen.getByRole("region", { name: "Services" });
+    const services = await screen.findByRole("region", { name: "Services" });
     expect(within(services).getByText("Web")).toBeTruthy();
     const envRules = screen.getByRole("region", { name: "Environment rules" });
     expect(within(envRules).getByText("*-prod")).toBeTruthy();

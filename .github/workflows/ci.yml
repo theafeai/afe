@@ -40,6 +40,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - name: Verify built user provisioning and permission isolation
+        run: node examples/ci/user-access-afe.mjs
       - name: Smoke-test the bundled server
         run: DATABASE_URL="$TEST_DATABASE_URL" node apps/server/dist/cli.js migrate
 

@@ -57,7 +57,7 @@ export function Deployments() {
         <div>
           <h1>Deployments</h1>
           <p className="lede">
-            Who deployed what, to where, and when — across GitHub, ArgoCD and Vercel.
+            Who deployed what, to where, and when — across your available tools.
           </p>
         </div>
       </header>

@@ -149,3 +149,5 @@ export {
   type DriftSettingsRecord,
   type ListDriftFindingsOptions,
 } from "./drift.ts";
+
+export * from "./users.ts";

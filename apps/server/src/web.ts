@@ -41,6 +41,8 @@ export const CLIENT_ROUTE_ROOTS = [
   "deployments",
   "connections",
   "login",
+  "users",
+  "profile",
   "settings",
   "journeys",
   "drift",

@@ -17,6 +17,8 @@ import {
   type ConnectionWithHealth,
 } from "@afe/db";
 
+import { requestEventAccess } from "../auth/permissions.ts";
+
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
 function alertView(a: AlertRecord) {
@@ -80,9 +82,18 @@ export function registerHealthRoutes(
       listConnectionsWithHealth(pool, tenantId),
       listAlerts(pool, tenantId, { openOnly: true, limit: 1000 }),
     ]);
+    const access = await requestEventAccess(pool, req);
+    const visible = access
+      ? rows.filter((r) =>
+          access.some(
+            (a) =>
+              a.source === r.connection.source && a.resource === `connection:${r.connection.id}`,
+          ),
+        )
+      : rows;
     const alertByConnection = new Map(open.map((a) => [a.connectionId, a]));
     return {
-      connections: rows.map((r) =>
+      connections: visible.map((r) =>
         connectionHealthView(r, alertByConnection.get(r.connection.id) ?? null),
       ),
     };
@@ -91,7 +102,16 @@ export function registerHealthRoutes(
   app.get<{ Params: { id: string } }>("/api/connections/:id/health", async (req, reply) => {
     const tenantId = await resolveTenant(req);
     const row = await getConnectionHealth(pool, tenantId, req.params.id);
-    if (!row) return reply.code(404).send({ error: "connection not found" });
+    const access = await requestEventAccess(pool, req);
+    if (
+      !row ||
+      (access &&
+        !access.some(
+          (a) =>
+            a.source === row.connection.source && a.resource === `connection:${row.connection.id}`,
+        ))
+    )
+      return reply.code(404).send({ error: "connection not found" });
     const [gaps, alerts] = await Promise.all([
       listObservationGaps(pool, tenantId, row.connection.id),
       listAlerts(pool, tenantId, { connectionId: row.connection.id, limit: 100 }),

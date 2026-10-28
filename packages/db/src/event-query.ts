@@ -14,6 +14,7 @@ import {
   repositoryFilterKey,
   type CanonicalEvent,
   type EventFilter,
+  type EventAccessRule,
 } from "@afe/core";
 import { EVENT_COLUMNS, rowToEvent, type EventRow, type Queryable } from "./event-store.ts";
 
@@ -117,6 +118,39 @@ export function eventFilterSql(filter: EventFilter, params: unknown[]): string[]
   return where;
 }
 
+/** Resource authorization is an AND constraint, independent of caller-supplied filters. */
+export function eventAccessSql(
+  rules: readonly EventAccessRule[] | undefined,
+  params: unknown[],
+): string {
+  if (rules === undefined) return "TRUE";
+  if (rules.length === 0) return "FALSE";
+  const bind = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  return (
+    "(" +
+    rules
+      .map((rule) => {
+        const colon = rule.resource.indexOf(":");
+        const kind = rule.resource.slice(0, colon),
+          value = rule.resource.slice(colon + 1);
+        const fields: Record<string, string> = {
+          connection: "e.connection_id",
+          repository: "lower(e.target ->> 'repository')",
+          project: "e.target ->> 'project'",
+          application: "e.target ->> 'application'",
+        };
+        const field = fields[kind];
+        if (!field || !value) return "FALSE";
+        return `(e.source = ${bind(rule.source)} AND ${field} = ${bind(kind === "repository" ? value.toLowerCase() : value)}${rule.connectionId ? ` AND e.connection_id = ${bind(rule.connectionId)}` : ""}${rule.targetId ? ` AND e.target ->> 'id' = ${bind(rule.targetId)}` : ""})`;
+      })
+      .join(" OR ") +
+    ")"
+  );
+}
+
 interface CursorState {
   /** occurredAt of the last row returned. */
   o: string;
@@ -158,6 +192,7 @@ function decodeCursor(cursor: string, fingerprint: string): CursorState {
 }
 
 export interface QueryEventsOptions {
+  access?: readonly EventAccessRule[];
   filter?: EventFilter;
   /** By occurredAt (ties broken by seq). Default "desc" (newest first). */
   order?: EventOrder;
@@ -202,12 +237,19 @@ export async function queryEvents(
   const filter = options.filter ?? {};
   const order: EventOrder = options.order === "asc" ? "asc" : "desc";
   const limit = Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 1000);
-  const fingerprint = filterFingerprint(filter, { order });
+  const fingerprint = filterFingerprint(filter, {
+    order,
+    access: JSON.stringify(options.access ?? null),
+  });
   const cursor = options.cursor ? decodeCursor(options.cursor, fingerprint) : null;
   const snapshotSeq = cursor ? cursor.h : await getLatestSeq(db, tenantId);
 
   const params: unknown[] = [tenantId];
-  const where = ["e.tenant_id = $1", ...eventFilterSql(filter, params)];
+  const where = [
+    "e.tenant_id = $1",
+    ...eventFilterSql(filter, params),
+    eventAccessSql(options.access, params),
+  ];
   params.push(snapshotSeq);
   where.push(`e.seq <= $${params.length}`);
   if (cursor) {

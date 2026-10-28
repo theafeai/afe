@@ -14,6 +14,7 @@ import {
   type RangeId,
   type TargetField,
 } from "./filters.ts";
+import { useAccess } from "./access.tsx";
 import { humanize } from "./format.ts";
 
 /**
@@ -30,6 +31,7 @@ export function FilterBar({
   onChange: (f: Filters) => void;
   showMethod?: boolean;
 }) {
+  const { visibleTool } = useAccess();
   const id = useId();
   const [actor, setActor] = useState(filters.actor);
   const [target, setTarget] = useState(filters.target);
@@ -54,7 +56,7 @@ export function FilterBar({
     <form className="filters" onSubmit={submit} aria-label="Filters">
       <fieldset className="filter-tools">
         <legend>Tool</legend>
-        {TOOLS.map((t) => (
+        {TOOLS.filter((t) => visibleTool(t.id)).map((t) => (
           <label key={t.id} className="check">
             <input
               type="checkbox"

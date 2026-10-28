@@ -17,3 +17,5 @@ export * from "./event-filter.ts";
 export * from "./tenant.ts";
 // Authentication extension point (AFE-27, ADR 0006).
 export * from "./auth.ts";
+
+export * from "./tool-permissions.ts";

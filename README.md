@@ -33,6 +33,9 @@ and when?" for the recent past, and tells you when it could not see a source.
 `docker compose up` with the published image: see the
 [self-hosting quickstart](docs/self-hosting/quickstart.md).
 
+For admin-created users, per-tool permissions and personal tool account linking,
+see [user management](docs/user-management.md).
+
 ## Development
 
 Try the [minimal integration examples](examples/README.md) for GitHub Actions,

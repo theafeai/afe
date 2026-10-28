@@ -30,6 +30,9 @@ export interface Principal {
   kind: string;
   /** Optional display name for the UI. */
   name?: string;
+  /** Present only for locally managed users, including cookie sessions. */
+  localUserId?: string;
+  credentialVersion?: number;
 }
 
 /** The parts of an HTTP request an AuthProvider may look at. */
