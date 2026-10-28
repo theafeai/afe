@@ -1,5 +1,6 @@
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
+import { icons } from "../icons.tsx";
 import type { CanonicalEvent, EventItem, ObservationGap } from "../api/types.ts";
 import {
   Empty,
@@ -224,21 +225,21 @@ export function Timeline() {
             <p>Widen the time range or clear some filters.</p>
           </Empty>
         ) : managed ? (
-          <Empty title="No events available">
+          <Empty title="No events available" icon={icons.events}>
             <p>
               Open your profile to link assigned tool accounts, or contact your administrator for
               permissions.
             </p>
           </Empty>
         ) : connections.data && connections.data.connections.length === 0 ? (
-          <Empty title="Nothing recorded yet">
+          <Empty title="Nothing recorded yet" icon={icons.events}>
             <p>
               Afe records events once a tool is connected.{" "}
               <Link to="/connections">Connect GitHub, ArgoCD or Vercel</Link> to start.
             </p>
           </Empty>
         ) : (
-          <Empty title="No events recorded yet">
+          <Empty title="No events recorded yet" icon={icons.events}>
             <p>
               Your connections have not delivered any events so far. Check their{" "}
               <Link to="/connections">health</Link>; new deployments appear here as they happen.

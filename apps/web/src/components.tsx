@@ -93,9 +93,18 @@ export function ErrorBox({
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+export function Empty({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <div className="empty">
+      {icon && <span className="empty-icon">{icon}</span>}
       <h3>{title}</h3>
       {children}
     </div>
