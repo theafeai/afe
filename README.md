@@ -35,6 +35,10 @@ and when?" for the recent past, and tells you when it could not see a source.
 
 ## Development
 
+Try the [minimal integration examples](examples/README.md) for GitHub Actions,
+ArgoCD, Vercel and Terraform. They share a tiny app and include local setup,
+expected Afe observations, and cleanup.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License

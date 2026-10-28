@@ -118,7 +118,7 @@ export interface ArgoCdModuleOptions {
   watchSliceMs?: number;
   /** Re-enqueue `argocd.watch` at the end of each slice (default true; tests turn it off). */
   requeueWatch?: boolean;
-  /** Let the scheduled reconcile fan-out also queue a watch per connection (default true). */
+  /** Queue watches on connect and scheduled reconcile fan-out (default true). */
   scheduleWatch?: boolean;
   /** Reconnect delay of the watch after attempt n (default 1 s doubling to 60 s). */
   watchBackoffMs?: (attempt: number) => number;
@@ -356,6 +356,15 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
             throw e;
           } finally {
             client.release();
+          }
+          // Start observing a newly connected (or reconnected) instance now.
+          // Waiting for the five-minute dispatcher can miss short-lived sync
+          // failures that are no longer present in the latest operation state.
+          const payload: ArgoCdCaptureJob = { tenantId, connectionId: connection.id };
+          const singletonKey = `${tenantId}:${connection.id}`;
+          await ctx.jobs.send(ARGOCD_RECONCILE_JOB, payload, { singletonKey });
+          if (options.scheduleWatch !== false) {
+            await ctx.jobs.send(ARGOCD_WATCH_JOB, payload, { singletonKey });
           }
           req.log.info(
             { source: CONNECTOR_SOURCE, connectionId: connection.id },

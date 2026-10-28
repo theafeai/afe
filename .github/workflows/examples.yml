@@ -1,0 +1,158 @@
+name: Example projects
+
+on:
+  pull_request:
+    paths:
+      - examples/**
+      - .github/workflows/examples.yml
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - package.json
+      - pnpm-lock.yaml
+  push:
+    branches: [main]
+    paths:
+      - examples/**
+      - .github/workflows/examples.yml
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - package.json
+      - pnpm-lock.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  local:
+    name: Local example deployments
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh examples/check.sh
+      - name: Run the standalone container on a read-only filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t afe-demo:ci examples/demo
+          trap 'docker rm -f afe-demo-ci' EXIT
+          docker run -d --name afe-demo-ci --read-only --tmpfs /tmp \
+            --cap-drop ALL -p 127.0.0.1:8093:8080 afe-demo:ci
+          curl --retry 10 --retry-all-errors --retry-max-time 30 --retry-delay 1 -fsS http://127.0.0.1:8093/ | grep 'Version 1'
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.0
+          terraform_wrapper: false
+      - name: Apply, change and destroy the local Terraform sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd examples/demo
+          trap 'terraform -chdir=terraform destroy -auto-approve' EXIT
+          terraform -chdir=terraform fmt -check
+          terraform -chdir=terraform init -input=false
+          terraform -chdir=terraform validate
+          terraform -chdir=terraform apply -auto-approve -input=false
+          curl --retry 10 --retry-all-errors --retry-max-time 30 --retry-delay 1 -fsS http://127.0.0.1:8092/ | grep 'Version 1'
+          sed -i 's/Version 1/Version 2/' site/index.html
+          terraform -chdir=terraform apply -auto-approve -input=false
+          curl --retry 10 --retry-all-errors --retry-max-time 30 --retry-delay 1 -fsS http://127.0.0.1:8092/ | grep 'Version 2'
+      - name: Render Kustomize manifests
+        run: kubectl kustomize examples/demo > /tmp/afe-demo.yaml
+
+  argocd:
+    name: ArgoCD demo sync in kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: afe_argocd_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/afe_argocd_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare browser capture
+        run: |
+          npm install --prefix "$RUNNER_TEMP/afe-preview" --no-package-lock --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/afe-preview/node_modules/.bin/playwright" install --with-deps chromium
+          cp examples/ci/capture.mjs "$RUNNER_TEMP/afe-preview/capture.mjs"
+      - uses: helm/kind-action@v1
+        with:
+          version: v0.33.0
+          cluster_name: afe-demo-ci
+          node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+      - name: Install ArgoCD in the disposable cluster
+        run: |
+          kubectl create namespace argocd
+          kubectl apply --server-side -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml
+          # Use the same official Redis release from Docker Hub rather than
+          # depending on availability of the upstream ECR mirror in CI.
+          kubectl -n argocd set image deployment/argocd-redis redis=redis:8.2.3-alpine
+          kubectl -n argocd rollout status deployment/argocd-redis --timeout=180s
+          kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=300s
+          kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=300s
+          kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge -p '{"data":{"server.insecure":"true"}}'
+          kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"accounts.afe":"apiKey"}}'
+          kubectl -n argocd patch configmap argocd-rbac-cm --type merge -p '{"data":{"policy.default":"","policy.csv":"p, role:afe-readonly, applications, get, */*, allow\np, role:afe-readonly, projects, get, *, allow\np, role:afe-readonly, clusters, get, *, allow\ng, afe, role:afe-readonly"}}'
+          kubectl -n argocd rollout restart deployment/argocd-server
+          kubectl -n argocd rollout status deployment/argocd-server --timeout=300s
+      - name: Reconcile the real Git source
+        env:
+          DEMO_REPO: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
+          DEMO_REVISION: ${{ github.head_ref || github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          application = {
+              'apiVersion': 'argoproj.io/v1alpha1', 'kind': 'Application',
+              'metadata': {'name': 'afe-demo', 'namespace': 'argocd'},
+              'spec': {
+                  'project': 'default',
+                  'source': {'repoURL': os.environ['DEMO_REPO'], 'targetRevision': os.environ['DEMO_REVISION'], 'path': 'examples/demo'},
+                  'destination': {'server': 'https://kubernetes.default.svc', 'namespace': 'afe-demo'},
+                  'syncPolicy': {'automated': {'prune': True, 'selfHeal': True}, 'syncOptions': ['CreateNamespace=true']},
+              },
+          }
+          subprocess.run(['kubectl', 'apply', '-f', '-'], input=json.dumps(application), text=True, check=True)
+          PY
+          kubectl -n argocd wait application/afe-demo --for=jsonpath='{.status.sync.status}'=Synced --timeout=300s
+          kubectl -n argocd wait application/afe-demo --for=jsonpath='{.status.health.status}'=Healthy --timeout=180s
+          kubectl -n afe-demo rollout status deployment/afe-demo --timeout=180s
+          kubectl -n afe-demo port-forward service/afe-demo 8090:8080 >/tmp/afe-demo-forward.log 2>&1 &
+          curl --retry 10 --retry-all-errors --retry-max-time 30 --retry-delay 1 -fsS http://127.0.0.1:8090/ | grep 'Version 1'
+          kubectl -n argocd delete application afe-demo
+          kubectl delete namespace afe-demo --wait=true --timeout=120s
+      - name: Validate two real ArgoCD deployments through Afe and capture evidence
+        env:
+          AFE_CAPTURE_SCRIPT: ${{ runner.temp }}/afe-preview/capture.mjs
+        run: python3 examples/ci/argocd-afe.py
+      - name: Upload screenshots, recordings and event evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argocd-afe-evidence
+          path: argocd-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Diagnose failed reconciliation
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n argocd get events --sort-by=.lastTimestamp || true
+          kubectl -n argocd get application afe-demo -o yaml || true
+          kubectl -n afe-demo get events --sort-by=.lastTimestamp || true
