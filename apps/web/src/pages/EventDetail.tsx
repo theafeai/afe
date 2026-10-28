@@ -17,6 +17,7 @@ import { formatBytes, formatDateTime, formatDuration, humanize } from "../format
 import { Link } from "../router.tsx";
 import { ContainmentPanel, containmentSubject } from "./ContainmentPanel.tsx";
 import { JourneyLinks } from "./JourneyLinks.tsx";
+import { GitHubRunPanel, hasGitHubRun } from "./GitHubRunPanel.tsx";
 
 function actorText(a: ActorRef | undefined) {
   if (!a) return null;
@@ -92,6 +93,8 @@ export function EventDetailPage({ id }: { id: string }) {
           or polling but did not; a reconciliation pass found it later.
         </div>
       )}
+
+      {hasGitHubRun(e) && <GitHubRunPanel key={e.id} eventId={e.id} />}
 
       <div className="grid-2">
         <section className="card">

@@ -187,6 +187,12 @@ fields from an upstream tool are added to the inventory in the same PR.
 Specifically: no source code, no file contents, no secret or environment
 variable values, no build logs.
 
+The GitHub workflow viewer may proxy already source-masked completed job logs
+on demand, bounded in memory, without persistence or application logging
+(AFE-52). This does not permit storing build logs in events, raw payloads,
+credentials, job queues or any other table. See the transient-read section of
+the data inventory for limits and access controls.
+
 ## R9 – Tests
 
 Every integration ships tests (with recorded fixtures or local fakes, never real

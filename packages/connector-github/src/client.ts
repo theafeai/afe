@@ -25,6 +25,7 @@ import type {
   GitHubRepository,
   GitHubRunApproval,
   GitHubWorkflowRun,
+  GitHubWorkflowJob,
   PermissionMap,
 } from "./types.ts";
 
@@ -258,6 +259,40 @@ export class InstallationClient {
         `/repos/${seg(owner)}/${seg(repo)}/actions/runs/${seg(runId)}/attempts/${seg(attempt)}`,
       )
     ).data;
+  }
+
+  /** One page of jobs for an exact attempt, including step progress. */
+  async workflowJobsPage(owner: string, repo: string, runId: number, attempt: number, page = 1) {
+    return (
+      await this.#get<{ jobs: GitHubWorkflowJob[]; total_count: number }>(
+        `/repos/${seg(owner)}/${seg(repo)}/actions/runs/${seg(runId)}/attempts/${seg(attempt)}/jobs`,
+        { per_page: 100, page },
+      )
+    ).data;
+  }
+
+  async getWorkflowJob(owner: string, repo: string, jobId: number): Promise<GitHubWorkflowJob> {
+    return (
+      await this.#get<GitHubWorkflowJob>(
+        `/repos/${seg(owner)}/${seg(repo)}/actions/jobs/${seg(jobId)}`,
+      )
+    ).data;
+  }
+
+  /** The signed storage URL is server-only; the caller validates and fetches it without credentials. */
+  async workflowJobLogLocation(owner: string, repo: string, jobId: number): Promise<string> {
+    const { token } = await this.app.tokens.get(this.token);
+    const res = await this.app.http.request<null>({
+      method: "GET",
+      path: `/repos/${seg(owner)}/${seg(repo)}/actions/jobs/${seg(jobId)}/logs`,
+      token,
+      bucket: this.bucket,
+      expectLogRedirect: true,
+    });
+    const location = res.headers.get("location");
+    if (res.status !== 302 || !location)
+      throw new GitHubApiError("GitHub log download is unavailable", 502, null);
+    return location;
   }
 
   /** GET /repos/{owner}/{repo}/actions/runs/{run_id}/approvals (environment reviews). */

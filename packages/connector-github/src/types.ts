@@ -115,6 +115,16 @@ export interface GitHubWorkflowJob {
   runner_name?: string | null;
   runner_group_id?: number | null;
   runner_group_name?: string | null;
+  steps?: GitHubWorkflowStep[];
+}
+
+export interface GitHubWorkflowStep {
+  number: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 /** Repository object as included in repository webhooks (subset). */

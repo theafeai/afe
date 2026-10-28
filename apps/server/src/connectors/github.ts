@@ -106,6 +106,8 @@ import {
   upsertConnection,
 } from "@afe/db";
 import { requestTenant } from "../auth/index.ts";
+import { registerGitHubRunRoutes } from "./github-runs.ts";
+import type { downloadGitHubJobLog } from "./github-log-download.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import { readSecretEnv } from "../config.ts";
 import { parseDuration } from "../health/config.ts";
@@ -122,6 +124,8 @@ export interface GitHubModuleOptions {
   env?: NodeJS.ProcessEnv;
   /** Transport options (inject `fetch` in tests). */
   http?: GitHubHttpOptions;
+  /** Log storage transport; injectable for local fakes. Signed URLs never leave the server. */
+  logDownload?: Parameters<typeof downloadGitHubJobLog>[1];
   /** Public base URL of this instance (AFE_PUBLIC_URL); needed for the manifest flow. */
   publicUrl?: string;
   /**
@@ -2187,6 +2191,7 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
     routes(app, ctx) {
       // Fail fast on a partly configured environment.
       const rt = runtime(ctx);
+      registerGitHubRunRoutes(app, rt);
       void rt.installerVerification;
       const wrap =
         (fn: (rt: GitHubRuntime, req: FastifyRequest, reply: FastifyReply) => Promise<unknown>) =>
