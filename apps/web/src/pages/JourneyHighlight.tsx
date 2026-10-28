@@ -1,4 +1,3 @@
-import { useAccess } from "../access.tsx";
 /**
  * "Highlight journey" on the timeline (AFE-25). URL-driven:
  * `/events?journey=owner/name@<sha>` loads the commit's journey (the link
@@ -78,8 +77,7 @@ export function useJourneyHighlight(
   /** Re-adds the highlight to a new query (when filters change). */
   keep: (next: URLSearchParams) => URLSearchParams;
 } {
-  const { managed } = useAccess();
-  const raw = managed ? null : params.get(HIGHLIGHT_PARAM);
+  const raw = params.get(HIGHLIGHT_PARAM);
   const subject = parseHighlight(raw);
   const res = useAsync(
     (s) =>
@@ -175,7 +173,7 @@ export function useJourneyHighlight(
     const e = item.event;
     let highlight: RowHighlight | undefined;
     if (ids) highlight = ids.on.has(e.id) ? "on" : ids.excluded.has(e.id) ? "excluded" : "dim";
-    const own = managed ? null : journeySubject(e);
+    const own = journeySubject(e);
     let action: ReactNode;
     if (own) {
       const same =

@@ -112,6 +112,17 @@ try {
     .map((c) => c.split(";")[0])
     .join("; ");
   check("admins provision users without email and users can sign in");
+  const scopedMatrix = await json("GET", "/api/environments/state", bob.token);
+  assert.deepEqual(scopedMatrix.cells, []);
+  assert.deepEqual(scopedMatrix.services, []);
+  assert.deepEqual(scopedMatrix.environments, []);
+  const scopedMapping = await json("GET", "/api/mapping", bob.token);
+  assert.deepEqual(scopedMapping.services, []);
+  assert.deepEqual(scopedMapping.rules, []);
+  const scopedDrift = await json("GET", "/api/drift/summary", bob.token);
+  assert.equal(scopedDrift.open, 0);
+  assert.deepEqual(scopedDrift.targets, []);
+  check("built derived-view APIs expose no dimensions, rules or finding counts without grants");
   const connection = await json("POST", "/api/connections/terraform", admin, {
     workspace: `permissions-${suffix}`,
   });

@@ -31,17 +31,14 @@ import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx"
  */
 export function Routes() {
   const { pathname } = useLocation();
-  const { admin, managed } = useAccess();
+  const { admin } = useAccess();
   if (pathname === "/users") return <UsersPage />;
   if (pathname === "/profile") return <ProfilePage />;
-  if (
-    (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname)) ||
-    (managed && /^\/(journeys|drift|settings)(\/|$)/.test(pathname))
-  )
+  if (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname))
     return <div className="page">This view is unavailable for this account.</div>;
 
   let m: Record<string, string> | null;
-  if (pathname === "/" || pathname === "") return managed ? <Timeline /> : <EnvironmentMatrix />;
+  if (pathname === "/" || pathname === "") return <EnvironmentMatrix />;
   if (matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
@@ -98,11 +95,7 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
               <Link to="/users">Users</Link>
             </li>
           )}
-          {NAV.filter(
-            (n) =>
-              !session?.principal.managedUser ||
-              ["/events", "/deployments", "/connections"].includes(n.to),
-          ).map((n) => {
+          {NAV.map((n) => {
             const active = pathname === n.to || pathname.startsWith(`${n.to}/`);
             return (
               <li key={n.to}>

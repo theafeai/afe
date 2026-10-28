@@ -27,3 +27,15 @@ export function useAccess() {
     profile,
   };
 }
+
+/** Derived results describe only the resources the current account may read. */
+export function ScopeNotice({ drift = false }: { drift?: boolean }) {
+  const { managed } = useAccess();
+  return managed ? (
+    <p className="callout" role="note">
+      {drift
+        ? "Findings with hidden, missing or omitted supporting evidence are excluded."
+        : "This view uses only resources your account can access. Related activity outside your permissions is omitted."}
+    </p>
+  ) : null;
+}

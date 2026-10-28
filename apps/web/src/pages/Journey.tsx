@@ -1,3 +1,4 @@
+import { ScopeNotice, useAccess } from "../access.tsx";
 /**
  * Per-commit journey (AFE-25): change → CI → artifact → config → deploy →
  * runtime, with the confidence and evidence of every edge, where the commit
@@ -100,10 +101,11 @@ function useNarrow(): boolean {
 // --- Page ----------------------------------------------------------------------
 
 export function JourneyPage() {
+  const { managed } = useAccess();
   const [params, setParams] = useSearchParams();
   const repository = params.get("repository")?.trim() ?? "";
   const commit = params.get("commit")?.trim().toLowerCase() ?? "";
-  const containment = params.get("containment") === "1";
+  const containment = !managed && params.get("containment") === "1";
   const viewParam = params.get("view");
   useDocumentTitle(commit ? `Journey ${commit.slice(0, 7)}` : "Journey");
 
@@ -123,7 +125,7 @@ export function JourneyPage() {
       containment={containment}
       view={VIEWS.some((v) => v.id === viewParam) ? (viewParam as JourneyView) : null}
       onView={(v) => setParam("view", v)}
-      onContainment={() => setParam("containment", "1")}
+      onContainment={managed ? undefined : () => setParam("containment", "1")}
     />
   );
 }
@@ -183,7 +185,7 @@ function JourneyLoader(props: {
   containment: boolean;
   view: JourneyView | null;
   onView: (v: JourneyView) => void;
-  onContainment: () => void;
+  onContainment?: () => void;
 }) {
   const { repository, commit, containment } = props;
   const res = useAsync(
@@ -316,6 +318,7 @@ export function JourneyContent({
 
   return (
     <div className="page journey-page">
+      <ScopeNotice />
       <p>
         <Link to="/events">← Events</Link>
       </p>

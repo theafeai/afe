@@ -240,6 +240,15 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
           "/api/events/:id",
           "/api/connections",
           "/api/connections/:id/health",
+          "/api/environments/state",
+          "/api/environments/:service/:environment/history",
+          "/api/journeys",
+          "/api/events/:id/links",
+          "/api/drift/findings",
+          "/api/drift/findings/:id",
+          "/api/drift/summary",
+          "/api/mapping",
+          "/api/mapping/unmapped",
         ].includes(routeUrl ?? "");
       if (!allowed)
         return reply
