@@ -34,6 +34,14 @@ export class ApiError extends Error {
 }
 
 const FRIENDLY: Record<string, string> = {
+  email_not_configured:
+    "Email is unavailable. Contact your administrator for a manual credential reset.",
+  invalid_or_expired_link:
+    "This link is invalid, expired, or already used. Request a new link or contact your administrator.",
+  rate_limited: "Too many attempts. Try again in 15 minutes or contact your administrator.",
+  user_exists: "That username or email address is already assigned.",
+  email_exists: "That email address is already assigned to another user.",
+  invalid_email: "Enter a valid email address.",
   not_found: "Not found.",
   bad_request: "The request was not accepted.",
   connection_revoked:

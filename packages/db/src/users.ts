@@ -6,13 +6,14 @@ export interface LocalUser {
   id: string;
   username: string;
   disabled: boolean;
+  email: string | null;
   credentialVersion: number;
 }
-const columns = 'id, username, disabled, credential_version AS "credentialVersion"';
+const columns = 'id, username, email, disabled, credential_version AS "credentialVersion"';
 function digest(secret: string): string {
   return createHash("sha256").update("afe-local-user-v1\0").update(secret).digest("hex");
 }
-function credential(id: string, tenantId: string) {
+export function issueLocalCredential(id: string, tenantId: string) {
   const secret = randomBytes(32).toString("base64url");
   return {
     token: `afe_user.${Buffer.from(tenantId).toString("base64url")}.${id}.${secret}`,
@@ -21,11 +22,15 @@ function credential(id: string, tenantId: string) {
 }
 
 /** Returns a credential once. Listing users never returns credentials or hashes. */
-export async function createLocalUser(pool: pg.Pool, tenantId: string, username: string) {
+export async function createLocalUser(
+  pool: pg.Pool | pg.PoolClient,
+  tenantId: string,
+  username: string,
+) {
   const normalized = username.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9._-]{0,99}$/.test(normalized)) throw new Error("invalid username");
   const id = randomUUID();
-  const issued = credential(id, tenantId);
+  const issued = issueLocalCredential(id, tenantId);
   const result = await pool.query<LocalUser>(
     `INSERT INTO users (tenant_id, id, username, credential_digest) VALUES ($1,$2,$3,$4) RETURNING ${columns}`,
     [tenantId, id, normalized, issued.digest],
@@ -53,7 +58,7 @@ export async function authenticateLocalUser(pool: pg.Pool, tenantId: string, tok
 }
 /** Rotation invalidates the old credential and increments the session revocation version. */
 export async function resetLocalCredential(pool: pg.Pool, tenantId: string, id: string) {
-  const issued = credential(id, tenantId);
+  const issued = issueLocalCredential(id, tenantId);
   const result = await pool.query(
     `UPDATE users SET credential_digest=$3, credential_version=credential_version+1
      WHERE tenant_id=$1 AND id=$2 RETURNING id`,

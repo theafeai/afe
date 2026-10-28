@@ -22,12 +22,14 @@
     "@afe/core": "workspace:*",
     "@afe/db": "workspace:*",
     "fastify": "^5.2.0",
+    "nodemailer": "^10.2.1",
     "pg": "^8.13.1",
     "pg-boss": "^10.1.5",
     "undici": "^7.30.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.11.10",
     "tsup": "^8.3.5"
   }

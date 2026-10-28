@@ -1,4 +1,5 @@
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
+import { AccountEmailPage } from "./pages/AccountEmail.tsx";
 import { UsersPage } from "./pages/Users.tsx";
 import { ProfilePage } from "./pages/Profile.tsx";
 import { useCallback, useEffect, useState } from "react";
@@ -182,6 +183,13 @@ function Shell() {
       .catch(() => {})
       .finally(() => setAuth({ status: "anonymous" }));
   }, []);
+
+  if (pathname === "/account/accept" || pathname === "/account/reset")
+    return (
+      <main id="main" tabIndex={-1}>
+        <AccountEmailPage key={pathname} redeem={pathname === "/account/accept"} />
+      </main>
+    );
 
   if (auth.status === "anonymous" || (auth.status === "unknown" && pathname === "/login")) {
     return (

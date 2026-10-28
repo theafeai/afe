@@ -25,6 +25,7 @@ export interface AuthConfig {
 export const DEFAULT_SESSION_TTL_MS = 12 * 3600_000;
 
 export interface AfeConfig {
+  smtp?: SmtpConfig;
   databaseUrl: string;
   host: string;
   port: number;
@@ -108,8 +109,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
   if (!databaseUrl) throw new Error("DATABASE_URL (or DATABASE_URL_FILE) is required");
   const publicUrl = env.AFE_PUBLIC_URL?.replace(/\/+$/, "") || undefined;
   const vercel = loadVercelConfig(env);
+  const smtp = loadSmtpConfig(env, publicUrl);
   return {
     databaseUrl,
+    ...(smtp ? { smtp } : {}),
     host: env.AFE_HOST ?? "0.0.0.0",
     port: Number(env.AFE_PORT ?? 8080),
     logLevel: env.AFE_LOG_LEVEL ?? "info",
@@ -121,5 +124,68 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AfeConfig {
     auth: loadAuthConfig(env),
     // Throws (refuses to start) outside 1..60 days.
     eventRetentionDays: retentionPolicyFromEnv(env).days,
+  };
+}
+
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  allowPlaintext: boolean;
+  from: string;
+  username?: string;
+  password?: Secret<string>;
+}
+function loadSmtpConfig(env: NodeJS.ProcessEnv, publicUrl?: string): SmtpConfig | undefined {
+  const host = env.AFE_SMTP_HOST?.trim();
+  const password = readSecretEnv(env, "AFE_SMTP_PASSWORD");
+  if (!host) {
+    if (Object.keys(env).some((k) => k.startsWith("AFE_SMTP_") && env[k]))
+      throw new Error("AFE_SMTP_HOST is required for SMTP settings");
+    return undefined;
+  }
+  if (!/^[a-z0-9.-]+$/i.test(host) || host.length > 253)
+    throw new Error("AFE_SMTP_HOST must be a hostname or IPv4 address");
+  const port = Number(env.AFE_SMTP_PORT ?? 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535)
+    throw new Error("AFE_SMTP_PORT must be 1..65535");
+  const from = env.AFE_SMTP_FROM?.trim();
+  if (
+    !from ||
+    from.length > 254 ||
+    !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(from)
+  )
+    throw new Error("AFE_SMTP_FROM must be a single email address");
+  if (!publicUrl) throw new Error("SMTP requires AFE_PUBLIC_URL");
+  const url = new URL(publicUrl);
+  const lab =
+    env.AFE_ALLOW_PRIVATE_NETWORK_TARGETS === "true" &&
+    env.AFE_ALLOW_INSECURE_HTTP_TARGETS === "true";
+  if (
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    url.pathname !== "/" ||
+    (url.protocol !== "https:" && !(lab && url.protocol === "http:"))
+  )
+    throw new Error(
+      "SMTP requires an HTTPS AFE_PUBLIC_URL origin (HTTP requires both lab network flags)",
+    );
+  const username = env.AFE_SMTP_USERNAME?.trim();
+  if (Boolean(username) !== Boolean(password))
+    throw new Error("AFE_SMTP_USERNAME and AFE_SMTP_PASSWORD (or _FILE) must be set together");
+  const allowPlaintext = env.AFE_SMTP_ALLOW_PLAINTEXT === "true";
+  if (allowPlaintext && !lab) throw new Error("Plaintext SMTP requires both lab network flags");
+  for (const key of ["AFE_SMTP_SECURE", "AFE_SMTP_ALLOW_PLAINTEXT"])
+    if (env[key] && !["true", "false"].includes(env[key]!))
+      throw new Error(`${key} must be true or false`);
+  return {
+    host,
+    port,
+    from,
+    secure: env.AFE_SMTP_SECURE === "true",
+    allowPlaintext,
+    ...(username ? { username, password: new Secret(password!) } : {}),
   };
 }

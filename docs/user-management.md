@@ -121,5 +121,14 @@ Terraform CLI reports have no personal upstream identity. Its source mode
 therefore grants no access; use custom connection, repository or
 `project:<workspace-name>` grants. Combined mode retains these custom grants.
 
-SMTP and transactional email are tracked separately in AFE-39. They are not
-required for provisioning or sign-in.
+SMTP and transactional email are optional and are not required for manual
+provisioning or sign-in.
+
+## Invitations and email recovery
+
+Optional SMTP enables invitation and credential-reset emails from **Users**,
+plus **Forgot your access credential?** on the sign-in page. Links expire and
+are single-use; redemption generates a new credential and ends old sessions.
+Manual provisioning remains available without email. See
+[SMTP and account emails](self-hosting/email.md) for configuration, delivery
+checks, retry behavior and sender verification.

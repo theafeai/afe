@@ -123,3 +123,10 @@ tenant's collection integrations:
 Both providers require `AFE_PUBLIC_URL` and Afe's encryption key. Register the
 provider callback at `/api/profile/tools/<provider>/callback`. An unconfigured
 provider has no sign-in button; personal Vercel/ArgoCD tokens remain available.
+
+## Transactional email
+
+Optional SMTP supports user invitations and credential-reset links. See
+[SMTP and account emails](email.md) for settings, secret files, TLS, sender
+verification and delivery troubleshooting. Email remains disabled unless
+`AFE_SMTP_HOST` is configured.

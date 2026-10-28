@@ -720,3 +720,26 @@ unmapped); `targets` match its `targets[].key`.
 `severities` replaces the overrides). Invalid types or severities answer
 `400`. Alerting applies to findings that open after the change; severities
 apply at the next evaluation (the next read).
+
+## Account email (optional SMTP)
+
+All account-email responses use `Cache-Control: no-store`. Sender settings and
+credentials are operator configuration; the API never returns SMTP passwords.
+
+| Method | Path                         | Access | Behavior                                                                                                           |
+| ------ | ---------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/account/email`         | public | Whether local email recovery is enabled.                                                                           |
+| POST   | `/api/account/reset`         | public | `{email}`; always 202 for a syntactically accepted request regardless of account existence; rate limited.          |
+| POST   | `/api/account/redeem`        | public | `{token}`; verifies an expiring single-use email link and returns a new credential once; invalid links return 400. |
+| GET    | `/api/admin/email`           | admin  | Sender address and latest 20 delivery states/attempt counts.                                                       |
+| POST   | `/api/admin/email/test`      | admin  | `{email}`; queue a test email, 202.                                                                                |
+| POST   | `/api/admin/users/invite`    | admin  | `{username,email}`; create a user and queue an invitation, 201; no access credential in this response.             |
+| POST   | `/api/admin/users/:id/email` | admin  | `{purpose:"invitation"                                                                                             | "reset"}`; invalidate older links and queue a new one, 202.    |
+| PATCH  | `/api/admin/users/:id`       | admin  | In addition to the existing `{disabled}`, accepts `{email:string                                                   | null}`; changing email invalidates sessions and pending links. |
+
+Public mutation routes enforce the same Origin check as session login. The link
+contains a random 256-bit secret checked against a tenant-bound digest and is
+consumed atomically with credential rotation. Public reset requests cannot
+select a tenant; built-in local recovery is disabled for custom auth/tenant
+providers. GET never consumes a link. SMTP-disabled installations retain manual
+provisioning and return 503 for email actions. See [email setup](self-hosting/email.md).

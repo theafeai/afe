@@ -6,6 +6,7 @@ import {
   getLocalUser,
   getUserToolPolicy,
   listLocalUsers,
+  normalizeEmail,
   resetLocalCredential,
   setLocalUserDisabled,
   setUserToolPolicy,
@@ -44,7 +45,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
       }
     },
   );
-  app.patch<{ Params: { id: string }; Body: { disabled?: unknown } }>(
+  app.patch<{ Params: { id: string }; Body: { disabled?: unknown; email?: unknown } }>(
     "/api/admin/users/:id",
     { config: { access: "admin" } },
     async (req, reply) => {
@@ -53,6 +54,22 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
         !(await getLocalUser(pool, requestTenant(req), req.params.id))
       )
         return reply.code(404).send({ error: "not_found" });
+      if (req.body && "email" in req.body) {
+        const email = req.body.email === null ? null : normalizeEmail(req.body.email);
+        if (req.body.email !== null && !email)
+          return reply.code(400).send({ error: "invalid_email" });
+        try {
+          await pool.query(
+            `UPDATE users SET email=$3,credential_version=credential_version+1 WHERE tenant_id=$1 AND id=$2`,
+            [requestTenant(req), req.params.id, email],
+          );
+        } catch (err) {
+          if ((err as { code?: string }).code === "23505")
+            return reply.code(409).send({ error: "email_exists" });
+          throw err;
+        }
+        return { ok: true };
+      }
       if (typeof req.body?.disabled !== "boolean")
         return reply.code(400).send({ error: "bad_request" });
       if (!(await setLocalUserDisabled(pool, requestTenant(req), req.params.id, req.body.disabled)))

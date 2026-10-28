@@ -1,3 +1,4 @@
+import { EmailRecoveryLink } from "./AccountEmail.tsx";
 import { useId, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client.ts";
 import type { SessionInfo } from "../api/types.ts";
@@ -88,6 +89,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
             <strong>Not signed in.</strong> {error}
           </div>
         )}
+        <EmailRecoveryLink />
       </section>
     </div>
   );
