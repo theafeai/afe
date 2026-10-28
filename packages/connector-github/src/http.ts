@@ -37,7 +37,7 @@ export interface GitHubHttpOptions {
 }
 
 export interface GitHubRequest {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Path below the base URL (e.g. "/app/installations/1") or an absolute pagination URL. */
   path: string;
   query?: Record<string, string | number | boolean | undefined>;
@@ -176,7 +176,7 @@ export class GitHubHttp {
           signal: AbortSignal.timeout(this.#timeoutMs),
         });
       } catch (err) {
-        if (attempt < this.#maxRetries) {
+        if (req.method === "GET" && attempt < this.#maxRetries) {
           await this.#sleep(500 * 2 ** attempt);
           continue;
         }
@@ -184,7 +184,7 @@ export class GitHubHttp {
         throw new GitHubNetworkError(`GitHub request ${req.method} ${pathOf(url)} ${kind}`);
       }
       this.#recordRate(bucket, res.headers);
-      if (RETRYABLE_STATUS.has(res.status) && attempt < this.#maxRetries) {
+      if (req.method === "GET" && RETRYABLE_STATUS.has(res.status) && attempt < this.#maxRetries) {
         await res.body?.cancel().catch(() => {});
         await this.#sleep(500 * 2 ** attempt);
         continue;

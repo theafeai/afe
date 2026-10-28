@@ -37,6 +37,7 @@ async function listFiles(dir: string, prefix = ""): Promise<string[]> {
  * links below these get `index.html`; everything else keeps the normal 404.
  */
 export const CLIENT_ROUTE_ROOTS = [
+  "github",
   "events",
   "deployments",
   "connections",

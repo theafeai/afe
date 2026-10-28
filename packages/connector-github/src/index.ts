@@ -17,3 +17,4 @@ export * from "./reconcile.ts";
 export * from "./artifact.ts";
 export * from "./compare.ts";
 export * from "./oauth.ts";
+export * from "./operations.ts";

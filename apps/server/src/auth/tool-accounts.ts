@@ -1,3 +1,4 @@
+import { githubUserId } from "../actions/github-identity.ts";
 import type pg from "pg";
 import {
   argocdOidcConfig,
@@ -183,11 +184,12 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
   registerArgocdOidcRoutes(app, ctx, saveAccount);
   app.get("/api/profile", { config: { access: "viewer" } }, async (req) => {
     const tid = requestTenant(req),
-      uid = req.principal?.localUserId;
+      uid = req.principal?.localUserId ?? (await githubUserId(ctx, req));
     if (!uid) return { tools: [], managedUser: false };
     const accounts = await toolAccounts(ctx, tid, uid);
     const tools = [];
     for (const tool of USER_TOOLS) {
+      if (!req.principal?.localUserId && tool !== "github") continue;
       const policy = await getUserToolPolicy(ctx.pool, tid, uid, tool);
       if (policy.mode === "none") continue;
       const account = accounts.find((a) => a.tool === tool);
@@ -210,17 +212,55 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
               : oidcConnections.length),
         ),
         sourceAvailable: tool !== "terraform",
-        sourceEnabled: policy.mode === "source" || policy.mode === "source + custom",
+        sourceEnabled:
+          tool === "github" || policy.mode === "source" || policy.mode === "source + custom",
       });
     }
     return { tools, managedUser: true };
   });
+  app.post<{ Body: { token?: unknown } }>(
+    "/api/profile/tools/github/token",
+    { config: { access: "viewer" }, bodyLimit: 8192 },
+    async (req, reply) => {
+      const tid = requestTenant(req),
+        uid = await githubUserId(ctx, req);
+      if (!uid) return reply.code(409).send({ error: "local_account_required" });
+      const policy = await getUserToolPolicy(ctx.pool, tid, uid, "github");
+      if (policy.mode === "none") return reply.code(403).send({ error: "forbidden" });
+      const value = req.body?.token;
+      if (typeof value !== "string" || value.length < 10 || value.length > 4096 || /\s/.test(value))
+        return reply.code(400).send({
+          error: "invalid_token",
+          message: "Enter your GitHub fine-grained or personal access token.",
+        });
+      try {
+        const identity = await new GitHubHttp({ maxRetries: 0 }).request<{
+          id: number;
+          login: string;
+        }>({
+          method: "GET",
+          path: "/user",
+          token: new Secret(value),
+          bucket: `personal:${tid}:${uid}`,
+        });
+        if (!identity.data.id || !identity.data.login) throw new Error("invalid identity");
+        await saveAccount(ctx, tid, uid, "github", identity.data.login, value, {});
+        return { ok: true };
+      } catch {
+        return reply.code(403).send({
+          error: "link_failed",
+          message:
+            "GitHub rejected this personal identity. Check the token expiry and organization approval.",
+        });
+      }
+    },
+  );
   app.post(
     "/api/profile/tools/github/login",
     { config: { access: "viewer" } },
     async (req, reply) => {
       const tid = requestTenant(req),
-        uid = req.principal?.localUserId,
+        uid = await githubUserId(ctx, req),
         config = githubConfig();
       if (!uid || !config || !ctx.config.publicUrl)
         return reply.code(409).send({
@@ -228,8 +268,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           message: "GitHub account linking is not configured.",
         });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode === "none") return reply.code(403).send({ error: "forbidden" });
       if (!parseCookies(req.headers.cookie)[SESSION_COOKIE])
         return reply.code(400).send({ error: "session_required" });
       const state = randomBytes(32).toString("base64url");
@@ -245,7 +284,10 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       u.search = new URLSearchParams({
         client_id: config.clientId,
         redirect_uri: `${ctx.config.publicUrl}/api/profile/tools/github/callback`,
-        scope: "repo read:user",
+        scope:
+          (req.body as { workflowAccess?: boolean } | undefined)?.workflowAccess === true
+            ? "repo read:user workflow"
+            : "repo read:user",
         state,
       }).toString();
       return { url: u.toString() };
@@ -256,7 +298,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
     { config: { access: "viewer" } },
     async (req, reply) => {
       const tid = requestTenant(req),
-        uid = req.principal?.localUserId,
+        uid = await githubUserId(ctx, req),
         config = githubConfig();
       reply.header("referrer-policy", "no-referrer");
       const { state, code } = req.query;
@@ -270,8 +312,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       )
         return reply.code(400).send({ error: "invalid_callback" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode === "none") return reply.code(403).send({ error: "forbidden" });
       const used = await ctx.pool.query(
         "DELETE FROM user_oauth_states WHERE tenant_id=$1 AND user_id=$2 AND tool='github' AND digest=$3 AND session_binding=$4 AND expires_at>now() RETURNING digest",
         [tid, uid, hash(state), binding(req)],
@@ -461,7 +502,9 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
     { config: { access: "viewer" } },
     async (req, reply) => {
       const tid = requestTenant(req),
-        uid = req.principal?.localUserId;
+        uid =
+          req.principal?.localUserId ??
+          (req.params.tool === "github" ? await githubUserId(ctx, req) : null);
       if (!uid) return reply.code(409).send({ error: "local_account_required" });
       const client = await ctx.pool.connect();
       try {

@@ -10,7 +10,8 @@
     "./correlation": "./src/correlation/index.ts",
     "./mapping": "./src/mapping/index.ts",
     "./drift": "./src/drift/index.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./github-operations": "./src/github-operations.ts"
   },
   "dependencies": {
     "zod": "^4.6.7"

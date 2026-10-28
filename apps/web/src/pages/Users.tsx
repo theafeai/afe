@@ -1,3 +1,4 @@
+import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx";
@@ -80,7 +81,12 @@ export function UsersPage() {
       setPolicies(r.tools);
       setDrafts(
         Object.fromEntries(
-          TOOLS.map((t) => [t, r.tools[t]!.custom.map((g) => g.resource).join("\n")]),
+          TOOLS.map((t) => [
+            t,
+            r.tools[t]!.custom.map((g) =>
+              g.action === "read" ? g.resource : `${g.resource} ${g.action}`,
+            ).join("\n"),
+          ]),
         ),
       );
     });
@@ -297,7 +303,8 @@ export function UsersPage() {
           <h3>Tool permissions</h3>
           <p>
             Source uses the user's linked tool account. Custom grants add read access to specific
-            resources. Source + custom combines both.
+            resources. Source + custom combines both. GitHub run controls require an explicit
+            repository action grant plus the user’s GitHub write access.
           </p>
           <p>
             Enter one resource per line: <code>repository:owner/name</code>,{" "}
@@ -305,6 +312,26 @@ export function UsersPage() {
             <code>connection:connection-id</code>. A connection grant includes all events from that
             connection.
           </p>
+          <p>
+            For GitHub operations, append <code>github.cancel</code>, <code>github.rerun</code>, or{" "}
+            <code>github.rerun_failed</code> after a lowercase repository resource, for example{" "}
+            <code>repository:owner/name github.cancel</code>. Each grant goes on its own line. The
+            catalog below lists all supported operations.
+          </p>
+          <details>
+            <summary>GitHub operation grants</summary>
+            <ul>
+              {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
+                <li key={action}>
+                  <code>{action}</code> — {label} (GitHub {level})
+                </li>
+              ))}
+            </ul>
+            <p>
+              Each action requires its own exact repository grant. There are no wildcard mutation
+              grants.
+            </p>
+          </details>
           {policies &&
             TOOLS.map((tool) => (
               <form
@@ -319,7 +346,10 @@ export function UsersPage() {
                         .split("\n")
                         .map((s) => s.trim())
                         .filter(Boolean)
-                        .map((resource) => ({ resource, action: "read" })),
+                        .map((line) => {
+                          const [resource, action = "read"] = line.split(/\s+/);
+                          return { resource, action };
+                        }),
                     });
                     setNotice(`Saved ${tool} permissions.`);
                   });
@@ -343,7 +373,7 @@ export function UsersPage() {
                 </select>
                 {["custom", "source + custom"].includes(policies[tool]!.mode) && (
                   <>
-                    <label htmlFor={`grants-${tool}`}>Read grants</label>
+                    <label htmlFor={`grants-${tool}`}>Resource grants</label>
                     <textarea
                       id={`grants-${tool}`}
                       rows={4}

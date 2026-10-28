@@ -1,3 +1,4 @@
+import { githubActionsModule } from "../actions/github.ts";
 import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
 import { containmentModule } from "../containment/index.ts";
@@ -18,6 +19,7 @@ import { terraformModule } from "./terraform.ts";
  */
 export const defaultModules: ConnectorModule[] = [
   githubModule,
+  githubActionsModule,
   argocdModule,
   // In-cluster ArgoCD agent ingest (AFE-28).
   argocdAgentModule,

@@ -7,6 +7,7 @@ import {
   principalTenantResolver,
   StaticTokenAuthProvider,
   type AuthProvider,
+  type Principal,
   type EventSink,
   type RetentionPolicy,
   type TenantResolver,
@@ -34,6 +35,8 @@ declare module "fastify" {
 
 export interface CreateAfeOptions {
   pool: pg.Pool;
+  /** Server-owned hosted identity mapping to a tenant-managed tool account user. */
+  githubUserId?: (tenantId: string, principal: Principal) => Promise<string | null>;
   logLevel?: string;
   /** Log destination; defaults to stdout. */
   logStream?: NodeJS.WritableStream;
@@ -167,6 +170,7 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
   const retention = options.retentionPolicy ?? new FixedWindowRetention(config.eventRetentionDays);
   const context: ServerContext = {
     pool: options.pool,
+    ...(options.githubUserId ? { githubUserId: options.githubUserId } : {}),
     sink: options.sink ?? createPgEventSink(options.pool, { retention }),
     retention,
     keys: options.keys ?? missingKeys,
