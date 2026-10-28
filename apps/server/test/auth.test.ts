@@ -311,9 +311,12 @@ describe("API authentication (AFE-27)", () => {
       const escalated = Buffer.from(JSON.stringify({ ...decoded, roles: ["admin"] })).toString(
         "base64url",
       );
+      // A fixed suffix can already match the randomly signed cookie. Flip
+      // a full leading sextet so the decoded HMAC is guaranteed to change.
+      const changedSig = `${sig![0] === "A" ? "B" : "A"}${sig!.slice(1)}`;
       for (const forged of [
         `${v}.${escalated}.${sig}`,
-        `${v}.${payload}.${sig!.slice(0, -2)}AA`,
+        `${v}.${payload}.${changedSig}`,
         `${v}.${payload}`,
         "garbage",
       ]) {

@@ -9,6 +9,7 @@ import {
   VercelProjectsPage,
 } from "./pages/Connect.tsx";
 import { ConnectionDetail, Connections } from "./pages/Connections.tsx";
+import { ConnectTerraform } from "./pages/ConnectTerraform.tsx";
 import { Deployments } from "./pages/Deployments.tsx";
 import { EnvironmentMatrix } from "./pages/EnvironmentMatrix.tsx";
 import { DriftFindingPage, DriftPage } from "./pages/Drift.tsx";
@@ -41,6 +42,7 @@ export function Routes() {
   if (matchPath("/connections/github", pathname)) return <ConnectGitHub />;
   if (matchPath("/connections/argocd", pathname)) return <ConnectArgoCD />;
   if (matchPath("/connections/vercel", pathname)) return <ConnectVercel />;
+  if (matchPath("/connections/terraform", pathname)) return <ConnectTerraform />;
   if ((m = matchPath("/connections/vercel/:id/projects", pathname)))
     return <VercelProjectsPage key={m.id} id={m.id!} />;
   if ((m = matchPath("/connections/:id", pathname)))

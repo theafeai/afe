@@ -113,6 +113,7 @@ export function stageOf(e: CorrelationEvent, rootRepository: string): Stage {
     return repositoriesOf(e).includes(rootRepository) ? "change" : "config";
   }
   if (e.action === "argocd.application.updated") return "config";
+  if (e.source === "terraform" && e.action.startsWith("terraform.")) return "config";
   if (isBuildEvent(e) && e.action.startsWith("artifact.")) return "artifact";
   if (e.action.startsWith("artifact.")) return "artifact";
   if (e.action.startsWith("workflow_")) return "ci";

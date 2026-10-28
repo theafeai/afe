@@ -22,6 +22,7 @@ const TOOLS = [
   { id: "github", label: "GitHub", blurb: "GitHub App with read-only permissions." },
   { id: "argocd", label: "ArgoCD", blurb: "Read-only API token for an ArgoCD instance." },
   { id: "vercel", label: "Vercel", blurb: "Vercel Integration or an access token." },
+  { id: "terraform", label: "Terraform", blurb: "Signed lifecycle reports from local or CI runs." },
 ];
 
 export function ConnectButtons() {
@@ -155,7 +156,7 @@ function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () 
       </p>
     );
   }
-  if (c.source !== "argocd" && c.source !== "vercel") return null;
+  if (c.source !== "argocd" && c.source !== "vercel" && c.source !== "terraform") return null;
   const run = async () => {
     if (
       !window.confirm(
@@ -169,7 +170,9 @@ function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () 
         c.source === "argocd"
           ? (await api.argocdDisconnect(c.id),
             "Afe deleted its copy of the API token. You can also delete the token in ArgoCD.")
-          : ((await api.vercelDisconnect(c.id)).note ?? "Disconnected.");
+          : c.source === "terraform"
+            ? (await api.terraformDisconnect(c.id)).note
+            : ((await api.vercelDisconnect(c.id)).note ?? "Disconnected.");
       setState({ busy: false, error: null, note });
       onDone();
     } catch (err) {

@@ -27,7 +27,7 @@ export type JsonObject = { [key: string]: JsonValue };
 // ---------------------------------------------------------------------------
 
 /** Sources shipped in this repository. `afe` is Afe itself (gaps, connection changes). */
-export const KNOWN_SOURCES = ["github", "argocd", "vercel", "afe"] as const;
+export const KNOWN_SOURCES = ["github", "argocd", "vercel", "terraform", "afe"] as const;
 export type KnownEventSource = (typeof KNOWN_SOURCES)[number];
 /**
  * Source tool identifier. Open-ended (pattern-checked) so connectors outside

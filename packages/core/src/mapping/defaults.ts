@@ -69,7 +69,12 @@ const rules: Omit<MappingRule, "priority">[] = [
     "Vercel preview target",
   ),
 ];
-for (const field of ["github.environment", "argocd.environment", "vercel.target"] as const) {
+for (const field of [
+  "github.environment",
+  "argocd.environment",
+  "vercel.target",
+  "terraform.environment",
+] as const) {
   const source = field.split(".")[0];
   for (const [env, pattern] of NAME_PATTERNS) {
     rules.push(

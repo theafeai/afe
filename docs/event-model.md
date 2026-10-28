@@ -1,5 +1,12 @@
 # Event model
 
+Terraform CLI metadata uses source `terraform` and the actions
+`terraform.plan.started/completed`, `terraform.apply.started/completed` and
+`terraform.destroy.started/completed`. The target is a workspace run, not a
+live application deployment. Numeric results and optional correlation come
+from an authenticated runner; no raw state or plan is stored. See the
+[Terraform connector](connectors/terraform.md) for exact outcome and provenance rules.
+
 This is the reference for the canonical event that every Afe integration maps
 into, the ingestion contract for connector authors, and how long events are
 kept. The design rationale is in

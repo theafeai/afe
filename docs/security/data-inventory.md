@@ -52,6 +52,28 @@ the paths they strip and test it.
 | Pull request bodies, issue text, review comments                           | Not needed to answer "who deployed what"; only PR number/title/URL where linked to a deployment.                          |
 | Email addresses                                                            | Not stored unless the source only identifies the actor by email (git commit author); then stored as the actor identifier. |
 
+## Terraform CLI metadata
+
+Terraform connection configuration stores workspace, optional environment and
+repository identifiers plus a random reporter identity (`connections`). Its
+scoped HMAC reporter secret is generated once and stored encrypted via
+`credentials`/`connection_credentials`, never in config or staged reports.
+
+Strictly validated reports store version, run UUID, operation, phase, send/event
+timestamps, numeric exit code, optional actor handle, full commit SHA,
+repository, GitHub run ID and trigger in `terraform_reports` until ingestion.
+Canonical `events` retain the lifecycle, configured workspace/environment,
+correlation and explicit runner-reported attribution. This metadata may contain
+personal actor handles and confidential business identifiers. No raw Terraform
+payload is stored. State, plan contents, resource values/addresses, outputs,
+diagnostics, log text and arbitrary extra fields are rejected, not redacted
+after storage. Signatures are verified then discarded.
+
+Staged reports are deleted after event-sink commit, on disconnect, or through
+connection deletion. Scheduled processing drops events already outside normal
+retention. The pending queue is capped at 1,000 reports per connection; runners
+must retry 429 responses. Event retention and replay-id retention below apply.
+
 ## Retention and deletion
 
 Afe keeps events for a fixed window and then deletes them (ADR 0008). This

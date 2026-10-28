@@ -194,6 +194,14 @@ export const api = {
 
   vercelIntegration: (signal?: AbortSignal) =>
     get<VercelIntegrationStatus>("/api/connections/vercel/integration", signal),
+  terraformConnect: (body: { workspace: string; environment?: string; repository?: string }) =>
+    request<{ connection: { id: string; externalId: string }; secret: string; reportPath: string }>(
+      "POST",
+      "/api/connections/terraform",
+      body,
+    ),
+  terraformDisconnect: (id: string) =>
+    request<{ note: string }>("DELETE", `/api/connections/terraform/${encodeURIComponent(id)}`),
   vercelConnectToken: (body: { token: string; teamId?: string; webhookSecret?: string }) =>
     request<{ connection: VercelConnectionView; warnings: string[] }>(
       "POST",

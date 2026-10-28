@@ -9,5 +9,6 @@ coverage
 secrets/
 argocd-evidence/
 github-evidence/
+terraform-evidence/
 __pycache__/
 *.pyc

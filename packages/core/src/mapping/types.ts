@@ -54,6 +54,9 @@ export const MAPPING_FIELDS = [
   "vercel.project",
   "vercel.target",
   "vercel.repository",
+  "terraform.workspace",
+  "terraform.environment",
+  "terraform.repository",
 ] as const;
 export type KnownMappingField = (typeof MAPPING_FIELDS)[number];
 export const LABEL_FIELD_PREFIX = "argocd.label:";

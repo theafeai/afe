@@ -15,6 +15,7 @@ export const SENSITIVE_HEADERS = [
   "x-argocd-signature",
   "x-api-key",
   "x-afe-token",
+  "x-afe-signature",
 ] as const;
 
 /**
