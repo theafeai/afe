@@ -108,6 +108,7 @@ const TOOL_LABEL: Record<string, string> = {
   github: "GitHub",
   argocd: "ArgoCD",
   vercel: "Vercel",
+  terraform: "Terraform",
   afe: "Afe",
 };
 

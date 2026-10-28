@@ -12,6 +12,7 @@ export const TOOLS = [
   { id: "github", label: "GitHub" },
   { id: "argocd", label: "ArgoCD" },
   { id: "vercel", label: "Vercel" },
+  { id: "terraform", label: "Terraform" },
   { id: "afe", label: "Afe" },
 ] as const;
 

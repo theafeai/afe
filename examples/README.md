@@ -4,12 +4,12 @@ These examples use one static page with a visible version. No application code,
 package installation or build command is needed. Start with one tool, then reuse
 the same repository for the others.
 
-| Tool                                | Where the real deployment runs | Accounts / prerequisites                                      | Afe observation                                            |
-| ----------------------------------- | ------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------- |
-| [GitHub Actions](github-actions.md) | Hosted GitHub Pages            | GitHub repository, Pages enabled, Afe GitHub App              | Workflow runs/jobs and deployment statuses                 |
-| [ArgoCD](argocd.md)                 | Local kind cluster             | Docker, kind, kubectl, ArgoCD CLI, public demo Git repository | Syncs, app changes and live revisions                      |
-| [Vercel](vercel.md)                 | Hosted Vercel project          | Vercel account and Git repository                             | Preview/production deployments                             |
-| [Terraform](terraform.md)           | Local Docker                   | Terraform and Docker, no cloud account                        | **Not supported yet** (AFE-34); sample works independently |
+| Tool                                | Where the real deployment runs | Accounts / prerequisites                                      | Afe observation                                     |
+| ----------------------------------- | ------------------------------ | ------------------------------------------------------------- | --------------------------------------------------- |
+| [GitHub Actions](github-actions.md) | Hosted GitHub Pages            | GitHub repository, Pages enabled, Afe GitHub App              | Workflow runs/jobs and deployment statuses          |
+| [ArgoCD](argocd.md)                 | Local kind cluster             | Docker, kind, kubectl, ArgoCD CLI, public demo Git repository | Syncs, app changes and live revisions               |
+| [Vercel](vercel.md)                 | Hosted Vercel project          | Vercel account and Git repository                             | Preview/production deployments                      |
+| [Terraform](terraform.md)           | Local Docker                   | Terraform, Docker and the metadata reporter                   | Signed runner-reported plan/apply/destroy lifecycle |
 
 GitHub and Vercel are real hosted services; local preview is not a substitute for
 their events. Check their current plan limits before enabling paid features.

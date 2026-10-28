@@ -25,7 +25,7 @@ and when?" for the recent past, and tells you when it could not see a source.
 | `apps/web`             | Web UI                                                |
 | `packages/core`        | Canonical event model and extension-point interfaces  |
 | `packages/db`          | PostgreSQL migrations and data access                 |
-| `packages/connector-*` | GitHub, ArgoCD and Vercel connectors                  |
+| `packages/connector-*` | GitHub, ArgoCD, Vercel and Terraform connectors       |
 | `docs/`                | Decisions, security model, self-hosting guides        |
 
 ## Self-hosting

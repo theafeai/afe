@@ -67,6 +67,11 @@ export function observationsOf(e: MappableEvent): Observations {
   const t = e.target;
   const env = t.environment ?? e.correlation?.environments?.[0] ?? null;
   switch (e.source) {
+    case "terraform":
+      add(out, "terraform.workspace", t.project);
+      add(out, "terraform.environment", env);
+      add(out, "terraform.repository", t.repository);
+      break;
     case "github":
       add(out, "github.environment", env);
       add(

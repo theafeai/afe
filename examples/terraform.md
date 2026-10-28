@@ -1,6 +1,6 @@
 # Terraform with local Docker
 
-This sample works **before Afe's Terraform connector exists**. It creates one
+This sample creates one
 local container serving the shared page. No cloud account, remote state or
 HCP Terraform subscription is needed.
 
@@ -47,16 +47,50 @@ Review and approve destruction. The container is removed; the downloaded image
 is retained for reuse. The URL should no longer respond. **Destroy before
 deleting state**. Keep `.terraform/`, state, plans and variable files out of Git.
 
-## What appears in Afe today
+## Observe the real commands in Afe
 
-Nothing from a local Terraform CLI run: AFE-34 is still pending. Do not expect
-Terraform plan/apply resources or Terraform-specific journey stages in Afe.
-If you later execute Terraform via a connected GitHub Actions workflow, its
-workflow lifecycle can be observed as GitHub activity; that is not Terraform
-resource-level observation. This local sample requires no fake event injection.
+Start Afe, open **Connections → Terraform** and create a connection with
+workspace `afe-demo`, environment `development`, and your GitHub repository
+if you want commit correlation. Save the reporter secret and endpoint shown
+once on that screen. Follow the [reporter setup](../docs/connectors/terraform.md)
+to configure `AFE_TERRAFORM_REPORT_URL` and `AFE_TERRAFORM_SECRET` (or its `_FILE`
+variant) privately. Both the Terraform working directory and secret stay on
+your machine. Only small lifecycle reports leave the runner.
 
-Once AFE-34 defines its supported execution path, connect it and use the same
-plan/apply/change/destroy cycle as a real connector acceptance test.
+From the standalone demo directory, set `REPORTER` to the absolute path of
+`tools/terraform-report.py` in your Afe checkout. Report around each command:
+
+```sh
+REPORTER=/absolute/path/to/afe/tools/terraform-report.py
+RUN_ID=$(python3 -c 'import uuid; print(uuid.uuid4())')
+python3 "$REPORTER" --run-id "$RUN_ID" --operation apply --phase started
+set +e
+terraform -chdir=terraform apply
+TF_EXIT=$?
+set -e
+python3 "$REPORTER" --run-id "$RUN_ID" --operation apply --phase completed --exit-code "$TF_EXIT"
+```
+
+Use a new UUID for each plan/apply/destroy attempt. Set `--operation plan`
+around `terraform -chdir=terraform plan -detailed-exitcode`; exit 2 means
+changes, not failure. Use `--operation destroy` around destruction. Preserve
+the actual exit code immediately after each command; do not replace it with
+the reporter's exit status. Optional `--commit FULL-SHA --repository OWNER/REPO`
+adds runner-reported correlation; the repository must match the connection.
+
+In **Events → Terraform**, expect start/completion pairs for the actual
+commands, with workspace/environment and the reported outcome. Try
+`terraform -chdir=terraform plan -var=port=1` as a real validation failure;
+report its actual nonzero exit code and confirm a failed plan event appears.
+Then destroy normally. Duplicate completion reports with the same run UUID
+must not create another event. With Git metadata, journey events appear in
+the config stage. These reports never claim an application is live in the
+environment matrix or expose resource-level state/plan details.
+
+The connector observes authenticated **runner reports**, not Terraform's
+internal history: commands you do not report are invisible. No state, plan
+contents, outputs or logs are ingested. Connection health becomes observed
+after report processing; idle time cannot establish runner reachability.
 
 ## Troubleshooting
 

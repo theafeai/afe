@@ -18,6 +18,13 @@
 export const ACTION_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){1,3}$/;
 
 export const ACTIONS = {
+  // Terraform CLI runner reports (metadata only; not verified live state).
+  TERRAFORM_PLAN_STARTED: "terraform.plan.started",
+  TERRAFORM_PLAN_COMPLETED: "terraform.plan.completed",
+  TERRAFORM_APPLY_STARTED: "terraform.apply.started",
+  TERRAFORM_APPLY_COMPLETED: "terraform.apply.completed",
+  TERRAFORM_DESTROY_STARTED: "terraform.destroy.started",
+  TERRAFORM_DESTROY_COMPLETED: "terraform.destroy.completed",
   // --- Deployments (GitHub Deployments API, Vercel deployments, generic) ---
   /** A deployment record was created (GitHub `deployment`, Vercel `deployment.created`). */
   DEPLOYMENT_CREATED: "deployment.created",

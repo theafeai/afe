@@ -17,6 +17,7 @@
   "dependencies": {
     "@afe/connector-argocd": "workspace:*",
     "@afe/connector-github": "workspace:*",
+    "@afe/connector-terraform": "workspace:*",
     "@afe/connector-vercel": "workspace:*",
     "@afe/core": "workspace:*",
     "@afe/db": "workspace:*",

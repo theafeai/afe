@@ -10,6 +10,7 @@ import { argocdModule } from "./argocd.ts";
 import { argocdAgentModule } from "./argocd-agent.ts";
 import { githubModule } from "./github.ts";
 import { vercelModule } from "./vercel.ts";
+import { terraformModule } from "./terraform.ts";
 
 /**
  * Server modules enabled by default. Each connector or shared feature
@@ -21,6 +22,7 @@ export const defaultModules: ConnectorModule[] = [
   // In-cluster ArgoCD agent ingest (AFE-28).
   argocdAgentModule,
   vercelModule,
+  terraformModule,
   // Connection health (AFE-13): collects every module's `health` hooks.
   healthModule,
   // Event query API (AFE-14).

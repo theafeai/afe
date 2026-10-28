@@ -57,6 +57,9 @@ importers:
       '@afe/connector-github':
         specifier: workspace:*
         version: link:../../packages/connector-github
+      '@afe/connector-terraform':
+        specifier: workspace:*
+        version: link:../../packages/connector-terraform
       '@afe/connector-vercel':
         specifier: workspace:*
         version: link:../../packages/connector-vercel
@@ -134,6 +137,15 @@ importers:
       '@afe/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/connector-terraform:
+    dependencies:
+      '@afe/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/connector-vercel:
     dependencies:
