@@ -41,6 +41,8 @@ describe("ArgoCD connect", () => {
   it("posts the form, clears the token and shows the read-only check", async () => {
     const posts: unknown[] = [];
     setFetch(async (url, init) => {
+      if (url === "/api/session")
+        return json(200, { principal: { id: "test", roles: ["admin"], kind: "session" } });
       if (init?.method === "POST") {
         posts.push(JSON.parse(String(init.body)));
         return json(201, {
@@ -67,6 +69,7 @@ describe("ArgoCD connect", () => {
     });
     window.history.replaceState(null, "", "/connections/argocd");
     render(<App />);
+    await screen.findByLabelText("Server URL");
     fireEvent.change(screen.getByLabelText("Server URL"), {
       target: { value: "https://argocd.example.com" },
     });
@@ -82,6 +85,8 @@ describe("Vercel project selection", () => {
   it("loads projects and saves the chosen ids", async () => {
     const puts: unknown[] = [];
     setFetch(async (_url, init) => {
+      if (_url === "/api/session")
+        return json(200, { principal: { id: "test", roles: ["admin"], kind: "session" } });
       if (init?.method === "PUT") {
         puts.push(JSON.parse(String(init.body)));
         return json(200, { selection: { mode: "selected", projectIds: ["prj_web"] } });

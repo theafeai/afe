@@ -1,3 +1,4 @@
+import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import type { CanonicalEvent, EventItem, ObservationGap } from "../api/types.ts";
 import {
@@ -174,6 +175,7 @@ export function EventList({
 }
 
 export function Timeline() {
+  const { managed } = useAccess();
   useDocumentTitle("Events");
   const [params, setParams] = useSearchParams();
   const filters = parseFilters(params);
@@ -220,6 +222,13 @@ export function Timeline() {
         filtered ? (
           <Empty title="No events match these filters">
             <p>Widen the time range or clear some filters.</p>
+          </Empty>
+        ) : managed ? (
+          <Empty title="No events available">
+            <p>
+              Open your profile to link assigned tool accounts, or contact your administrator for
+              permissions.
+            </p>
           </Empty>
         ) : connections.data && connections.data.connections.length === 0 ? (
           <Empty title="Nothing recorded yet">

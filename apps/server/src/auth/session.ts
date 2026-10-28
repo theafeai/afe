@@ -21,6 +21,8 @@ export interface SessionPayload {
   /** How the principal authenticated at login (e.g. "token"). */
   via: string;
   name?: string;
+  localUserId?: string;
+  credentialVersion?: number;
   /** Issued at / expires at, epoch milliseconds. */
   iat: number;
   exp: number;
@@ -60,6 +62,9 @@ export class SessionCodec {
       tid: principal.tenantId,
       roles: [...principal.roles],
       via: principal.kind,
+      ...(principal.localUserId
+        ? { localUserId: principal.localUserId, credentialVersion: principal.credentialVersion }
+        : {}),
       ...(principal.name ? { name: principal.name } : {}),
       iat: now,
       exp: now + this.ttlMs,
@@ -118,6 +123,9 @@ export function sessionPrincipal(p: SessionPayload): Principal {
     tenantId: p.tid,
     roles: [...p.roles],
     kind: "session",
+    ...(p.localUserId
+      ? { localUserId: p.localUserId, credentialVersion: p.credentialVersion }
+      : {}),
     ...(p.name ? { name: p.name } : {}),
   };
 }

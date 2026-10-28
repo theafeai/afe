@@ -260,6 +260,7 @@ export interface SessionInfo {
     tenantId: string;
     roles: ("admin" | "viewer")[];
     kind: string;
+    managedUser?: boolean;
     name: string | null;
   };
   csrfToken: string | null;

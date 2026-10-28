@@ -74,6 +74,21 @@ const pages: Record<string, { items: EventItem[]; nextCursor: string | null }> =
 beforeEach(() => {
   requests = [];
   setFetch(async (url) => {
+    if (url === "/api/session")
+      return new Response(
+        JSON.stringify({
+          principal: {
+            id: "test",
+            tenantId: "default",
+            roles: ["admin"],
+            kind: "session",
+            name: null,
+          },
+          csrfToken: null,
+          expiresAt: null,
+        }),
+        { status: 200 },
+      );
     requests.push(url);
     const u = new URL(url, "http://x");
     let body: unknown;
@@ -177,6 +192,21 @@ describe("Timeline", () => {
 
   it("shows an error with retry when the API fails", async () => {
     setFetch(async (url) => {
+      if (url === "/api/session")
+        return new Response(
+          JSON.stringify({
+            principal: {
+              id: "test",
+              tenantId: "default",
+              roles: ["admin"],
+              kind: "session",
+              name: null,
+            },
+            csrfToken: null,
+            expiresAt: null,
+          }),
+          { status: 200 },
+        );
       requests.push(url);
       if (url.startsWith("/api/connections"))
         return new Response('{"connections":[]}', { status: 200 });
@@ -197,9 +227,11 @@ describe("Timeline", () => {
       async (url) =>
         new Response(
           JSON.stringify(
-            url.startsWith("/api/connections")
-              ? { connections: [] }
-              : { items: [], nextCursor: null, snapshotSeq: 0 },
+            url === "/api/session"
+              ? { principal: { id: "test", roles: ["admin"], kind: "session" } }
+              : url.startsWith("/api/connections")
+                ? { connections: [] }
+                : { items: [], nextCursor: null, snapshotSeq: 0 },
           ),
           { status: 200 },
         ),

@@ -10,6 +10,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   DEPLOYMENT_VIEW_ACTIONS,
   EventFilterError,
+  eventAllowed,
   normaliseEventFilter,
   parseEventFilterParams,
   type CanonicalEvent,
@@ -17,6 +18,7 @@ import {
   type TenantResolver,
 } from "@afe/core";
 import { getEvent, getRawPayload, InvalidCursorError, queryEvents } from "@afe/db";
+import { requestEventAccess } from "../auth/permissions.ts";
 import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 
@@ -145,7 +147,11 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
           const q = query(req);
           const page = pageParams(q);
           const filter = parseEventFilterParams(q, PAGE_PARAMS);
-          const result = await queryEvents(ctx.pool, tenantId, { filter, ...page });
+          const result = await queryEvents(ctx.pool, tenantId, {
+            filter,
+            ...page,
+            access: await requestEventAccess(ctx.pool, req, ctx),
+          });
           return {
             items: result.events.map((event) => ({ event, provenance: provenanceOf(event) })),
             nextCursor: result.nextCursor,
@@ -162,7 +168,11 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
           const q = query(req);
           const page = pageParams(q);
           const filter = deploymentsFilter(parseEventFilterParams(q, PAGE_PARAMS));
-          const result = await queryEvents(ctx.pool, tenantId, { filter, ...page });
+          const result = await queryEvents(ctx.pool, tenantId, {
+            filter,
+            ...page,
+            access: await requestEventAccess(ctx.pool, req, ctx),
+          });
           // Service/environment from the tenant's mapping (AFE-19), resolved at read time.
           const placements = ctx.mapping
             ? await ctx.mapping.placements(tenantId, result.events)
@@ -184,23 +194,27 @@ export function createEventsApiModule(options: EventsApiOptions = {}): Connector
         const tenantId = await tenantOf(req);
         if (!UUID.test(req.params.id)) return reply.code(404).send({ error: "not_found" });
         const event = await getEvent(ctx.pool, tenantId, req.params.id);
-        if (!event) return reply.code(404).send({ error: "not_found" });
-        const raw = event.rawPayload
-          ? await getRawPayload(ctx.pool, tenantId, event.rawPayload.id)
-          : null;
+        const access = await requestEventAccess(ctx.pool, req, ctx);
+        if (!event || (access && !eventAllowed(access, event)))
+          return reply.code(404).send({ error: "not_found" });
+        const raw =
+          !req.principal?.localUserId && event.rawPayload
+            ? await getRawPayload(ctx.pool, tenantId, event.rawPayload.id)
+            : null;
         return {
           event,
           provenance: provenanceOf(event),
-          rawPayload: event.rawPayload
-            ? {
-                id: event.rawPayload.id,
-                sha256: event.rawPayload.sha256,
-                contentType: raw?.contentType ?? null,
-                sizeBytes: raw?.sizeBytes ?? null,
-                receivedAt: raw?.receivedAt ?? null,
-                url: `/api/events/${event.id}/raw`,
-              }
-            : null,
+          rawPayload:
+            !req.principal?.localUserId && event.rawPayload
+              ? {
+                  id: event.rawPayload.id,
+                  sha256: event.rawPayload.sha256,
+                  contentType: raw?.contentType ?? null,
+                  sizeBytes: raw?.sizeBytes ?? null,
+                  receivedAt: raw?.receivedAt ?? null,
+                  url: `/api/events/${event.id}/raw`,
+                }
+              : null,
         };
       });
 

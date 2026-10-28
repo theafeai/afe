@@ -105,3 +105,21 @@ Connector credentials are, by design, stored encrypted in the database
 ([rules R2](../security/rules.md#r2--credentials)), not in environment
 variables; you enter them once through Afe and they can be rotated without a
 restart.
+
+## Personal tool account linking
+
+See [user management](../user-management.md) for admin-created users, default-deny
+permissions, and personal account linking. These settings are separate from the
+tenant's collection integrations:
+
+| Variable                                  | Purpose                                          |
+| ----------------------------------------- | ------------------------------------------------ |
+| `AFE_USER_GITHUB_CLIENT_ID`               | GitHub personal OAuth client ID.                 |
+| `AFE_USER_GITHUB_CLIENT_SECRET` / `_FILE` | GitHub personal OAuth client secret.             |
+| `AFE_USER_VERCEL_CLIENT_ID`               | Dedicated Vercel personal integration client ID. |
+| `AFE_USER_VERCEL_CLIENT_SECRET` / `_FILE` | Vercel personal integration secret.              |
+| `AFE_USER_VERCEL_INTEGRATION_SLUG`        | Slug of the personal Vercel integration.         |
+
+Both providers require `AFE_PUBLIC_URL` and Afe's encryption key. Register the
+provider callback at `/api/profile/tools/<provider>/callback`. An unconfigured
+provider has no sign-in button; personal Vercel/ArgoCD tokens remain available.

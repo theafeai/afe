@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import type { ConnectionWithHealth } from "../api/types.ts";
 import {
@@ -26,6 +27,8 @@ const TOOLS = [
 ];
 
 export function ConnectButtons() {
+  const { admin } = useAccess();
+  if (!admin) return null;
   return (
     <div className="connect-buttons">
       {TOOLS.map((t) => (
@@ -200,6 +203,7 @@ function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () 
 }
 
 export function ConnectionDetail({ id }: { id: string }) {
+  const { admin } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.connectionHealth(id, s), [id]);
   const location = useLocation();
   const navigate = useNavigate();
@@ -250,12 +254,12 @@ export function ConnectionDetail({ id }: { id: string }) {
           <Link className="btn" to={`/events?connectionId=${encodeURIComponent(c.id)}`}>
             Events from this connection
           </Link>
-          {c.source === "vercel" && c.status === "active" && (
+          {admin && c.source === "vercel" && c.status === "active" && (
             <Link className="btn" to={`/connections/vercel/${c.id}/projects`}>
               Choose projects
             </Link>
           )}
-          {c.source === "argocd" && (
+          {admin && c.source === "argocd" && (
             <Link className="btn" to="/connections/argocd">
               Test or reconnect
             </Link>

@@ -1,7 +1,10 @@
+import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
+import { UsersPage } from "./pages/Users.tsx";
+import { ProfilePage } from "./pages/Profile.tsx";
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, onUnauthorized } from "./api/client.ts";
+import { api, ApiError, onUnauthorized, request } from "./api/client.ts";
 import type { SessionInfo } from "./api/types.ts";
-import { Empty } from "./components.tsx";
+import { Empty, ErrorBox } from "./components.tsx";
 import {
   ConnectArgoCD,
   ConnectGitHub,
@@ -28,9 +31,17 @@ import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx"
  */
 export function Routes() {
   const { pathname } = useLocation();
+  const { admin, managed } = useAccess();
+  if (pathname === "/users") return <UsersPage />;
+  if (pathname === "/profile") return <ProfilePage />;
+  if (
+    (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname)) ||
+    (managed && /^\/(journeys|drift|settings)(\/|$)/.test(pathname))
+  )
+    return <div className="page">This view is unavailable for this account.</div>;
 
   let m: Record<string, string> | null;
-  if (pathname === "/" || pathname === "") return <EnvironmentMatrix />;
+  if (pathname === "/" || pathname === "") return managed ? <Timeline /> : <EnvironmentMatrix />;
   if (matchPath("/events", pathname)) return <Timeline />;
   if ((m = matchPath("/events/:id", pathname))) return <EventDetailPage key={m.id} id={m.id!} />;
   if (matchPath("/deployments", pathname)) return <Deployments />;
@@ -79,7 +90,19 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       </Link>
       <nav aria-label="Main">
         <ul>
-          {NAV.map((n) => {
+          <li>
+            <Link to="/profile">Profile</Link>
+          </li>
+          {session?.principal.roles.includes("admin") && (
+            <li>
+              <Link to="/users">Users</Link>
+            </li>
+          )}
+          {NAV.filter(
+            (n) =>
+              !session?.principal.managedUser ||
+              ["/events", "/deployments", "/connections"].includes(n.to),
+          ).map((n) => {
             const active = pathname === n.to || pathname.startsWith(`${n.to}/`);
             return (
               <li key={n.to}>
@@ -116,6 +139,8 @@ type AuthState =
   { status: "unknown" } | { status: "anonymous" } | { status: "signed-in"; session: SessionInfo };
 
 function Shell() {
+  const [sessionError, setSessionError] = useState<Error | null>(null);
+  const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [auth, setAuth] = useState<AuthState>({ status: "unknown" });
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -128,15 +153,28 @@ function Shell() {
       .then((session) => {
         // Ignore unexpected bodies (e.g. a proxy page); 401s are handled below.
         if (Array.isArray(session?.principal?.roles)) setAuth({ status: "signed-in", session });
+        else setSessionError(new Error("The server sent an invalid session response."));
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) setAuth({ status: "anonymous" });
+        else if (!(err instanceof DOMException && err.name === "AbortError"))
+          setSessionError(err instanceof Error ? err : new Error("Could not load session."));
       });
     return () => {
       off();
       ctrl.abort();
     };
   }, []);
+
+  useEffect(() => {
+    setProfile(null);
+    if (auth.status !== "signed-in" || !auth.session.principal.managedUser) return;
+    const ctrl = new AbortController();
+    void request<ProfileInfo>("GET", "/api/profile", undefined, ctrl.signal)
+      .then(setProfile)
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [auth]);
 
   // Signed in already: the login URL just continues to the app.
   useEffect(() => {
@@ -163,7 +201,21 @@ function Shell() {
     <>
       <Nav session={auth.status === "signed-in" ? auth.session : null} onLogout={logout} />
       <main id="main" tabIndex={-1}>
-        <Routes />
+        {auth.status === "unknown" ? (
+          sessionError ? (
+            <ErrorBox
+              error={sessionError}
+              onRetry={() => window.location.reload()}
+              title="Could not load your session"
+            />
+          ) : (
+            <p>Loading session…</p>
+          )
+        ) : (
+          <AccessContext.Provider value={{ session: auth.session, profile }}>
+            <Routes />
+          </AccessContext.Provider>
+        )}
       </main>
     </>
   );

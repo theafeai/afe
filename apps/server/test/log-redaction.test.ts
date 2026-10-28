@@ -36,7 +36,7 @@ describe("server logging", () => {
     });
     await app.inject({
       method: "GET",
-      url: "/probe",
+      url: "/probe?code=code-SECRET&state=state-SECRET",
       headers: {
         authorization: "Bearer bearer-SECRET",
         cookie: "session=cookie-SECRET",

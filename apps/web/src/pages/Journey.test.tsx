@@ -419,6 +419,19 @@ describe("journey page and timeline highlight (app)", () => {
     requests = [];
     journeyStatus = 200;
     setFetch(async (url) => {
+      if (url === "/api/session")
+        return new Response(
+          JSON.stringify({
+            principal: {
+              id: "test",
+              tenantId: "default",
+              roles: ["admin"],
+              kind: "session",
+              name: null,
+            },
+          }),
+          { status: 200 },
+        );
       requests.push(url);
       const u = new URL(url, "http://x");
       let body: unknown;
@@ -544,6 +557,19 @@ describe("event detail journey links", () => {
       correlation: { commitShas: ["d".repeat(40)], repositories: ["github.com/acme/shop-deploy"] },
     });
     setFetch(async (url) => {
+      if (url === "/api/session")
+        return new Response(
+          JSON.stringify({
+            principal: {
+              id: "test",
+              tenantId: "default",
+              roles: ["admin"],
+              kind: "session",
+              name: null,
+            },
+          }),
+          { status: 200 },
+        );
       const u = new URL(url, "http://x");
       let body: unknown;
       if (u.pathname === `/api/events/${id(4)}`) body = { ...item, rawPayload: null };

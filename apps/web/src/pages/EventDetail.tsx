@@ -1,3 +1,4 @@
+import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import type { ActorRef, Correlation } from "@afe/core/types";
 import {
@@ -47,6 +48,7 @@ const CORRELATION_PARAMS: Partial<Record<keyof Correlation, string>> = {
 };
 
 export function EventDetailPage({ id }: { id: string }) {
+  const { managed } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.event(id, s), [id]);
   useDocumentTitle(data ? data.event.action : "Event");
   if (loading) return <Loading label="Loading event…" />;
@@ -240,7 +242,7 @@ export function EventDetailPage({ id }: { id: string }) {
         )}
       </section>
 
-      <JourneyLinks event={e} />
+      {!managed && <JourneyLinks event={e} />}
       {subject && <ContainmentPanel repository={subject.repository} commit={subject.commit} />}
 
       <section className="card">
