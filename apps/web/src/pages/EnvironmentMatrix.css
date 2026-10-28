@@ -1,39 +1,5 @@
-/* Environment matrix (AFE-24). Shared tokens live in styles.css; only the
-   matrix's own colours (confidence, placement kind) are defined here. */
-:root {
-  --conf-certain: #17703a;
-  --conf-certain-bg: #e6f4ea;
-  --conf-strong: #1f5fbf;
-  --conf-strong-bg: #e5eefc;
-  --conf-probable: #7a5600;
-  --conf-probable-bg: #fff4dc;
-  --conf-weak: #b3261e;
-  --conf-weak-bg: #fbe9e7;
-  --conf-ambiguous: #8a3ea8;
-  --conf-ambiguous-bg: #f6e9fb;
-  --conf-unknown: #4d4d47;
-  --conf-unknown-bg: #ececea;
-  --env-selected: #e8edff;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --conf-certain: #7fd49a;
-    --conf-certain-bg: #16301f;
-    --conf-strong: #8fb8ff;
-    --conf-strong-bg: #172742;
-    --conf-probable: #f3c46b;
-    --conf-probable-bg: #33270f;
-    --conf-weak: #ff9a8f;
-    --conf-weak-bg: #3a1714;
-    --conf-ambiguous: #e0a6ff;
-    --conf-ambiguous-bg: #33203d;
-    --conf-unknown: #c8c8c0;
-    --conf-unknown-bg: #2e2e2a;
-    --env-selected: #1d2647;
-  }
-}
-
+/* Environment matrix (AFE-24). All colours, including the confidence scale,
+   are tokens in styles.css (ADR 0009). */
 .page.env-page {
   max-width: 1600px;
 }
@@ -48,54 +14,19 @@
 }
 
 /* Badges */
-.badge.conf-certain {
-  color: var(--conf-certain);
-  background: var(--conf-certain-bg);
-  border-color: var(--conf-certain);
-}
-.badge.conf-strong {
-  color: var(--conf-strong);
-  background: var(--conf-strong-bg);
-  border-color: var(--conf-strong);
-}
-.badge.conf-probable {
-  color: var(--conf-probable);
-  background: var(--conf-probable-bg);
-  border-color: var(--conf-probable);
-}
-.badge.conf-weak {
-  color: var(--conf-weak);
-  background: var(--conf-weak-bg);
-  border-color: var(--conf-weak);
-  border-style: dashed;
-}
-.badge.conf-ambiguous {
-  color: var(--conf-ambiguous);
-  background: var(--conf-ambiguous-bg);
-  border-color: var(--conf-ambiguous);
-  border-style: dashed;
-}
-.badge.conf-unknown {
-  color: var(--conf-unknown);
-  background: var(--conf-unknown-bg);
-  border-color: var(--conf-unknown);
-  border-style: dashed;
-}
 .badge.kind {
-  font-weight: 500;
   background: transparent;
 }
 .badge.kind-rollback,
 .badge.kind-manual {
   color: var(--warn);
   border-color: var(--warn-border);
-  background: var(--warn-bg);
 }
 .badge.env-inconsistent,
 .badge.env-current {
   color: var(--accent);
-  border-color: var(--accent);
-  background: transparent;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--accent-soft);
 }
 
 /* Page furniture */
@@ -117,7 +48,8 @@
 }
 .env-legend summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 550;
+  font-size: var(--fs-md);
 }
 .env-legend .kv {
   margin-top: 0.6rem;
@@ -146,8 +78,8 @@
   }
   .env-layout-open .env-panel {
     position: sticky;
-    top: 3.6rem;
-    max-height: calc(100vh - 4.5rem);
+    top: calc(var(--sticky-top) + 1rem);
+    max-height: calc(100vh - var(--sticky-top) - 2rem);
     overflow-y: auto;
   }
 }
@@ -159,13 +91,14 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+  box-shadow: var(--shadow-xs);
   min-width: 0;
 }
 .env-matrix {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
 }
 .env-caption {
   position: absolute;
@@ -188,14 +121,14 @@
   border-bottom: none;
 }
 .env-matrix thead th {
-  background: var(--surface-2);
-  padding: 0.5rem 0.7rem;
-  font-size: 0.85rem;
+  background: var(--surface);
+  padding: 0.6rem 0.8rem;
+  font-size: var(--fs-md);
   min-width: 13rem;
 }
 .env-col-name,
 .env-row-name {
-  font-weight: 700;
+  font-weight: 600;
 }
 .env-matrix .env-corner,
 .env-matrix .env-rowhead {
@@ -209,13 +142,14 @@
 .env-matrix .env-corner {
   z-index: 2;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 .env-rowhead {
   background: var(--surface);
-  padding: 0.6rem 0.7rem;
+  padding: 0.75rem 0.8rem;
   overflow-wrap: anywhere;
 }
 .env-unmapped-hint {
@@ -225,20 +159,12 @@
   margin-top: 0.2rem;
 }
 .env-row-unmapped .env-rowhead,
-.env-matrix thead th.env-unmapped {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 8px,
-    var(--surface-2) 8px,
-    var(--surface-2) 16px
-  );
-}
+.env-matrix thead th.env-unmapped,
 .env-row-unmapped td {
-  background: color-mix(in srgb, var(--surface-2) 45%, var(--surface));
+  background: var(--surface-2);
 }
 .env-empty {
-  color: var(--muted);
+  color: var(--faint);
   padding: 0.6rem 0.7rem;
   text-align: center !important;
   vertical-align: middle !important;
@@ -247,21 +173,21 @@
   outline-offset: -3px;
 }
 
-/* One cell */
+/* One cell: the live identifier leads; confidence is the badge's glyph. */
 .env-cell {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
   width: 100%;
   min-height: 100%;
-  padding: 0.6rem 0.7rem;
+  padding: 0.75rem 0.8rem;
   border: none;
-  border-left: 4px solid transparent;
   background: transparent;
-  color: inherit;
+  color: var(--text-2);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur) var(--ease);
 }
 .env-cell:hover {
   background: var(--surface-2);
@@ -272,9 +198,14 @@
 .env-cell > span {
   display: block;
 }
+.env-cell-what {
+  color: var(--muted);
+}
 .env-cell-what code {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
 }
 .env-cell .env-cell-badges,
 .env-cell .env-cell-flags {
@@ -282,39 +213,12 @@
   flex-wrap: wrap;
   gap: 0.25rem;
 }
-.env-cell-certain {
-  border-left-color: var(--conf-certain);
-}
-.env-cell-strong {
-  border-left-color: var(--conf-strong);
-}
-.env-cell-probable {
-  border-left-color: var(--conf-probable);
-}
-.env-cell-weak {
-  border-left-color: var(--conf-weak);
-  border-left-style: dashed;
-}
-.env-cell-ambiguous {
-  border-left-color: var(--conf-ambiguous);
-  border-left-style: dashed;
-}
-.env-cell-unknown {
-  border-left-color: var(--conf-unknown);
-  border-left-style: dashed;
-}
 .env-cell-gap {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--warn-bg),
-    var(--warn-bg) 6px,
-    transparent 6px,
-    transparent 14px
-  );
+  background: color-mix(in srgb, var(--warn-bg) 45%, transparent);
 }
 .env-cell-note {
   color: var(--muted);
-  font-style: italic;
+  font-size: var(--fs-sm);
   overflow-wrap: anywhere;
 }
 .env-cell-target {
@@ -332,7 +236,7 @@
   background: var(--env-selected);
 }
 .env-selected > .env-cell {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent-solid);
 }
 
 /* History panel */
@@ -383,8 +287,9 @@
   border: 2px solid var(--muted);
 }
 .env-step-current::before {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 .env-step-head {
   display: flex;

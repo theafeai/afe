@@ -1,10 +1,11 @@
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
 import { UsersPage } from "./pages/Users.tsx";
 import { ProfilePage } from "./pages/Profile.tsx";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, onUnauthorized, request } from "./api/client.ts";
 import type { SessionInfo } from "./api/types.ts";
 import { Empty, ErrorBox } from "./components.tsx";
+import { BrandMark, icons } from "./icons.tsx";
 import {
   ConnectArgoCD,
   ConnectGitHub,
@@ -67,54 +68,104 @@ export function Routes() {
 }
 
 const NAV = [
-  { to: "/", label: "Environments" },
-  { to: "/events", label: "Events" },
-  { to: "/deployments", label: "Deployments" },
-  { to: "/drift", label: "Drift" },
-  { to: "/connections", label: "Connections" },
-  { to: "/settings/mapping", label: "Mapping" },
-];
+  { to: "/", label: "Environments", icon: icons.environments, group: "observe" },
+  { to: "/events", label: "Events", icon: icons.events, group: "observe" },
+  { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },
+  { to: "/drift", label: "Drift", icon: icons.drift, group: "observe" },
+  { to: "/connections", label: "Connections", icon: icons.connections, group: "setup" },
+  { to: "/settings/mapping", label: "Mapping", icon: icons.mapping, group: "setup" },
+] as const;
+
+const NAV_GROUPS = [
+  { id: "observe", label: "Observe" },
+  { id: "setup", label: "Setup" },
+] as const;
+
+function NavLink({ to, label, icon }: { to: string; label: string; icon: ReactNode }) {
+  const { pathname } = useLocation();
+  const active = pathname === to || pathname.startsWith(`${to}/`);
+  return (
+    <li>
+      <Link to={to} aria-current={active ? "page" : undefined}>
+        {icon}
+        {label}
+      </Link>
+    </li>
+  );
+}
 
 function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () => void }) {
   const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [pathname]);
+  const admin = session?.principal.roles.includes("admin") ?? false;
+  const name = session?.principal.name ?? (admin ? "Administrator" : "Viewer");
   return (
-    <header className="site-header">
+    <header className={open ? "sidebar open" : "sidebar"}>
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <Link to="/" className="brand" aria-label="Afe home">
-        Afe
-      </Link>
-      <nav aria-label="Main">
-        <ul>
-          <li>
-            <Link to="/profile">Profile</Link>
-          </li>
-          {session?.principal.roles.includes("admin") && (
-            <li>
-              <Link to="/users">Users</Link>
-            </li>
-          )}
-          {NAV.map((n) => {
-            const active = pathname === n.to || pathname.startsWith(`${n.to}/`);
-            return (
-              <li key={n.to}>
-                <Link to={n.to} aria-current={active ? "page" : undefined}>
-                  {n.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      <div className="sidebar-top">
+        <Link to="/" className="brand" aria-label="Afe home">
+          <BrandMark />
+          afe
+        </Link>
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon nav-toggle"
+          aria-expanded={open}
+          aria-controls="main-nav"
+          aria-label="Menu"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {icons.menu}
+        </button>
+      </div>
+      <nav aria-label="Main" id="main-nav">
+        {NAV_GROUPS.map((g) => {
+          const groupItems = NAV.filter((n) => n.group === g.id);
+          if (groupItems.length === 0) return null;
+          return (
+            <div className="nav-group" key={g.id}>
+              <p className="nav-heading" id={`nav-${g.id}`}>
+                {g.label}
+              </p>
+              <ul aria-labelledby={`nav-${g.id}`}>
+                {groupItems.map((n) => (
+                  <NavLink key={n.to} {...n} />
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        <div className="nav-group">
+          <p className="nav-heading" id="nav-account">
+            Account
+          </p>
+          <ul aria-labelledby="nav-account">
+            <NavLink to="/profile" label="Profile" icon={icons.profile} />
+            {admin && <NavLink to="/users" label="Users" icon={icons.users} />}
+          </ul>
+        </div>
       </nav>
       {session && (
         <div className="session">
-          <span className="muted">
-            {session.principal.roles.includes("admin") ? "Admin" : "Viewer (read-only)"}
+          <span className="avatar" aria-hidden="true">
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="session-who">
+            <span className="session-name">{name}</span>
+            <span className="session-role">{admin ? "Admin" : "Viewer (read-only)"}</span>
           </span>
           {session.principal.kind === "session" && (
-            <button type="button" className="btn" onClick={onLogout}>
-              Sign out
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              onClick={onLogout}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              {icons.signOut}
             </button>
           )}
         </div>
@@ -191,7 +242,7 @@ function Shell() {
     );
   }
   return (
-    <>
+    <div className="app">
       <Nav session={auth.status === "signed-in" ? auth.session : null} onLogout={logout} />
       <main id="main" tabIndex={-1}>
         {auth.status === "unknown" ? (
@@ -202,7 +253,7 @@ function Shell() {
               title="Could not load your session"
             />
           ) : (
-            <p>Loading session…</p>
+            <p className="state shell-state">Loading session…</p>
           )
         ) : (
           <AccessContext.Provider value={{ session: auth.session, profile }}>
@@ -210,7 +261,7 @@ function Shell() {
           </AccessContext.Provider>
         )}
       </main>
-    </>
+    </div>
   );
 }
 

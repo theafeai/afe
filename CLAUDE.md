@@ -14,6 +14,8 @@ Read `docs/decisions/` first (ADRs are binding). Key points:
   add tamper-evidence or "paid feature" placeholders. Extension seams: `EventSink`,
   `RetentionPolicy` (`createAfe({ sink, retentionPolicy })`).
 - Never log credentials, tokens, webhook secrets or raw Authorization headers.
+- Web UI: follow ADR 0009. Use the tokens in `apps/web/src/styles.css`, with no literal colours in
+  page CSS, and check light and dark themes.
 - Tests: vitest, files `*.test.ts` under `src/` or `test/`. DB tests use
   `createTestPool()` from `@afe/db/testing` (resets the schema; needs Postgres at
   `TEST_DATABASE_URL`, default `postgres://postgres:postgres@localhost:5432/afe_test`).

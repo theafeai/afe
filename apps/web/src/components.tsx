@@ -184,27 +184,61 @@ export function gapReason(reason: string | null | undefined): string {
   return reason ? (GAP_REASON[reason] ?? humanize(reason)) : "unknown reason";
 }
 
-/** Banners for connections that currently cannot be observed. Never hidden. */
+/**
+ * One panel for connections that currently cannot be observed: a single gap
+ * reads as a sentence, several as a compact list. Never hidden.
+ */
 export function GapBanners({ connections }: { connections: ConnectionWithHealth[] }) {
   const open = connections.filter((c) => c.health.openGap);
   if (open.length === 0) return null;
-  return (
-    <section className="gap-banners" aria-label="Open observation gaps">
-      {open.map((c) => (
-        <div key={c.id} className="callout callout-gap" role="status">
+  const since = (c: ConnectionWithHealth) => (
+    <time dateTime={c.health.openGap!.startedAt} title={c.health.openGap!.startedAt}>
+      {formatDateTime(c.health.openGap!.startedAt)}
+    </time>
+  );
+  if (open.length === 1) {
+    const c = open[0]!;
+    return (
+      <section className="gap-banners" aria-label="Open observation gaps">
+        <div className="callout callout-gap" role="status">
           <strong>
             Data may be missing from {toolLabel(c.source)} “{c.name}”
           </strong>{" "}
-          — Afe has not been able to observe it since{" "}
-          <time dateTime={c.health.openGap!.startedAt} title={c.health.openGap!.startedAt}>
-            {formatDateTime(c.health.openGap!.startedAt)}
-          </time>{" "}
-          ({formatRelative(c.health.openGap!.startedAt)}; {gapReason(c.health.openGap!.reason)}).
+          — Afe has not been able to observe it since {since(c)} (
+          {formatRelative(c.health.openGap!.startedAt)}; {gapReason(c.health.openGap!.reason)}).
           Events from that period will be backfilled when the connection recovers.{" "}
           <Link to={`/connections/${c.id}`}>Connection details</Link>
           {c.alert && <span className="alert-tag"> · Alert open</span>}
         </div>
-      ))}
+      </section>
+    );
+  }
+  return (
+    <section className="gap-banners" aria-label="Open observation gaps">
+      <div className="callout callout-gap" role="status">
+        <p className="gap-head">
+          <strong>Data may be missing from {open.length} connections</strong> — Afe cannot observe
+          them right now. Events from those periods will be backfilled when each connection
+          recovers.
+        </p>
+        <ul className="gap-list">
+          {open.map((c) => (
+            <li key={c.id}>
+              <span className="gap-who">
+                <ToolBadge source={c.source} />
+                <span className="sr-only">Data may be missing from {toolLabel(c.source)}</span>
+                <strong>“{c.name}”</strong>
+              </span>
+              <span className="gap-why">
+                {gapReason(c.health.openGap!.reason)} · since {since(c)} (
+                {formatRelative(c.health.openGap!.startedAt)})
+                {c.alert && <span className="alert-tag"> · Alert open</span>}
+              </span>
+              <Link to={`/connections/${c.id}`}>Details</Link>
+            </li>
+          ))}
+        </ul>
+      </div>
     </section>
   );
 }
