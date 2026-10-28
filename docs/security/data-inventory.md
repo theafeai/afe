@@ -7,6 +7,17 @@ Afe answers "who deployed what, to where, and when" for the recent past. It
 stores what is needed to answer that, deliberately nothing more, and only for
 a limited time (see "Retention and deletion").
 
+## Transient GitHub workflow reads (AFE-52)
+
+The workflow progress viewer holds sanitized run/job/step names, status, timing
+and identifiers in a bounded five-second server memory cache (at most 200
+snapshots). Completed job log text is proxied on demand in memory, at most 2 MiB
+per request, and rendered as inert text. Log output and signed storage URLs are
+never persisted or written to server logs; log text is not cached across
+requests. API responses are `no-store`, and each request checks current tenant
+and per-user resource access. GitHub remains the source of log retention and
+secret masking. See [GitHub connector](../connectors/github.md#workflow-progress-and-job-logs-afe-52).
+
 ## What Afe stores
 
 | Data                                     | Examples                                                                                                                                                                                                                             | Table(s)                                              | Sensitivity                          |

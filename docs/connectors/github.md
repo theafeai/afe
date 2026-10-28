@@ -749,6 +749,40 @@ then mint (or reuse) an installation token. `404` → `revoked`, suspended →
 [Reconciliation](#first-install-backfill-and-gaps). Polling reports `reportSuccess`
 (`via: "poll"` / `"backfill"`) and `reportFailure` as described there.
 
+## Workflow progress and job logs (AFE-52)
+
+GitHub workflow events and deployments with an exact linked run/attempt show a
+progress panel on the event detail page. Afe reads the attempt's jobs and steps
+every five seconds while the page is visible and the workflow is active. Jobs
+and matrix executions remain separate; pending steps appear when GitHub reports
+them. Very short transitions can happen between refreshes. Users can pause or
+manually refresh progress.
+
+Once the workflow attempt completes, users can open each job's plain-text logs,
+whether the workflow succeeded, failed or was cancelled. These are completed-job
+logs, not live command output. Logs may take a short time to become available;
+the viewer retries temporary failures a limited number of times and provides a
+manual retry and source link. Expired/deleted/inaccessible logs are reported.
+No workflow edits, helper action, CLI installation or custom runner is required.
+The existing `actions: read` App permission covers these reads.
+
+Metadata snapshots are shared for five seconds, keyed by tenant, connection,
+repository, run and attempt, with at most 200 entries. Each request rechecks the
+event's current per-user source/custom permissions and active selected connection
+before using the cache. Per server, at most eight progress fetches and four log
+downloads run concurrently. Progress reads stop after five pages (500 jobs), with
+an explicit partial-list notice. GitHub rate limits and retry deadlines are
+honoured; the UI backs off on transient errors and stops on access denial.
+
+Log text is fetched on demand and is not stored in PostgreSQL, cached across
+requests, or written to server logs. Downloads have a 15-second deadline and
+2 MiB viewing limit per job; larger logs remain available on GitHub. The App
+authenticates only the initial API request. Its signed storage redirect is kept
+server-side, restricted to HTTPS Actions/Azure Blob storage hosts, checked with
+public-address DNS policy at validation and connection time, and fetched without
+credentials or further redirects. Plain-text job downloads avoid workflow ZIP
+archives and archive extraction. All responses use `Cache-Control: no-store`.
+
 ## References
 
 - https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app

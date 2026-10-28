@@ -238,6 +238,8 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
           "/api/events",
           "/api/deployments",
           "/api/events/:id",
+          "/api/events/:id/github-run",
+          "/api/events/:id/github-run/jobs/:jobId/log",
           "/api/connections",
           "/api/connections/:id/health",
           "/api/environments/state",

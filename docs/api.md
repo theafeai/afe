@@ -744,6 +744,33 @@ select a tenant; built-in local recovery is disabled for custom auth/tenant
 providers. GET never consumes a link. SMTP-disabled installations retain manual
 provisioning and return 503 for email actions. See [email setup](self-hosting/email.md).
 
+## GitHub workflow progress and completed logs
+
+Both routes require viewer access and current per-user permission to read the
+event's primary GitHub repository/connection. Tenant comes from authentication.
+The event must include an exact workflow run and attempt; Afe never guesses a
+workflow from a SHA. Responses are `no-store`.
+
+- `GET /api/events/:id/github-run`: `{run:{id,attempt,name,status,conclusion,url},
+jobs:[{id,name,status,conclusion,startedAt,completedAt,steps:[{number,name,status,
+conclusion,startedAt,completedAt}]}],partial,checkedAt,nextPollMs}`. `nextPollMs`
+  is 5000 while active, null after completion. At most 500 jobs are returned;
+  `partial` reports incomplete results. Metadata is cached for five seconds
+  after current authorization checks.
+- `GET /api/events/:id/github-run/jobs/:jobId/log`: `{jobId,attempt,text}`.
+  Available after the exact workflow attempt completes; a job from another
+  run/attempt is rejected. Both successful and failed workflows are supported.
+  Log text is fetched from GitHub on demand with a 2 MiB limit and is not stored.
+  Signed upstream URLs and credentials are never returned.
+
+Errors include 404 for unauthorized/missing events, unmatched jobs or missing
+source resources/logs; 409 for inactive connections or `logs_pending`; 403 for
+missing GitHub permission; 429 for rate limits/concurrency; 413 for
+`logs_too_large`; and 502 for upstream/download failures. A GitHub rate-limit
+response includes `retryAfterMs` and `Retry-After`. Logs may be temporarily
+unavailable after completion or permanently unavailable after expiry/deletion.
+No custom runner, workflow changes or CLI subprocess is involved.
+
 ## Personal ArgoCD OIDC
 
 - `GET /api/connections/argocd/:id/oidc` (admin): non-secret OIDC configuration,

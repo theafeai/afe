@@ -53,6 +53,8 @@ export interface GitHubRequest {
    * https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#use-conditional-requests-if-appropriate
    */
   ifNoneMatch?: string;
+  /** Return a job-log download redirect without following it or exposing its body. */
+  expectLogRedirect?: boolean;
 }
 
 export interface GitHubResponse<T> {
@@ -184,6 +186,10 @@ export class GitHubHttp {
         throw new GitHubNetworkError(`GitHub request ${req.method} ${pathOf(url)} ${kind}`);
       }
       this.#recordRate(bucket, res.headers);
+      if (req.expectLogRedirect && res.status === 302) {
+        await res.body?.cancel().catch(() => {});
+        return { status: res.status, data: null as T, headers: res.headers };
+      }
       if (RETRYABLE_STATUS.has(res.status) && attempt < this.#maxRetries) {
         await res.body?.cancel().catch(() => {});
         await this.#sleep(500 * 2 ** attempt);
