@@ -48,3 +48,7 @@ weight mark what needs attention (gaps, drift, weak confidence).
   a token first.
 - Visual changes are reviewed with light and dark screenshots of the
   affected pages.
+- `docs/design-system.md` is the working reference (tokens, components,
+  status language, patterns, checklist), and
+  `apps/web/src/design-system.test.ts` enforces its mechanical rules in
+  `pnpm test`. `AGENTS.md` points every coding agent at both.
