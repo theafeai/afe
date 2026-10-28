@@ -8,6 +8,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@afe/core": "workspace:*"
+    "@afe/core": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
   }
 }

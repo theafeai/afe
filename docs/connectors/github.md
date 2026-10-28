@@ -9,6 +9,11 @@ Afe connects to GitHub as a **GitHub App** with read-only permissions. Each App
 installation (one organization or user account) is one Afe connection
 (`connections.source = "github"`, `external_id` = installation id, `name` = account login).
 
+The following permissions describe the **observation App**. Opt-in personal
+[GitHub delivery operations](../github-actions.md) use separate user credentials,
+exact action grants and the source's write/reviewer rules; do not widen the
+observation installation to enable them.
+
 ## Permissions
 
 All permissions are repository permissions with `read` access. Afe never asks
@@ -30,7 +35,7 @@ Not requested, by design:
 | `contents`      | Would allow reading source code. Commit SHA, ref, actor and trigger of every run and deployment are already on the `workflow_run` and `deployment` payloads, so `push` webhooks are not needed. An operator **may** grant `contents: read` to also get `push`/`create`/`delete`/`release` events and [commit containment](../containment.md) (compare API); Afe still never downloads file contents. |
 | `pull_requests` | Pull requests that triggered runs are listed on `workflow_run.pull_requests`. Optional, for `pull_request` events (`pull_request.merged`).                                                                                                                                                                                                                                                           |
 | `checks`        | `workflow_run`/`workflow_job` cover GitHub Actions; third-party CI via checks is out of scope for now.                                                                                                                                                                                                                                                                                               |
-| anything write  | Afe never changes anything in GitHub. It is not a deployment protection rule (that would need `deployments: write`).                                                                                                                                                                                                                                                                                 |
+| anything write  | The observation App never changes anything in GitHub; opt-in personal action routes are separate (ADR 0011). It is not a deployment protection rule (that would need `deployments: write`).                                                                                                                                                                                                          |
 
 ### Permission check
 

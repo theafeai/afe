@@ -1,6 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
-import { TOOL_PERMISSION_MODES, type ToolPolicy } from "@afe/core";
+import {
+  GITHUB_OPERATION_NAMES,
+  TOOL_PERMISSION_MODES,
+  type GitHubOperation,
+  type ToolPolicy,
+} from "@afe/core";
 import {
   createLocalUser,
   getLocalUser,
@@ -125,13 +130,18 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
             typeof g.resource !== "string" ||
             g.resource.length > 512 ||
             !/^(connection|repository|project|application):.+$/.test(g.resource) ||
-            g.action !== "read",
+            (g.action !== "read" &&
+              !(
+                req.params.tool === "github" &&
+                /^repository:[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(g.resource) &&
+                GITHUB_OPERATION_NAMES.includes(g.action as GitHubOperation)
+              )),
         )
       )
         return reply.code(400).send({
           error: "invalid_policy",
           message:
-            "Use read grants with connection:, repository:, project: or application: resource identifiers.",
+            "Use read grants for resource identifiers; GitHub run actions require an exact lowercase repository:owner/name resource.",
         });
       await setUserToolPolicy(pool, tid, req.params.id, req.params.tool, p);
       return { ok: true };

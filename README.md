@@ -6,7 +6,7 @@ Afe watches every way a deployment can happen in your delivery tools, and who
 caused it, and shows it in one timeline. It answers "who deployed what, to where,
 and when?" for the recent past, and tells you when it could not see a source.
 
-- **Read-only** access to every connected tool.
+- **Read-only observation** of connected tools, with [opt-in GitHub delivery operations](docs/github-actions.md).
 - **Complete:** webhooks for speed, plus reconciliation polling so missed events
   are found and flagged; outages are recorded as observation gaps, not silence.
 - **Recent, not forever:** events are kept for a retention window

@@ -1,3 +1,4 @@
+import { GitHubRunControls } from "./GitHubRunControls.tsx";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import type { ActorRef, Correlation } from "@afe/core/types";
@@ -245,6 +246,18 @@ export function EventDetailPage({ id }: { id: string }) {
         )}
       </section>
 
+      {e.source === "github" && e.target.type === "workflow_run" && (
+        <>
+          <p>
+            <Link
+              to={`/github?${new URLSearchParams({ connectionId: e.connectionId ?? "", repository: e.target.repository ?? "" })}`}
+            >
+              Open full GitHub Actions workspace
+            </Link>
+          </p>
+          <GitHubRunControls key={e.id} eventId={e.id} />
+        </>
+      )}
       <JourneyLinks event={e} />
       {!managed && subject && (
         <ContainmentPanel repository={subject.repository} commit={subject.commit} />

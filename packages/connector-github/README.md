@@ -15,3 +15,15 @@ permission. The client lists an exact run attempt's jobs/steps, verifies job
 identity, and obtains the job's log redirect with GET requests. Server wiring
 validates/fetches that redirect without forwarding credentials. No additional
 permissions, workflow action or runner changes are needed.
+
+## Opt-in delivery operations
+
+AFE-57 adds a separate server operations module and a typed provider contract
+for workflows, runs/jobs, reviews, deployments, environments, caches and
+artifact/archive transfers. It uses the user's encrypted personal credential,
+exact Afe grants and current source permissions; the App client/manifest remain
+read-only. Fine-grained tokens can restrict repositories and permissions. OAuth
+requests `workflow` only with explicit consent for editing workflow files. The
+narrow workflow-source and archive exceptions, all action permissions and
+provider boundaries are documented in [setup and coverage](../../docs/github-actions.md)
+and [ADR 0011](../../docs/decisions/0011-opt-in-delivery-actions.md).
