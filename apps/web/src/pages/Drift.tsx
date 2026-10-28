@@ -1,3 +1,4 @@
+import { ScopeNotice } from "../access.tsx";
 /**
  * Drift findings (AFE-26): placements whose content does not trace to Git
  * (manual overrides, untracked deploys, unknown images, ambiguous
@@ -160,6 +161,7 @@ export function DriftPage() {
           </p>
         )}
       </header>
+      <ScopeNotice drift />
       <Filters
         filters={filters}
         mapping={mapping.data}

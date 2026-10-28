@@ -79,3 +79,61 @@ it("profile shows assigned source login and keeps unassigned tools hidden", asyn
   expect(screen.queryByText("vercel")).toBeNull();
   expect(screen.queryByText("argocd")).toBeNull();
 });
+it("managed mapping is read-only and does not request tenant-wide rule previews", async () => {
+  const requested: string[] = [];
+  setFetch(async (url) => {
+    requested.push(url);
+    if (url === "/api/session")
+      return json({
+        principal: { id: "local", roles: ["viewer"], kind: "session", managedUser: true },
+      });
+    if (url === "/api/profile") return json({ managedUser: true, tools: [] });
+    if (url === "/api/mapping")
+      return json({
+        readOnly: true,
+        services: [{ id: "web", name: "Visible Web" }],
+        environments: [{ id: "prod", name: "Production" }],
+        rules: [],
+        builtinRules: [],
+      });
+    throw new Error("Unexpected request");
+  });
+  window.history.replaceState(null, "", "/settings/mapping");
+  render(<App />);
+  expect(await screen.findByText("Visible Web")).toBeTruthy();
+  expect(screen.getByText("Production")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Add service/ })).toBeNull();
+  expect(requested).not.toContain("/api/mapping/preview");
+});
+it("managed environment landing page shows an access empty state without hidden-tool setup links", async () => {
+  setFetch(async (url) => {
+    if (url === "/api/session")
+      return json({
+        principal: { id: "local", roles: ["viewer"], kind: "session", managedUser: true },
+      });
+    if (url === "/api/profile") return json({ managedUser: true, tools: [] });
+    if (url === "/api/connections") return json({ connections: [] });
+    if (url === "/api/environments/state")
+      return json({
+        services: [],
+        environments: [],
+        cells: [],
+        window: {
+          from: "2026-10-01T00:00:00Z",
+          to: "2026-10-28T00:00:00Z",
+          events: 0,
+          asOfSeq: 0,
+          stale: false,
+          truncated: false,
+        },
+      });
+    if (url === "/api/drift/summary") return json({ open: 0, cells: [], targets: [] });
+    throw new Error("Unexpected request");
+  });
+  window.history.replaceState(null, "", "/");
+  render(<App />);
+  expect(await screen.findByText("No permitted deployments")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "GitHub" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "ArgoCD" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Vercel" })).toBeNull();
+});

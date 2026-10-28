@@ -22,6 +22,7 @@ import {
   type DriftFindingRecord,
   type ListDriftFindingsOptions,
 } from "@afe/db";
+import { requestEventAccess } from "../auth/permissions.ts";
 import { requestTenant } from "../auth/index.ts";
 import { UNMAPPED } from "../correlation/views.ts";
 import type { DriftService, EvaluationSummary } from "./service.ts";
@@ -206,7 +207,9 @@ export function registerDriftRoutes(app: FastifyInstance, service: DriftService)
       const before = cursorRaw ? decodeCursor(cursorRaw) : undefined;
 
       const evaluation = await fresh(tenantId);
+      const access = await requestEventAccess(service.pool, req, service.ctx);
       const filter: ListDriftFindingsOptions = {
+        access,
         ...(types ? { types } : {}),
         ...(severities ? { severities } : {}),
         ...(svc !== undefined ? { service: dim(svc) ?? null } : {}),
@@ -244,7 +247,8 @@ export function registerDriftRoutes(app: FastifyInstance, service: DriftService)
       const { id } = req.params as { id: string };
       if (!UUID.test(id)) throw new NotFound();
       await fresh(tenantId);
-      const f = await getDriftFinding(service.pool, tenantId, id);
+      const access = await requestEventAccess(service.pool, req, service.ctx);
+      const f = await getDriftFinding(service.pool, tenantId, id, access);
       if (!f) throw new NotFound();
       const ids = [
         ...new Set([
@@ -293,7 +297,8 @@ export function registerDriftRoutes(app: FastifyInstance, service: DriftService)
       const tenantId = requestTenant(req);
       query(req, []);
       const evaluation = await fresh(tenantId);
-      const counts = await countDriftFindings(service.pool, tenantId, { status: "open" });
+      const access = await requestEventAccess(service.pool, req, service.ctx);
+      const counts = await countDriftFindings(service.pool, tenantId, { status: "open", access });
       type Agg = { open: number; maxSeverity: string | null; byType: Record<string, number> };
       const cells = new Map<string, Agg & { service: string; environment: string }>();
       const targets = new Map<string, Agg & { targetKey: string }>();

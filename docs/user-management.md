@@ -43,10 +43,23 @@ ArgoCD grants also bind the application to its specific Afe connection.
 A source grant to a repository/project/application does not expose whole
 connection health, configuration or other resources on that connection.
 
-Managed users cannot download raw evidence or access tenant-wide environment,
-journey, drift or mapping views. Those views combine evidence outside their
-resource grants. Their navigation instead opens the permission-filtered event
-timeline. The standalone open-source application does not provide audit exports.
+Managed users can use environment, journey, drift and read-only mapping views.
+Graphs are built only from authorized events, independently of the tenant-wide
+cache, before computing links, placement histories, dimensions and counts.
+Related activity outside their permissions is omitted; the UI labels that scope.
+Permission changes and upstream revocation are rechecked on the next read.
+
+Drift findings are visible only if the user can read the target source and every
+supporting event, including opening, latest and resolving events. Findings with
+omitted or purged evidence are hidden because their full authorization cannot
+be verified. Counts and pagination apply that same rule. Restricted reads do
+not derive or persist alternate drift state from a partial graph.
+
+Mapping exposes only services/environments seen in the most recent 1,000 permitted
+deployment events. Rule patterns, configuration descriptions and revisions are
+not disclosed. Rule previews, mapping edits, drift settings, raw evidence and
+remote commit-containment comparisons remain unavailable to managed users.
+Standalone open-source Afe does not provide audit exports.
 
 ## Linking personal tool accounts
 

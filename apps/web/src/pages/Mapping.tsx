@@ -1,3 +1,4 @@
+import { useAccess } from "../access.tsx";
 /**
  * Settings → Mapping (AFE-19): services, environments, the rules that assign
  * events to them, built-in defaults, a live preview of how recent
@@ -62,6 +63,47 @@ function placementText(p: PlacementView): string {
 }
 
 export function MappingPage() {
+  const { managed } = useAccess();
+  return managed ? <ScopedMappingPage /> : <EditableMappingPage />;
+}
+function ScopedMappingPage() {
+  useDocumentTitle("Mapping");
+  const state = useAsync((s) => mappingApi.get(s), []);
+  return (
+    <div className="page">
+      <h1>Environment and service mapping</h1>
+      <p>
+        Services and environments observed in your most recent permitted deployment events. Mapping
+        rules are managed by your administrator.
+      </p>
+      {state.loading ? (
+        <Loading label="Loading mapping…" />
+      ) : state.error ? (
+        <ErrorBox error={state.error} onRetry={state.reload} />
+      ) : (
+        <div className="grid-2">
+          <section className="card">
+            <h2>Services</h2>
+            <ul>
+              {state.data?.services.map((s) => (
+                <li key={s.id}>{s.name}</li>
+              ))}
+            </ul>
+          </section>
+          <section className="card">
+            <h2>Environments</h2>
+            <ul>
+              {state.data?.environments.map((e) => (
+                <li key={e.id}>{e.name}</li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+function EditableMappingPage() {
   useDocumentTitle("Mapping");
   const [tick, setTick] = useState(0);
   const reload = () => setTick((t) => t + 1);

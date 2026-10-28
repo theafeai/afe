@@ -459,13 +459,18 @@ it("Terraform has its own default-deny policy and custom workspace grants", asyn
   });
   expect((await read("/api/events?source=terraform")).json().items).toHaveLength(1);
 });
-it("denies mixed-tool summaries even when a user has a repository grant", async () => {
+it("keeps mapping changes, drift settings and tenant-wide containment protected", async () => {
   await policy("custom");
-  for (const route of afe.routes.filter(
-    (r) =>
-      r.method === "GET" && /^\/api\/(environments|journeys|drift|mapping|containment)/.test(r.url),
-  )) {
-    const url = route.url.replace(/:[A-Za-z]+/g, "hidden");
-    expect((await read(url)).statusCode, route.url).toBe(403);
-  }
+  for (const url of ["/api/containment", "/api/drift/settings"])
+    expect((await read(url)).statusCode).toBe(403);
+  expect(
+    (
+      await afe.app.inject({
+        method: "POST",
+        url: "/api/mapping/preview",
+        headers: headers(user.token),
+        payload: {},
+      })
+    ).statusCode,
+  ).toBe(403);
 });

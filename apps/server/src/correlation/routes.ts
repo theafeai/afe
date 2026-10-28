@@ -5,7 +5,7 @@
  * Reference: docs/api.md "Environments and journeys".
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { repositoryKey } from "@afe/core";
+import { eventAllowed, filterFingerprint, repositoryKey } from "@afe/core";
 import type { MappingConfig } from "@afe/core/mapping";
 import {
   applyContainment,
@@ -18,6 +18,7 @@ import {
   type EnvironmentState,
 } from "@afe/core/correlation";
 import { getEvent, type CorrelationEventRecord } from "@afe/db";
+import { requestEventAccess } from "../auth/permissions.ts";
 import { requestTenant } from "../auth/index.ts";
 import type { ServerContext } from "../context.ts";
 import type { MappingService, PlacementView } from "../mapping/service.ts";
@@ -87,11 +88,23 @@ interface Dims {
   environments: { id: string; name: string; kind: string; order: number }[];
 }
 
-async function dimensions(ctx: ServerContext, tenantId: string): Promise<Dims> {
+async function dimensions(
+  ctx: ServerContext,
+  tenantId: string,
+  snapshot?: Snapshot,
+): Promise<Dims> {
   const m = ctx.mapping as Partial<MappingService> | undefined;
   if (!m?.load) return { services: [], environments: [] };
   const { config } = await m.load(tenantId);
-  return dimsOf(config);
+  const dims = dimsOf(config);
+  if (!snapshot) return dims;
+  const placements = await resolveTargets(ctx, tenantId, snapshot, snapshot.graph.environments);
+  const services = new Set([...placements.values()].map((p) => p?.service?.id));
+  const environments = new Set([...placements.values()].map((p) => p?.environment?.id));
+  return {
+    services: dims.services.filter((s) => services.has(s.id)),
+    environments: dims.environments.filter((e) => environments.has(e.id)),
+  };
 }
 
 function dimsOf(config: MappingConfig): Dims {
@@ -146,10 +159,9 @@ export function registerCorrelationRoutes(
       const envFilter = single(q, "environment");
       const sourceFilter = single(q, "source");
       const maxTargets = intParam(q, "targets", 20, 100);
-      const [snap, dims] = await Promise.all([
-        service.snapshot(tenantId),
-        dimensions(ctx, tenantId),
-      ]);
+      const access = await requestEventAccess(ctx.pool, req, ctx);
+      const snap = await service.snapshot(tenantId, access);
+      const dims = await dimensions(ctx, tenantId, access === undefined ? undefined : snap);
       for (const [name, v, list] of [
         ["service", serviceFilter, dims.services],
         ["environment", envFilter, dims.environments],
@@ -250,7 +262,9 @@ export function registerCorrelationRoutes(
         const limit = intParam(q, "limit", 50, 200);
         const targetFilter = single(q, "target");
         const cursorRaw = single(q, "cursor");
-        const dims = await dimensions(ctx, tenantId);
+        const access = await requestEventAccess(ctx.pool, req, ctx);
+        const snap = await service.snapshot(tenantId, access);
+        const dims = await dimensions(ctx, tenantId, access === undefined ? undefined : snap);
         const svc = sid === UNMAPPED ? null : dims.services.find((s) => s.id === sid);
         const env = eid === UNMAPPED ? null : dims.environments.find((e) => e.id === eid);
         if (
@@ -258,11 +272,10 @@ export function registerCorrelationRoutes(
           (eid !== UNMAPPED && (!SLUG.test(eid) || !env))
         )
           throw new NotFound();
-        const scope = `${sid}/${eid}/${targetFilter ?? ""}`;
+        const scope = `${sid}/${eid}/${targetFilter ?? ""}${access === undefined ? "" : "/" + filterFingerprint({}, { tenantId, access: JSON.stringify(access) })}`;
         const cursor = cursorRaw ? decodeCursor(cursorRaw, scope) : null;
         if (cursorRaw && !cursor) throw new BadRequest("invalid or mismatched cursor");
 
-        const snap = await service.snapshot(tenantId);
         const resolved = await resolveTargets(ctx, tenantId, snap, snap.graph.environments);
         const states = snap.graph.environments.filter((s) => {
           const r = resolved.get(s.key);
@@ -340,7 +353,8 @@ export function registerCorrelationRoutes(
       } catch {
         throw new BadRequest("invalid repository");
       }
-      const snap = await service.snapshot(tenantId);
+      const access = await requestEventAccess(ctx.pool, req, ctx);
+      const snap = await service.snapshot(tenantId, access);
       let sha = commitRaw;
       if (sha.length !== 40 && sha.length !== 64) {
         const matches = [...snap.graph.commitIndex.keys()].filter((s) => s.startsWith(sha));
@@ -365,7 +379,7 @@ export function registerCorrelationRoutes(
 
       let containment: (ContainmentEvidence & { environmentKey: string })[] | null = null;
       if (include.has("containment")) {
-        const hook = options.containment?.(ctx);
+        const hook = req.principal?.localUserId ? undefined : options.containment?.(ctx);
         containment = [];
         if (hook) {
           const candidates = containmentCandidates(snap.graph, journey).slice(
@@ -453,7 +467,9 @@ export function registerCorrelationRoutes(
       const limit = intParam(query(req, ["limit"]), "limit", 50, 200);
       const stored = await getEvent(ctx.pool, tenantId, req.params.id);
       if (!stored) throw new NotFound();
-      const snap = await service.snapshot(tenantId);
+      const access = await requestEventAccess(ctx.pool, req, ctx);
+      const snap = await service.snapshot(tenantId, access);
+      if (access && !eventAllowed(access, stored)) throw new NotFound();
       const id = stored.id;
       const inWindow = snap.graph.events.has(id);
       const links = (snap.graph.adjacency.get(id) ?? [])

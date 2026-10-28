@@ -3,7 +3,8 @@
  * tenant-scoped (rules R5). The server's drift service derives findings from
  * the correlation window and reconciles them here; see docs/drift.md.
  */
-import type { JsonObject } from "@afe/core";
+import type { EventAccessRule, JsonObject } from "@afe/core";
+import { eventAccessSql } from "./event-query.ts";
 import type { Queryable } from "./event-store.ts";
 
 export interface DriftEvidenceRecord {
@@ -182,19 +183,39 @@ export async function purgeDriftFindingsBefore(
   return res.rowCount ?? 0;
 }
 
+/** Complete evidence access is required; missing/purged or omitted evidence denies the finding. */
+function driftAccessSql(access: readonly EventAccessRule[] | undefined, params: unknown[]): string {
+  if (access === undefined) return "TRUE";
+  if (access.length === 0) return "FALSE";
+  params.push([...new Set(access.map((a) => a.source))]);
+  const sources = `$${params.length}`;
+  const permitted = eventAccessSql(access, params);
+  return `(f.target_source = ANY(${sources}::text[]) AND f.evidence_omitted=0 AND NOT EXISTS (
+    SELECT 1 FROM (
+      SELECT f.opening_event_id AS id UNION SELECT f.latest_event_id UNION SELECT f.resolved_by_event_id WHERE f.resolved_by_event_id IS NOT NULL
+      UNION SELECT value ->> 'eventId' FROM jsonb_array_elements(f.evidence)
+    ) required WHERE NOT EXISTS (
+      SELECT 1 FROM events e WHERE e.tenant_id=f.tenant_id AND e.id=CASE WHEN required.id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN required.id::uuid END AND ${permitted}
+    )
+  ))`;
+}
 export async function getDriftFinding(
   db: Queryable,
   tenantId: string,
   id: string,
+  access?: readonly EventAccessRule[],
 ): Promise<DriftFindingRecord | null> {
+  const params: unknown[] = [tenantId, id];
+  const allowed = driftAccessSql(access, params);
   const { rows } = await db.query<Row>(
-    "SELECT * FROM drift_findings WHERE tenant_id = $1 AND id = $2",
-    [tenantId, id],
+    `SELECT f.* FROM drift_findings f WHERE f.tenant_id=$1 AND f.id=$2 AND ${allowed}`,
+    params,
   );
   return rows[0] ? fromRow(rows[0]) : null;
 }
 
 export interface ListDriftFindingsOptions {
+  access?: readonly EventAccessRule[];
   status?: "open" | "resolved";
   types?: string[];
   severities?: string[];
@@ -210,7 +231,7 @@ export interface ListDriftFindingsOptions {
 
 function filters(tenantId: string, o: ListDriftFindingsOptions) {
   const params: unknown[] = [tenantId];
-  const where = ["tenant_id = $1"];
+  const where = ["tenant_id = $1", driftAccessSql(o.access, params)];
   const add = (sql: (p: string) => string, v: unknown) => {
     params.push(v);
     where.push(sql(`$${params.length}`));
@@ -245,7 +266,7 @@ export async function listDriftFindings(
   }
   params.push(Math.min(Math.max(Math.trunc(o.limit ?? 50), 1), 500));
   const { rows } = await db.query<Row>(
-    `SELECT * FROM drift_findings WHERE ${where.join(" AND ")}
+    `SELECT f.* FROM drift_findings f WHERE ${where.join(" AND ")}
       ORDER BY last_seen_at DESC, id DESC LIMIT $${params.length}`,
     params,
   );
@@ -271,7 +292,7 @@ export async function countDriftFindings(
   const { params, where } = filters(tenantId, o);
   const { rows } = await db.query<Row>(
     `SELECT status, type, severity, service_id, environment_id, target_key, count(*)::int AS n
-       FROM drift_findings WHERE ${where.join(" AND ")}
+       FROM drift_findings f WHERE ${where.join(" AND ")}
       GROUP BY status, type, severity, service_id, environment_id, target_key`,
     params,
   );

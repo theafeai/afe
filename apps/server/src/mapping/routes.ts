@@ -63,6 +63,7 @@ import {
   updateMappingService,
   type MappingChange,
 } from "@afe/db";
+import { requestEventAccess } from "../auth/permissions.ts";
 import { requestTenant } from "../auth/index.ts";
 import type { ServerContext } from "../context.ts";
 import { placementView, type MappingService, type PlacementView } from "./service.ts";
@@ -237,6 +238,27 @@ export function registerMappingRoutes(
   app.get("/api/mapping", async (req) => {
     const tenantId = requestTenant(req);
     const { config, mapping } = await service.load(tenantId);
+    const access = await requestEventAccess(pool, req, ctx);
+    if (access !== undefined) {
+      const events = await service.recentDeploymentEvents(tenantId, 1000, access);
+      const placements = await service.placements(tenantId, events);
+      const services = new Set([...placements.values()].map((p) => p.service?.id));
+      const environments = new Set([...placements.values()].map((p) => p.environment?.id));
+      return {
+        readOnly: true,
+        sampleSize: events.length,
+        revision: 0,
+        customised: false,
+        services: config.services
+          .filter((s) => services.has(s.id))
+          .map((s) => ({ ...s, description: null })),
+        environments: config.environments.filter((e) => environments.has(e.id)),
+        rules: [],
+        builtinRules: [],
+        fields: [],
+        environmentKinds: ENVIRONMENT_KINDS,
+      };
+    }
     const inactive = new Map(mapping.inactive.map((i) => [i.ruleId, i.reason]));
     return {
       revision: config.revision,
@@ -707,7 +729,8 @@ export function registerMappingRoutes(
       const q = (req.query ?? {}) as Record<string, unknown>;
       const limit = limitParam(q, 500);
       const { config, mapping } = await service.load(tenantId);
-      const events = await service.recentDeploymentEvents(tenantId, limit);
+      const access = await requestEventAccess(pool, req, ctx);
+      const events = await service.recentDeploymentEvents(tenantId, limit, access);
       // Labels are always read here: they are candidates for new rules.
       const mappable = await service.withLabels(tenantId, events);
       const values = new Map<
