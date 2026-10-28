@@ -19,6 +19,21 @@ const connection: Connection = {
 };
 const now = new Date();
 describe("Terraform lifecycle mapping", () => {
+  it("preserves CI bot identity without treating the bot as a human", () => {
+    const report = reportSchema.parse({
+      version: 1,
+      runId: randomUUID(),
+      operation: "plan",
+      phase: "started",
+      actor: "dependabot[bot]",
+      sentAt: now.toISOString(),
+      occurredAt: now.toISOString(),
+    });
+    expect(parseEventInput(terraformEvent(connection, report, now)).actor).toMatchObject({
+      type: "bot",
+      login: "dependabot[bot]",
+    });
+  });
   it.each([
     ["plan", 0, "succeeded"],
     ["plan", 2, "succeeded"],

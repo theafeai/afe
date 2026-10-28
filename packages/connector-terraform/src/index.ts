@@ -22,7 +22,7 @@ export const reportSchema = z
     sentAt: z.iso.datetime({ offset: true }),
     occurredAt: z.iso.datetime({ offset: true }),
     exitCode: z.number().int().min(0).max(255).optional(),
-    actor: identifier.optional(),
+    actor: identifier.or(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,122}\[bot\]$/)).optional(),
     commitSha: z
       .string()
       .regex(/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/)
@@ -67,7 +67,9 @@ export function terraformEvent(
     sourceEventId: `${connection.externalId}:${reportKey(report)}`,
     connectionId: connection.id,
     action: `terraform.${report.operation}.${report.phase}`,
-    actor: report.actor ? { type: "user", login: report.actor } : { type: "unknown" },
+    actor: report.actor
+      ? { type: report.actor.endsWith("[bot]") ? "bot" : "user", login: report.actor }
+      : { type: "unknown" },
     target: {
       type: "workflow_run",
       id: `${connection.externalId}/${report.runId.toLowerCase()}`,

@@ -55,7 +55,8 @@ def main():
     stamp = lambda: datetime.datetime.now(datetime.timezone.utc).isoformat()
     trigger = args.trigger or {"push": "push", "pull_request": "pull_request",
                               "workflow_dispatch": "manual", "schedule": "schedule",
-                              "repository_dispatch": "api"}.get(os.environ.get("GITHUB_EVENT_NAME"), "cli")
+                              "repository_dispatch": "api"}.get(os.environ.get("GITHUB_EVENT_NAME"),
+                                                                "unknown" if os.environ.get("GITHUB_EVENT_NAME") else "cli")
     occurred_at = args.occurred_at or stamp()
     if args.occurred_at:
         original = datetime.datetime.fromisoformat(args.occurred_at.replace("Z", "+00:00"))

@@ -40,7 +40,8 @@ not a HashiCorp-managed webhook or a Terraform Cloud integration.
 
 Workspace/environment/actor identifiers accept letters, digits, `_`, `.` and
 `-`, up to 128 characters, starting with a letter or digit. These are metadata
-labels; do not put secrets in identifiers.
+labels; do not put secrets in identifiers. Actor handles may also end in
+`[bot]`, which is represented as a bot rather than a human user.
 
 ## Report a plan without uploading it
 
