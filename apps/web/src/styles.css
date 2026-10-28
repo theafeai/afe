@@ -433,12 +433,30 @@ main {
 }
 .login-card h1 {
   font-size: 1.25rem;
+  margin-bottom: var(--space-4);
+}
+.login-card h1 + .lede {
+  margin-top: calc(-1 * var(--space-3));
+}
+.login-card .form .btn-wide {
+  margin-top: var(--space-1);
+}
+.login-card h2 {
+  font-size: var(--fs-base);
+  margin-bottom: var(--space-1);
 }
 .login-card .lede {
   margin-bottom: var(--space-5);
 }
 .login-card .callout {
   margin: var(--space-4) 0 0;
+}
+.login-card > p:last-child,
+.login-card .form + p {
+  margin-bottom: 0;
+}
+.login-card textarea {
+  margin: var(--space-2) 0 var(--space-3);
 }
 .login-card small {
   font-size: var(--fs-sm);
@@ -480,7 +498,8 @@ main {
   word-break: break-all;
 }
 .toolbar,
-.button-row {
+.button-row,
+.actions {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
@@ -867,6 +886,31 @@ legend {
   margin: 0 0 var(--space-1);
   font-size: var(--fs-lg);
 }
+.empty p {
+  max-width: 52ch;
+  margin-left: auto;
+  margin-right: auto;
+}
+.empty-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.empty-icon .icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.empty .connect-buttons {
+  max-width: 60rem;
+  margin-left: auto;
+  margin-right: auto;
+}
 .end {
   text-align: center;
   margin-top: var(--space-4);
@@ -996,10 +1040,31 @@ legend {
 .status-disconnected {
   color: var(--muted);
 }
+/* Gap flags are frequent (any gap after a placement went live), so they
+   stay quiet: warn-coloured text with a hollow marker, no fill. The gap panel
+   at the top of the page carries the loud version. */
 .gap-badge {
   color: var(--warn);
-  background: var(--warn-bg);
-  border-color: var(--warn-border);
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0.1rem;
+}
+.gap-badge::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  box-shadow: inset 0 0 0 1.25px currentColor;
+}
+.alert-badge {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-color: transparent;
+  text-decoration: none;
+}
+a.alert-badge:hover {
+  text-decoration: underline;
 }
 
 /* Confidence (AFE-46): a graded glyph (full → empty) plus the word. Confident

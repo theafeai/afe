@@ -2,6 +2,7 @@ import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
 import { useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
+import { icons } from "../icons.tsx";
 import type { ConnectionWithHealth } from "../api/types.ts";
 import {
   Empty,
@@ -74,7 +75,7 @@ export function Connections() {
       ) : error ? (
         <ErrorBox error={error} onRetry={reload} title="Could not load connections" />
       ) : data && data.connections.length === 0 ? (
-        <Empty title="No tools connected">
+        <Empty title="No tools connected" icon={icons.connections}>
           <p>Connect at least one tool. Afe only ever asks for read-only access.</p>
           <ConnectButtons />
         </Empty>
@@ -120,7 +121,17 @@ export function Connections() {
                         <GapCell c={c} />
                       </td>
                       <td>
-                        {c.alert ? <span className="alert-tag">{c.alert.message}</span> : "—"}
+                        {c.alert ? (
+                          <Link
+                            to={`/connections/${c.id}`}
+                            className="badge alert-badge"
+                            title={c.alert.message}
+                          >
+                            Alert open
+                          </Link>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

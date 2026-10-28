@@ -255,11 +255,13 @@ function Shell() {
       <main id="main" tabIndex={-1}>
         {auth.status === "unknown" ? (
           sessionError ? (
-            <ErrorBox
-              error={sessionError}
-              onRetry={() => window.location.reload()}
-              title="Could not load your session"
-            />
+            <div className="shell-state">
+              <ErrorBox
+                error={sessionError}
+                onRetry={() => window.location.reload()}
+                title="Could not load your session"
+              />
+            </div>
           ) : (
             <p className="state shell-state">Loading session…</p>
           )

@@ -383,21 +383,42 @@
 .row-action {
   display: flex;
   align-items: center;
-  padding: 0 0.6rem;
-  border-left: 1px solid var(--border);
+  padding: 0 0.75rem;
 }
 .row-action .btn {
-  font-size: 0.8rem;
-  min-height: 1.9rem;
-  padding: 0.25rem 0.55rem;
-  white-space: nowrap;
+  height: 1.75rem;
+  font-size: var(--fs-sm);
+  padding: 0 0.6rem;
+}
+/* The per-row action appears with the row (hover or keyboard focus), so a
+   long timeline is not a column of identical buttons. Touch screens, which
+   cannot hover, always show it. */
+@media (hover: hover) {
+  .event-row.has-action {
+    position: relative;
+    display: block;
+  }
+  .event-row.has-action .row-action {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    padding-left: 2.5rem;
+    background: linear-gradient(to right, transparent, var(--surface-2) 2rem);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .event-row.has-action:hover .row-action,
+  .event-row.has-action:focus-within .row-action {
+    opacity: 1;
+  }
 }
 .row-hl-on {
-  box-shadow: inset 4px 0 0 var(--highlight);
+  box-shadow: inset 2px 0 0 var(--highlight);
   background: var(--highlight-bg);
 }
 .row-hl-excluded {
-  box-shadow: inset 4px 0 0 var(--conf-weak);
+  box-shadow: inset 2px 0 0 var(--conf-weak);
 }
 .row-hl-dim > .row-link {
   opacity: 0.4;
@@ -407,8 +428,8 @@
   opacity: 1;
 }
 .hl-tag {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: var(--fs-sm);
+  font-weight: 550;
   color: var(--highlight);
 }
 .row-hl-excluded .hl-tag {

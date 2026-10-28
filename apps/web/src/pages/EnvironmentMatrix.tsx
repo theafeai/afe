@@ -20,6 +20,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { api } from "../api/client.ts";
+import { icons } from "../icons.tsx";
 import {
   environmentsApi,
   type EnvironmentColumn,
@@ -361,7 +362,7 @@ function EmptyMatrix({ connected, days }: { connected: boolean | null; days: num
   const { managed } = useAccess();
   if (managed)
     return (
-      <Empty title="No permitted deployments">
+      <Empty title="No permitted deployments" icon={icons.environments}>
         <p>
           Open your <Link to="/profile">profile</Link> to link assigned tool accounts, or contact
           your administrator for resource access.
@@ -370,6 +371,7 @@ function EmptyMatrix({ connected, days }: { connected: boolean | null; days: num
     );
   return (
     <Empty
+      icon={icons.environments}
       title={
         connected === false
           ? "Connect your tools to see what is live where"

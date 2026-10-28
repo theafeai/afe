@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import { ErrorBox, useDocumentTitle } from "../components.tsx";
+import { BrandMark } from "../icons.tsx";
 import { Link } from "../router.tsx";
 
 export function AccountEmailPage({ redeem = false }: { redeem?: boolean }) {
@@ -31,52 +32,59 @@ export function AccountEmailPage({ redeem = false }: { redeem?: boolean }) {
     }
   }
   return (
-    <div className="page narrow">
-      <h1>{redeem ? "Your Afe access credential" : "Reset your access credential"}</h1>
-      {credential ? (
-        <section className="card">
-          <h2>Save this credential now</h2>
-          <p>
-            It is shown only once. Use it to sign in to Afe. Your previous credential and sessions
-            have ended.
-          </p>
-          <textarea aria-label="New access credential" readOnly value={credential} />
-          <Link to="/login">Continue to sign in</Link>
-        </section>
-      ) : done ? (
-        <p role="status">
-          If an active account uses that email address, a reset link will arrive shortly. Check your
-          inbox or contact your administrator.
-        </p>
-      ) : (
-        <form className="form card" onSubmit={(e) => void submit(e)}>
-          {redeem ? (
+    <div className="login">
+      <section className="card login-card">
+        <BrandMark />
+        <h1>{redeem ? "Your Afe access credential" : "Reset your access credential"}</h1>
+        {credential ? (
+          <>
+            <h2>Save this credential now</h2>
             <p>
-              Continue to accept your invitation or reset your credential. This ends any existing
-              sessions for this account.
+              It is shown only once. Use it to sign in to Afe. Your previous credential and sessions
+              have ended.
             </p>
-          ) : (
-            <>
-              <label htmlFor="reset-email">Email address</label>
-              <input
-                id="reset-email"
-                type="email"
-                required
-                autoComplete="email"
-                maxLength={254}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </>
-          )}
-          <button className="btn btn-primary" disabled={busy || (redeem && !token)}>
-            {busy ? "Please wait…" : redeem ? "Continue" : "Email reset link"}
-          </button>
-          {redeem && !token && <p>This link is missing. Open the complete link from your email.</p>}
-        </form>
-      )}
-      {error && <ErrorBox error={error} />}
-      <p>
+            <textarea aria-label="New access credential" readOnly value={credential} />
+            <Link to="/login" className="btn btn-primary btn-wide">
+              Continue to sign in
+            </Link>
+          </>
+        ) : done ? (
+          <p role="status">
+            If an active account uses that email address, a reset link will arrive shortly. Check
+            your inbox or contact your administrator.
+          </p>
+        ) : (
+          <form className="form" onSubmit={(e) => void submit(e)}>
+            {redeem ? (
+              <p>
+                Continue to accept your invitation or reset your credential. This ends any existing
+                sessions for this account.
+              </p>
+            ) : (
+              <div className="field">
+                <label htmlFor="reset-email">Email address</label>
+                <input
+                  id="reset-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  maxLength={254}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            )}
+            <button className="btn btn-primary btn-wide" disabled={busy || (redeem && !token)}>
+              {busy ? "Please wait…" : redeem ? "Continue" : "Email reset link"}
+            </button>
+            {redeem && !token && (
+              <p>This link is missing. Open the complete link from your email.</p>
+            )}
+          </form>
+        )}
+        {error && <ErrorBox error={error} />}
+      </section>
+      <p className="login-foot">
         <Link to="/login">Back to sign in</Link>
       </p>
     </div>
