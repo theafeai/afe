@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from "react";
 import { api, ApiError } from "../api/client.ts";
 import type { SessionInfo } from "../api/types.ts";
 import { useDocumentTitle } from "../components.tsx";
+import { BrandMark } from "../icons.tsx";
 import { useNavigate, useSearchParams } from "../router.tsx";
 
 /**
@@ -59,10 +60,11 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
   };
 
   return (
-    <div className="page narrow">
-      <h1>Sign in to Afe</h1>
-      <p className="lede">Enter the access credential provided by your Afe administrator.</p>
-      <section className="card">
+    <div className="login">
+      <section className="card login-card">
+        <BrandMark />
+        <h1>Sign in to Afe</h1>
+        <p className="lede">Enter the access credential provided by your Afe administrator.</p>
         <form className="form" onSubmit={(e) => void submit(e)}>
           <div className="field">
             <label htmlFor={`${id}-token`}>Access token</label>
@@ -79,7 +81,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
               Afe keeps you signed in with a secure cookie; the token is not stored in the browser.
             </small>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary btn-wide" disabled={busy}>
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
@@ -89,6 +91,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
           </div>
         )}
       </section>
+      <p className="login-foot">Live deployment visibility across your delivery tools.</p>
     </div>
   );
 }
