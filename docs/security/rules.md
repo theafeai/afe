@@ -14,8 +14,8 @@ Helpers referenced below live in `@afe/core/security` and `@afe/db`.
 ## R1 – Least privilege: observation read-only, actions opt-in
 
 The explicit action-route exception in [ADR 0011](../decisions/0011-opt-in-delivery-actions.md)
-supersedes the blanket mutation prohibition below for the documented GitHub run
-controls only. Observation clients and installation tokens remain read-only.
+supersedes the blanket mutation prohibition below for the documented GitHub delivery
+operations only. Observation clients and installation tokens remain read-only.
 
 1. Request **read-only** access in every connected tool, wherever the tool
    allows it. Afe never needs to write to a delivery tool.
@@ -177,6 +177,10 @@ false` and `NODE_TLS_REJECT_UNAUTHORIZED` are banned by lint.
    leaves the host.
 
 ## R8 – Data minimisation
+
+The explicit workflow-YAML and user-requested artifact/archive exceptions in
+[ADR 0011](../decisions/0011-opt-in-delivery-actions.md) apply only to the scoped
+action routes. Observation still follows the baseline below.
 
 Store only what [`data-inventory.md`](data-inventory.md) allows. New stored
 fields from an upstream tool are added to the inventory in the same PR.

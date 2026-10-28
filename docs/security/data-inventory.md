@@ -150,6 +150,16 @@ logged. Settings API responses contain no secret values.
 ## GitHub action receipts (AFE-57)
 
 `github_action_requests` stores tenant/request UUID, Afe actor ID, connection ID,
-repository, run ID, attempt, action, acceptance state and creation time. No
-credentials, inputs, upstream bodies or log output. The hourly
+repository, optional run ID/attempt, action, input digest, resource/lock keys,
+acceptance state, source HTTP status, minimal result ID/SHA, release time and
+creation time. No credentials, input values, YAML, payload bodies or log output. The hourly
 `github-actions.purge` job deletes receipts outside the tenant retention window.
+
+The operations UI can read an explicitly selected `.github/workflows/*.yml` or
+`.yaml` file to discover typed dispatch inputs or edit workflow configuration.
+Source content and submitted deployment payloads are transient, never copied into
+events/receipts/logs. Dispatch-only users receive the input schema, not YAML.
+Requested artifact and completed-log ZIPs are streamed, with limits and inert
+attachment headers; signed storage URLs and GitHub credentials stay server-side.
+Personal fine-grained tokens use the existing encrypted user GitHub credential
+kind. Explicit OAuth workflow-edit consent adds `workflow` only to that sign-in.

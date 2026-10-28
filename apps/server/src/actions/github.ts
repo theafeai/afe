@@ -1,3 +1,5 @@
+import { registerGitHubOperations } from "./github-operations.ts";
+import { githubUserId } from "./github-identity.ts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   GITHUB_RUN_ACTIONS,
@@ -15,6 +17,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (statusCode: number, message: string) =>
   Object.assign(new Error(message), { statusCode });
 const messages: Record<GitHubActionState, string> = {
+  released: "The request was released after explicit recovery.",
   requested: "Request recorded; verify the source state before trying another action.",
   accepted: "GitHub accepted the request. Refresh to observe the resulting run state.",
   rejected: "GitHub rejected the request. Refresh and check your source permissions and run state.",
@@ -37,7 +40,7 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
   const http = new GitHubHttp({ maxRetries: 0, maxResponseBytes: 1024 * 1024 });
   async function context(req: FastifyRequest<{ Params: Params }>) {
     const tid = requestTenant(req),
-      uid = req.principal?.localUserId;
+      uid = await githubUserId(ctx, req);
     if (!uid)
       throw fail(
         403,
@@ -146,7 +149,7 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
         run = await readRun(c);
       const prior = (
         await ctx.pool.query<{ action: string }>(
-          "SELECT action FROM github_action_requests WHERE tenant_id=$1 AND repository=$2 AND run_id=$3 AND run_attempt=$4",
+          "SELECT action FROM github_action_requests WHERE tenant_id=$1 AND repository=$2 AND run_id=$3 AND run_attempt=$4 AND state IN ('requested','accepted','unknown')",
           [c.tid, c.repo, c.runId, run.run_attempt],
         )
       ).rows;
@@ -167,9 +170,12 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
               : prior.some(
                     (p) =>
                       p.action === action ||
-                      (action !== "github.cancel" && p.action !== "github.cancel"),
+                      (action !== "github.cancel" &&
+                        ["github.rerun", "github.rerun_failed", "github.rerun_job"].includes(
+                          p.action,
+                        )),
                   )
-                ? "Already requested for this attempt. Check GitHub before retrying."
+                ? "Already requested for this attempt. Inspect request history in the GitHub Actions workspace."
                 : !enabled(action, run)
                   ? "Unavailable in the current run state."
                   : null;
@@ -184,7 +190,7 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
   }>(url, { config: { access: "viewer" }, bodyLimit: 4096 }, async (req, reply) => {
     reply.header("cache-control", "no-store");
     return guarded(async () => {
-      if (!req.principal?.localUserId)
+      if (!(await githubUserId(ctx, req)))
         throw fail(
           403,
           "Run controls require a managed user with a linked GitHub account and explicit action grants.",
@@ -239,8 +245,8 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
           "The run changed or this action is unavailable. Refresh before continuing.",
         );
       const inserted = await ctx.pool.query(
-        `INSERT INTO github_action_requests (tenant_id,request_id,actor_id,connection_id,repository,run_id,run_attempt,action)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING request_id`,
+        `INSERT INTO github_action_requests (tenant_id,request_id,actor_id,connection_id,repository,run_id,run_attempt,action,lock_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING RETURNING request_id`,
         [
           c.tid,
           requestId,
@@ -250,6 +256,7 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
           c.runId,
           run.run_attempt,
           action,
+          `run:${c.repo}:${c.runId}:${run.run_attempt}:${action === "github.cancel" ? "cancel" : "rerun"}`,
         ],
       );
       if (!inserted.rowCount)
@@ -297,7 +304,10 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
 }
 export const githubActionsModule: ConnectorModule = {
   source: "github-actions",
-  routes: registerGitHubActions,
+  routes: (app, ctx) => {
+    registerGitHubActions(app, ctx);
+    registerGitHubOperations(app, ctx);
+  },
   jobs: (ctx) => [
     {
       name: "github-actions.purge",

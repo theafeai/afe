@@ -7,7 +7,7 @@ export interface GitHubRunControls {
   conclusion: string | null;
   capabilities: { action: GitHubRunAction; enabled: boolean; reason: string | null }[];
 }
-export type GitHubActionState = "requested" | "accepted" | "rejected" | "unknown";
+export type GitHubActionState = "requested" | "accepted" | "rejected" | "unknown" | "released";
 export interface GitHubActionReceipt {
   requestId: string;
   state: GitHubActionState;

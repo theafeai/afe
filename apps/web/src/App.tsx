@@ -1,3 +1,4 @@
+import { GitHubOperationsPage } from "./pages/GitHubOperations.tsx";
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
 import { AccountEmailPage } from "./pages/AccountEmail.tsx";
 import { UsersPage } from "./pages/Users.tsx";
@@ -34,6 +35,7 @@ import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx"
 export function Routes() {
   const { pathname } = useLocation();
   const { admin } = useAccess();
+  if (pathname === "/github") return <GitHubOperationsPage />;
   if (pathname === "/users") return <UsersPage />;
   if (pathname === "/profile") return <ProfilePage />;
   if (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname))
@@ -71,6 +73,7 @@ export function Routes() {
 const NAV = [
   { to: "/", label: "Environments", icon: icons.environments, group: "observe" },
   { to: "/events", label: "Events", icon: icons.events, group: "observe" },
+  { to: "/github", label: "GitHub Actions", icon: icons.deployments, group: "observe" },
   { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },
   { to: "/drift", label: "Drift", icon: icons.drift, group: "observe" },
   { to: "/connections", label: "Connections", icon: icons.connections, group: "setup" },
@@ -156,7 +159,9 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
           </span>
           <span className="session-who">
             <span className="session-name">{name}</span>
-            <span className="session-role">{admin ? "Admin" : "Viewer (read-only)"}</span>
+            <span className="session-role">
+              {admin ? "Admin" : session.principal.managedUser ? "Member" : "Viewer (read-only)"}
+            </span>
           </span>
           {session.principal.kind === "session" && (
             <button

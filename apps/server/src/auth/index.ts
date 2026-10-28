@@ -236,6 +236,11 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
         routeUrl?.startsWith("/api/profile") ||
         [
           "/api/actions/github/events/:eventId",
+          "/api/actions/github/resources",
+          "/api/actions/github/repositories/:owner/:repo",
+          "/api/actions/github/repositories/:owner/:repo/prepare",
+          "/api/actions/github/repositories/:owner/:repo/requests/:requestId/release",
+          "/api/actions/github/repositories/:owner/:repo/download",
           "/api/events",
           "/api/deployments",
           "/api/events/:id",

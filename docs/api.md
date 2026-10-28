@@ -770,7 +770,9 @@ source-enabled users. The existing personal-token and unlink endpoints remain.
 The operator must provision a compatible OIDC client; see
 [ArgoCD SSO setup](self-hosting/argocd-sso.md).
 
-## Opt-in GitHub run controls
+## Opt-in GitHub delivery operations
 
-See [GitHub action API and setup](github-actions.md) for capability discovery and
-confirmed cancel/re-run requests at `/api/actions/github/events/:eventId`.
+See [GitHub operations API and setup](github-actions.md) for repository discovery,
+resource views, strict preparation/confirmation schemas, request history/recovery
+and scoped artifact/archived-log downloads under `/api/actions/github/`.
+The original event run-controls endpoint remains compatible.

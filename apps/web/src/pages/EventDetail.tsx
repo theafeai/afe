@@ -244,7 +244,16 @@ export function EventDetailPage({ id }: { id: string }) {
       </section>
 
       {e.source === "github" && e.target.type === "workflow_run" && (
-        <GitHubRunControls key={e.id} eventId={e.id} />
+        <>
+          <p>
+            <Link
+              to={`/github?${new URLSearchParams({ connectionId: e.connectionId ?? "", repository: e.target.repository ?? "" })}`}
+            >
+              Open full GitHub Actions workspace
+            </Link>
+          </p>
+          <GitHubRunControls key={e.id} eventId={e.id} />
+        </>
       )}
       <JourneyLinks event={e} />
       {!managed && subject && (

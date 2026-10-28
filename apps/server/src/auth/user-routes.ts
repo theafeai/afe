@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
 import {
-  GITHUB_RUN_ACTIONS,
+  GITHUB_OPERATION_NAMES,
   TOOL_PERMISSION_MODES,
-  type GitHubRunAction,
+  type GitHubOperation,
   type ToolPolicy,
 } from "@afe/core";
 import {
@@ -134,7 +134,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
               !(
                 req.params.tool === "github" &&
                 /^repository:[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(g.resource) &&
-                GITHUB_RUN_ACTIONS.includes(g.action as GitHubRunAction)
+                GITHUB_OPERATION_NAMES.includes(g.action as GitHubOperation)
               )),
         )
       )

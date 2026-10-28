@@ -1,3 +1,4 @@
+import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx";
@@ -312,10 +313,25 @@ export function UsersPage() {
             connection.
           </p>
           <p>
-            For GitHub run controls, append <code>github.cancel</code>, <code>github.rerun</code>,
-            or <code>github.rerun_failed</code> after a lowercase repository resource, for example{" "}
-            <code>repository:owner/name github.cancel</code>. Each grant goes on its own line.
+            For GitHub operations, append <code>github.cancel</code>, <code>github.rerun</code>, or{" "}
+            <code>github.rerun_failed</code> after a lowercase repository resource, for example{" "}
+            <code>repository:owner/name github.cancel</code>. Each grant goes on its own line. The
+            catalog below lists all supported operations.
           </p>
+          <details>
+            <summary>GitHub operation grants</summary>
+            <ul>
+              {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
+                <li key={action}>
+                  <code>{action}</code> — {label} (GitHub {level})
+                </li>
+              ))}
+            </ul>
+            <p>
+              Each action requires its own exact repository grant. There are no wildcard mutation
+              grants.
+            </p>
+          </details>
           {policies &&
             TOOLS.map((tool) => (
               <form

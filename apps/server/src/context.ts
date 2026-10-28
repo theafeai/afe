@@ -2,6 +2,7 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type pg from "pg";
 import type {
   AuthProvider,
+  Principal,
   ConnectorHealthHooks,
   EventSink,
   HealthReporter,
@@ -16,6 +17,8 @@ import type { MappingService } from "./mapping/service.ts";
 /** Shared services handed to every connector module and server feature. */
 export interface ServerContext {
   pool: pg.Pool;
+  /** Server-owned hosted identity mapping to a tenant-managed tool account user. */
+  githubUserId?: (tenantId: string, principal: Principal) => Promise<string | null>;
   /** Store events. Connectors never write events directly. */
   sink: EventSink;
   /**

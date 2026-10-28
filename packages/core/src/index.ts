@@ -26,3 +26,4 @@ export {
   type GitHubActionState,
   type GitHubActionReceipt,
 } from "./github-actions.ts";
+export * from "./github-operations.ts";

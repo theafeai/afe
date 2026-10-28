@@ -4,6 +4,7 @@ import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx
 import type { ProfileInfo, ProfileTool } from "../access.tsx";
 function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }) {
   const [token, setToken] = useState("");
+  const [workflowAccess, setWorkflowAccess] = useState(false);
   const [context, setContext] = useState("");
   const [oidcConnection, setOidcConnection] = useState(tool.oidcConnections?.[0]?.id ?? "");
   const [error, setError] = useState<Error | null>(null);
@@ -49,6 +50,16 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
               <p>Signing in replaces your current ArgoCD account link.</p>
             </>
           )}
+          {tool.tool === "github" && tool.oauthAvailable && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={workflowAccess}
+                onChange={(e) => setWorkflowAccess(e.target.checked)}
+              />
+              Allow editing workflow files when signing in (adds GitHub workflow scope)
+            </label>
+          )}
           {tool.oauthAvailable && (
             <button
               className="btn"
@@ -58,7 +69,11 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
                   const r = await request<{ url: string }>(
                     "POST",
                     `/api/profile/tools/${tool.tool}/login`,
-                    tool.tool === "argocd" ? { connectionId: oidcConnection } : undefined,
+                    tool.tool === "argocd"
+                      ? { connectionId: oidcConnection }
+                      : tool.tool === "github"
+                        ? { workflowAccess }
+                        : undefined,
                   );
                   window.location.assign(r.url);
                 })
@@ -69,9 +84,12 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
             </button>
           )}
           {tool.tool === "github" && !tool.oauthAvailable && (
-            <p>GitHub sign-in needs to be configured by your administrator.</p>
+            <p>
+              Use a fine-grained GitHub token below, or ask your administrator to configure OAuth
+              sign-in.
+            </p>
           )}
-          {["vercel", "argocd"].includes(tool.tool) && (
+          {["github", "vercel", "argocd"].includes(tool.tool) && (
             <form
               className="form"
               onSubmit={(e) => {
@@ -100,15 +118,28 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
               />
-              <label htmlFor={`${tool.tool}-context`}>
-                {tool.tool === "argocd" ? "Connection ID (ask your admin)" : "Team ID (optional)"}
-              </label>
-              <input
-                id={`${tool.tool}-context`}
-                required={tool.tool === "argocd"}
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-              />
+              {tool.tool !== "github" && (
+                <>
+                  <label htmlFor={`${tool.tool}-context`}>
+                    {tool.tool === "argocd"
+                      ? "Connection ID (ask your admin)"
+                      : "Team ID (optional)"}
+                  </label>
+                  <input
+                    id={`${tool.tool}-context`}
+                    required={tool.tool === "argocd"}
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                  />
+                </>
+              )}
+              {tool.tool === "github" && (
+                <p>
+                  Prefer a fine-grained token limited to the selected repositories, with Actions
+                  read/write and only the additional Contents, Workflows, Deployments or
+                  Environments permissions you use. Afe grants remain required.
+                </p>
+              )}
               <button className="btn" disabled={busy}>
                 Link account
               </button>
