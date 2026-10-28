@@ -45,6 +45,18 @@
   --backfill: #0a6e80;
   --backfill-bg: #e9f5f7;
 
+  /* Confidence (AFE-46): one scale for matrix, timeline, journey, drift */
+  --conf-certain: var(--ok);
+  --conf-strong: #1d63c9;
+  --conf-probable: var(--warn);
+  --conf-weak: var(--bad);
+  --conf-ambiguous: var(--recon);
+  --conf-conflict: var(--bad);
+  --conf-unknown: var(--muted);
+  --env-selected: var(--accent-soft);
+  --highlight: var(--accent);
+  --highlight-bg: var(--accent-soft);
+
   /* Tool marks */
   --github: #24292f;
   --argocd: #e2582a;
@@ -129,6 +141,8 @@
     --recon-bg: rgba(160, 110, 255, 0.13);
     --backfill: #67d0dc;
     --backfill-bg: rgba(40, 180, 200, 0.12);
+
+    --conf-strong: #7cb0ff;
 
     --github: #e6edf3;
     --argocd: #ff9466;
@@ -944,6 +958,112 @@ legend {
   color: var(--warn);
   background: var(--warn-bg);
   border-color: var(--warn-border);
+}
+
+/* Confidence (AFE-46): a graded glyph (full → empty) plus the word. Confident
+   states stay neutral; weak, ambiguous and conflicting ones are tinted. */
+.badge.conf {
+  --c: var(--conf-unknown);
+  --p: 0%;
+  text-transform: lowercase;
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-2);
+  padding-left: 0.35rem;
+}
+.badge.conf::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  flex: none;
+  background: conic-gradient(var(--c) var(--p), transparent 0);
+  box-shadow: inset 0 0 0 1.25px var(--c);
+}
+.badge.conf-certain {
+  --c: var(--conf-certain);
+  --p: 100%;
+}
+.badge.conf-strong {
+  --c: var(--conf-strong);
+  --p: 75%;
+}
+.badge.conf-probable {
+  --c: var(--conf-probable);
+  --p: 50%;
+}
+.badge.conf-weak {
+  --c: var(--conf-weak);
+  --p: 25%;
+}
+.badge.conf-ambiguous {
+  --c: var(--conf-ambiguous);
+}
+.badge.conf-conflict {
+  --c: var(--conf-conflict);
+}
+.badge.conf-weak,
+.badge.conf-ambiguous,
+.badge.conf-conflict {
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--c) 30%, transparent);
+}
+.badge.conf-ambiguous::before {
+  background: none;
+  box-shadow: none;
+  border: 1.25px dashed var(--c);
+}
+.badge.conf-conflict::before {
+  background: linear-gradient(45deg, transparent 44%, var(--c) 44%, var(--c) 56%, transparent 56%);
+}
+.badge.conf-none {
+  color: var(--muted);
+}
+.badge.conf-none::before {
+  display: none;
+}
+
+/* Observation gaps: one panel, one row per connection */
+.gap-banners .callout p {
+  margin: 0;
+}
+.gap-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  border-top: 1px solid var(--warn-border);
+}
+.gap-list li {
+  display: grid;
+  grid-template-columns: minmax(10rem, 16rem) 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn-border) 55%, transparent);
+}
+.gap-list li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.gap-who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.gap-why {
+  color: var(--text-2);
+}
+@media (max-width: 640px) {
+  .gap-list li {
+    grid-template-columns: 1fr auto;
+  }
+  .gap-why {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }
 
 /* Timeline ------------------------------------------------------------------- */

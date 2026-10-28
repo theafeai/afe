@@ -1,33 +1,4 @@
 /* Commit journey (AFE-25): page, diagram, timeline highlight. */
-:root {
-  --conf-certain: #17703a;
-  --conf-strong: #2448c4;
-  --conf-probable: #8a5200;
-  --conf-weak: #b3261e;
-  --conf-conflict: #b3261e;
-  --conf-certain-bg: #e6f4ea;
-  --conf-strong-bg: #e8edfc;
-  --conf-probable-bg: #fff4dc;
-  --conf-weak-bg: #fbe9e7;
-  --highlight: #2448c4;
-  --highlight-bg: #eef2fd;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --conf-certain: #7fd49a;
-    --conf-strong: #8aa4ff;
-    --conf-probable: #f3c46b;
-    --conf-weak: #ff9a8f;
-    --conf-conflict: #ff9a8f;
-    --conf-certain-bg: #16301f;
-    --conf-strong-bg: #1b2340;
-    --conf-probable-bg: #33270f;
-    --conf-weak-bg: #3a1714;
-    --highlight: #8aa4ff;
-    --highlight-bg: #1b2340;
-  }
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -46,38 +17,6 @@
 }
 .journey-sha {
   font-size: 0.95em;
-}
-
-/* Confidence badges */
-.conf {
-  border-color: transparent;
-  text-transform: lowercase;
-}
-.conf-certain {
-  color: var(--conf-certain);
-  background: var(--conf-certain-bg);
-}
-.conf-strong {
-  color: var(--conf-strong);
-  background: var(--conf-strong-bg);
-}
-.conf-probable {
-  color: var(--conf-probable);
-  background: var(--conf-probable-bg);
-  border: 1px dashed var(--conf-probable);
-}
-.conf-weak {
-  color: var(--conf-weak);
-  background: var(--conf-weak-bg);
-  border: 1px dotted var(--conf-weak);
-}
-.conf-conflict {
-  color: var(--conf-conflict);
-  background: var(--conf-weak-bg);
-  border: 1px solid var(--conf-conflict);
-}
-.conf-none {
-  color: var(--muted);
 }
 
 .journey-flow-head {
@@ -109,9 +48,9 @@
   border-left: none;
 }
 .segmented .btn[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  border-color: var(--accent-solid);
 }
 
 /* Where it went */
@@ -295,8 +234,8 @@
   padding: 0.4rem 0.55rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 4px solid var(--muted);
-  border-radius: 6px;
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius-sm);
   color: var(--text);
   text-decoration: none;
   overflow: hidden;
@@ -307,7 +246,7 @@
 .journey-card:hover,
 .journey-card.is-active {
   border-color: var(--accent);
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.15);
+  box-shadow: var(--shadow-md);
 }
 .journey-card.is-dim {
   opacity: 0.45;
@@ -320,6 +259,9 @@
 }
 .tool-edge-vercel {
   border-left-color: var(--vercel);
+}
+.tool-edge-terraform {
+  border-left-color: var(--terraform);
 }
 .conf-edge-weak {
   border-style: dashed;
