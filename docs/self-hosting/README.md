@@ -5,6 +5,7 @@ external queue or cache, and no help from us is needed.
 
 | Guide                                                     | What it covers                                                       |
 | --------------------------------------------------------- | -------------------------------------------------------------------- |
+| [Local source workflow](local-development.md)             | Rebuild from a checkout with persistent settings and login           |
 | [Quickstart](quickstart.md)                               | Zero to a running Afe connected to a test GitHub org in ~15 minutes  |
 | [Configuration reference](configuration.md)               | Every environment variable, default and whether it is a secret       |
 | [Secrets](secrets.md)                                     | Providing the encryption key, `_FILE` variants, rotation             |

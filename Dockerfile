@@ -54,7 +54,9 @@ COPY --from=build /out/package.json ./package.json
 COPY --from=build /out/node_modules ./node_modules
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /src/apps/web/dist ./web
-RUN chmod 0755 /app/dist/cli.js && ln -s /app/dist/cli.js /usr/local/bin/afe
+# COPY preserves source modes (e.g. a checkout created with umask 077).
+# Ensure the unprivileged runtime can read migrations and assets in that case.
+RUN chmod -R a+rX /app && chmod 0755 /app/dist/cli.js && ln -s /app/dist/cli.js /usr/local/bin/afe
 
 # Unprivileged user provided by the node image (uid/gid 1000).
 USER node
