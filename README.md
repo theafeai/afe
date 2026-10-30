@@ -36,6 +36,21 @@ and when?" for the recent past, and tells you when it could not see a source.
 For admin-created users, per-tool permissions and personal tool account linking,
 see [user management](docs/user-management.md).
 
+## Run locally from source
+
+With Docker running and Python 3 installed (macOS/Linux or Windows with WSL2):
+
+```sh
+sh examples/start-local-afe.sh
+sh examples/start-local-afe.sh password
+```
+
+Open <http://localhost:8080> and paste the saved password. Run the first command
+again after changing code: it rebuilds and waits for readiness while preserving
+your password, encryption key, database and connections. No Node installation
+is needed. See the [local workflow guide](docs/self-hosting/local-development.md)
+for choosing a password, stopping, logs and troubleshooting.
+
 ## Development
 
 Try the [minimal integration examples](examples/README.md) for GitHub Actions,

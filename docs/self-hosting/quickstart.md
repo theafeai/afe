@@ -3,6 +3,9 @@
 Goal: in about 15 minutes, a running Afe on your machine, receiving events from
 a test GitHub organization.
 
+For rebuilding from a checkout with saved settings and a stable login, use the
+[local source workflow](local-development.md). This guide uses published images.
+
 You need:
 
 - Docker Engine 24+ with the Compose plugin (`docker compose version`), on
@@ -27,7 +30,8 @@ curl -fsSL  https://raw.githubusercontent.com/theafeai/afe/$VERSION/.env.example
 
 Afe encrypts every stored credential (GitHub App private key, tokens, webhook
 secrets) with this key. Docker Compose mounts it into the containers as a secret
-file.
+file. Generate these files **once**, and keep them across every rebuild and
+restart. Repeating these generation commands replaces your keys and login token.
 
 ```sh
 mkdir -p secrets && chmod 700 secrets

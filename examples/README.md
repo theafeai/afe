@@ -49,34 +49,19 @@ in the page, repository, Terraform configuration or state committed to Git.
 
 ## 2. Start or reuse Afe
 
-If Afe is already running, skip this section. Otherwise, in a **fresh Afe
-checkout** (not the demo directory), build from source; no published release is
-required:
+If Afe is already running, skip this section. Otherwise, in your Afe checkout
+(not the demo directory), with Docker running and Python 3 installed:
 
 ```sh
-docker build -t afe:demo .
-mkdir -p secrets
-chmod 700 secrets
-openssl rand -base64 32 > secrets/afe_encryption_key
-openssl rand -hex 32 > secrets/afe_admin_token
-chmod 644 secrets/afe_encryption_key secrets/afe_admin_token
-cp .env.example .env
+sh examples/start-local-afe.sh
+sh examples/start-local-afe.sh password
 ```
 
-Use a fresh checkout to avoid overwriting an existing `.env` or encryption key.
-Set `POSTGRES_PASSWORD` in `.env` to a random value from
-`openssl rand -hex 24`, set `AFE_IMAGE=afe` and `AFE_VERSION=demo`, then:
-
-```sh
-docker compose up -d
-docker compose up -d --wait --wait-timeout 180 afe-server
-curl -fsS http://127.0.0.1:8080/healthz
-```
-
-Open <http://127.0.0.1:8080/>, sign in using the token in
-`secrets/afe_admin_token`, and open **Connections**. Keep the token private.
-Both server and worker must be running (`docker compose ps`). The worker has
-no HTTP healthcheck; wait for the server only.
+Open <http://localhost:8080/>, sign in with the saved password and open
+**Connections**. The helper builds from source and waits for readiness. Run it
+again after code changes: `.env`, secrets, the password and connections survive.
+Use `sh examples/start-local-afe.sh status` or `logs` to inspect the stack.
+See the [local workflow guide](../docs/self-hosting/local-development.md).
 
 For GitHub App creation/OAuth redirects and inbound webhooks, configure
 `AFE_PUBLIC_URL` in `.env` to an HTTPS URL reachable by your browser and provider,
@@ -119,9 +104,10 @@ removing its state. Stop local preview/port-forward processes with Ctrl+C.
 Disconnect test connections in Afe; revoke source tokens/uninstall test Apps,
 then remove hosted demo projects/repositories if no longer needed.
 
-For the dedicated Afe test stack, `docker compose down` stops it and retains
-its database. `docker compose down -v` deletes the test database; run that only
-when you intend to remove this dedicated instance's data.
+For the helper's Afe stack, `sh examples/start-local-afe.sh down` stops it and
+retains its database, settings and password. See the
+[local workflow guide](../docs/self-hosting/local-development.md#troubleshooting-and-cleanup)
+for deliberate database deletion.
 
 ## Maintainer checks
 

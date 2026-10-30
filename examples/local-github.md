@@ -1,20 +1,19 @@
 # Run Afe locally and connect the GitHub Pages demo
 
 Use these steps on macOS/Linux, or inside WSL2 on Windows. You need Git,
-Python 3, OpenSSL and Docker with Compose; start Docker Desktop first if you
+Python 3, OpenSSL (for GitHub App key validation) and Docker with Compose; start Docker Desktop first if you
 use it. This runs Afe and PostgreSQL on your computer. Pages runs on GitHub.
 
-This is a dedicated disposable stack. The helpers refuse to overwrite an
-existing `.env`, secrets directory or GitHub App configuration. Keep this
-checkout while using the stack: its secrets and database volume are needed
-across restarts.
+The startup helper preserves `.env`, secrets, the login password and the database
+across rebuilds. GitHub configuration is also retained. Keep this checkout while
+using the stack. See the [local workflow guide](../docs/self-hosting/local-development.md).
 
 ## 1. Start Afe
 
-In your computer's terminal, choose a new directory:
+In your computer's terminal, clone Afe if you do not already have a checkout:
 
 ```sh
-git clone --branch codex/afe-35-examples https://github.com/theafeai/afe.git afe-local-demo
+git clone https://github.com/theafeai/afe.git afe-local-demo
 cd afe-local-demo
 sh examples/start-local-afe.sh
 ```
@@ -23,7 +22,7 @@ The first image build takes a few minutes. Open <http://localhost:8080>.
 Read the login token locally:
 
 ```sh
-cat secrets/afe_admin_token
+sh examples/start-local-afe.sh password
 ```
 
 Paste it into Afe's login screen. Do not send it in chat or commit it.
@@ -116,14 +115,15 @@ dependency; API verification works without it.
 
 ## Stop or restart
 
-After configuring the App, always include the override with its secret mounts:
+The helper automatically includes the GitHub secret mounts on every start:
 
 ```sh
-docker compose -p afe-demo-local -f docker-compose.yml -f examples/local-github-compose.yml stop
-docker compose -p afe-demo-local -f docker-compose.yml -f examples/local-github-compose.yml up -d
+sh examples/start-local-afe.sh stop
+sh examples/start-local-afe.sh       # rebuild and resume with the same login
 ```
 
 Stopping retains the database. When finished, disconnect the demo in Afe,
-uninstall the dedicated App, and use `down` with the same Compose arguments.
-Only add `-v` if you intend to delete this test database. Remove local secret
+uninstall the dedicated App, and run `sh examples/start-local-afe.sh down`.
+The helper keeps the database even with `down`; see the local workflow guide
+for deliberate cleanup. Remove local secret
 files after the stack and App have been retired.

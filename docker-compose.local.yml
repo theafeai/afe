@@ -1,0 +1,14 @@
+# Used automatically by examples/start-local-afe.sh. The base Compose file
+# remains the published-image self-hosting setup. Both local roles use the same
+# image built from this checkout; .env and secrets/ stay outside the build.
+x-local: &local
+  image: afe-demo-local:demo
+  build:
+    context: .
+  pull_policy: never
+
+services:
+  afe-server:
+    <<: *local
+  afe-worker:
+    <<: *local

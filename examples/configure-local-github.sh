@@ -31,7 +31,6 @@ AFE_GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/github_app_private_key
 AFE_GITHUB_WEBHOOK_SECRET_FILE=/run/secrets/github_webhook_secret
 AFE_GITHUB_ADOPT_INSTALLATIONS=true
 EOF
-docker compose -p afe-demo-local -f docker-compose.yml -f examples/local-github-compose.yml up -d
-docker compose -p afe-demo-local -f docker-compose.yml -f examples/local-github-compose.yml up -d --wait --wait-timeout 180 afe-server
+sh examples/start-local-afe.sh
 echo 'App configured. Sign in at http://localhost:8080 and connect GitHub.'
 echo 'Polling starts after the installation setup callback creates the connection.'
