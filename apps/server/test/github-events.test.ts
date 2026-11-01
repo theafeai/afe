@@ -153,6 +153,22 @@ describe("GitHub repository events (AFE-7)", () => {
     await jobs.drain();
   }
 
+  it("ignores queued and new repository deliveries after an administrator disconnects", async () => {
+    const fixture = loadWebhook("workflow_run.push.completed");
+    expect((await send(fixture)).statusCode).toBe(202);
+    const removed = await afe.app.inject({
+      method: "DELETE",
+      url: `/api/connections/github/${connectionId}`,
+    });
+    expect(removed.statusCode).toBe(200);
+    await jobs.drain();
+    expect(sink.events("default").map((e) => e.action)).toEqual(["connection.deleted"]);
+    expect(healthCalls).toEqual([]);
+    const later = await send(fixture);
+    expect(later.statusCode).toBe(202);
+    expect(later.json().queued).toBe(0);
+  });
+
   describe("each trigger produces a correct event", () => {
     for (const [label, fixture, trigger] of TRIGGERS) {
       it(label, async () => {

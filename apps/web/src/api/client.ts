@@ -183,6 +183,9 @@ export const api = {
   connectionHealth: (id: string, signal?: AbortSignal) =>
     get<ConnectionHealthDetail>(`/api/connections/${encodeURIComponent(id)}/health`, signal),
 
+  githubDisconnect: (id: string) =>
+    request<{ note: string }>("DELETE", `/api/connections/github/${encodeURIComponent(id)}`),
+
   githubApp: (signal?: AbortSignal) => get<GitHubAppStatus>("/api/connections/github/app", signal),
 
   argocdConnections: (signal?: AbortSignal) =>

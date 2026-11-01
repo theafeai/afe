@@ -8,13 +8,13 @@ fix does not rewrite older events whose actor was unknown.
 
 ## Coverage verified for AFE-64
 
-| Connection                 | Created                                            | Lost                                                                               | Deleted                                                                           |
-| -------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| GitHub App                 | Afe setup callback and source installation webhook | Health failure opens a gap and emits `connection.lost`                             | Source uninstall emits `connection.deleted` and the existing `connection.revoked` |
-| ArgoCD pull                | Successful verified setup                          | Probe, watch or reconciliation failure                                             | Afe disconnect                                                                    |
-| ArgoCD agent               | Agent registration                                 | Missing heartbeat or reported observation failure                                  | Afe disconnect through the ArgoCD route                                           |
-| Vercel token / integration | Successful setup                                   | Health failure, including detected credential revocation                           | Afe disconnect; integration-removal webhook                                       |
-| Terraform reporter         | Reporter registration                              | Reported health failures only; there is no source API probe or inactivity deadline | Afe disconnect                                                                    |
+| Connection                 | Created                                            | Lost                                                                               | Deleted                                                                                                                      |
+| -------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| GitHub App                 | Afe setup callback and source installation webhook | Health failure opens a gap and emits `connection.lost`                             | Afe disconnect emits `connection.deleted`; source uninstall emits `connection.deleted` and the existing `connection.revoked` |
+| ArgoCD pull                | Successful verified setup                          | Probe, watch or reconciliation failure                                             | Afe disconnect                                                                                                               |
+| ArgoCD agent               | Agent registration                                 | Missing heartbeat or reported observation failure                                  | Afe disconnect through the ArgoCD route                                                                                      |
+| Vercel token / integration | Successful setup                                   | Health failure, including detected credential revocation                           | Afe disconnect; integration-removal webhook                                                                                  |
+| Terraform reporter         | Reporter registration                              | Reported health failures only; there is no source API probe or inactivity deadline | Afe disconnect                                                                                                               |
 
 Before this fix, only GitHub wrote connection lifecycle events. Other connectors'
 setup and disconnect routes did not emit them. Loss was represented by
@@ -63,3 +63,20 @@ Validation uses PostgreSQL and local fake source APIs: setup/disconnect event
 persistence and attribution, GitHub callback/webhook arrival order and replay,
 one lost event per gap, deferred sink delivery, and UI identity labels. No live
 provider credentials or APIs are used by these tests.
+
+## Administrator disconnect (AFE-67)
+
+Administrators can disconnect from the Connections list or connection detail, after
+reviewing a source-specific warning and choosing **Disconnect connection**. Cancel
+or Escape leaves the connection unchanged. Requests use the existing authenticated,
+CSRF-protected admin routes. Success refreshes status; failures remain in the dialog
+and can be retried.
+
+GitHub supports a local disconnect: observation and webhook processing stop, cached
+installation tokens are invalidated, and the installation stays disconnected even
+when later installation webhooks arrive. The App remains installed on GitHub and
+shared App credentials are preserved. An administrator can reconnect through Afe's
+setup flow. Other connectors revoke their stored credentials; Vercel additionally
+attempts integration removal, while Terraform removes pending reports. External
+tokens, agents or reporter configuration may need manual removal, as the warning
+and result explain. All recorded events remain subject to normal retention.

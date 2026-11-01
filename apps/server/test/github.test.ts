@@ -203,6 +203,83 @@ describe("GitHub connector module", () => {
     });
   });
 
+  describe("administrator disconnect", () => {
+    it("disconnects only the selected installation and records the Afe actor once", async () => {
+      await send("installation", installed());
+      const connection = await only();
+      const other = await upsertConnection(pool, "default", {
+        source: "github",
+        externalId: "5555",
+        name: "other",
+        status: "active",
+      });
+      const remove = () =>
+        afe.app.inject({ method: "DELETE", url: `/api/connections/github/${connection.id}` });
+      const results = await Promise.all([remove(), remove()]);
+      expect(results.map((r) => r.statusCode)).toEqual([200, 200]);
+      expect(results[0]!.json().note).toContain("remains installed");
+      const connections = await listConnections(pool, "default");
+      expect(connections.find((c) => c.id === connection.id)?.status).toBe("disconnected");
+      expect(connections.find((c) => c.id === other.id)?.status).toBe("active");
+      const events = sink.events("default").filter((e) => e.action === "connection.deleted");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        connectionId: connection.id,
+        actor: { type: "user", id: "test-admin" },
+        data: { actorOrigin: "afe" },
+      });
+      for (const action of [
+        "created",
+        "suspend",
+        "unsuspend",
+        "new_permissions_accepted",
+        "deleted",
+      ]) {
+        expect((await send("installation", { ...installed(), action })).statusCode).toBe(202);
+      }
+      expect(
+        (await listConnections(pool, "default")).find((c) => c.id === connection.id)?.status,
+      ).toBe("disconnected");
+      expect(sink.events("default").filter((e) => e.action === "connection.deleted")).toHaveLength(
+        1,
+      );
+    });
+
+    it("rejects viewers, anonymous callers, other tenants and wrong connector ids", async () => {
+      await send("installation", installed());
+      const connection = await only();
+      const wrongSource = await upsertConnection(pool, "default", {
+        source: "argocd",
+        externalId: "argocd",
+        name: "ArgoCD",
+        status: "active",
+      });
+      await afe.app.close();
+      await start(
+        {},
+        tokenMapAuth({
+          admin: { tenantId: "default", roles: ["admin"] },
+          viewer: { tenantId: "default", roles: ["viewer"] },
+          other: { tenantId: "other", roles: ["admin"] },
+        }),
+      );
+      const remove = (id: string, token?: string) =>
+        afe.app.inject({
+          method: "DELETE",
+          url: `/api/connections/github/${id}`,
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+        });
+      expect((await remove(connection.id)).statusCode).toBe(401);
+      expect((await remove(connection.id, "viewer")).statusCode).toBe(403);
+      expect((await remove(connection.id, "other")).statusCode).toBe(404);
+      expect((await remove(wrongSource.id, "admin")).statusCode).toBe(404);
+      expect((await remove("invalid", "admin")).statusCode).toBe(404);
+      expect(
+        (await listConnections(pool, "default")).find((c) => c.id === connection.id)?.status,
+      ).toBe("active");
+    });
+  });
+
   describe("lifecycle events", () => {
     it("installation created: connection active with account, repos and permissions", async () => {
       const res = await send("installation", installed());

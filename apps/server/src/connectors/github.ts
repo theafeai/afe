@@ -600,11 +600,22 @@ async function applyLifecycle(
 ): Promise<{ tenantId: string | null; events: [string, CanonicalEventInputLike][] }> {
   const { ctx } = rt;
   const installation = payload.installation;
-  const existing = await resolveConnectionBySourceIdentity(
+  const known = await resolveConnectionBySourceIdentity(
     db,
     CONNECTOR_SOURCE,
     String(installation.id),
   );
+  // Serialize lifecycle changes with local disconnects. Only an authenticated
+  // setup callback may reconnect a locally disconnected installation.
+  for (const connection of [...known].sort((a, b) => a.id.localeCompare(b.id))) {
+    await db.query(
+      "SELECT id FROM connections WHERE tenant_id = $1 AND id = $2 FOR NO KEY UPDATE",
+      [connection.tenantId, connection.id],
+    );
+  }
+  const existing = (
+    await resolveConnectionBySourceIdentity(db, CONNECTOR_SOURCE, String(installation.id))
+  ).filter((connection) => connection.status !== "disconnected");
   const events: [string, CanonicalEventInputLike][] = [];
   const observation = { method: "webhook" as const, deliveryId: lc.deliveryId };
   const common = {
@@ -620,7 +631,7 @@ async function applyLifecycle(
     const p = payload as InstallationEventPayload;
     if (p.action === "created") {
       const targets = existing.length > 0 ? existing.map((c) => c.tenantId) : [];
-      if (targets.length === 0 && rt.adoptTenant) targets.push(rt.adoptTenant);
+      if (known.length === 0 && rt.adoptTenant) targets.push(rt.adoptTenant);
       for (const tenantId of targets) {
         const conn = await upsertInstallation(db, tenantId, installation, p.repositories ?? null);
         warnOnPermissions(ctx, conn);
@@ -1362,8 +1373,12 @@ export async function processGitHubWebhook(
     connectionId: job.connectionId,
   });
   const connection = await getConnection(ctx.pool, job.tenantId, job.connectionId);
-  if (!connection || connection.source !== CONNECTOR_SOURCE) {
-    log.info("github.webhook: connection not found, delivery ignored");
+  if (
+    !connection ||
+    connection.source !== CONNECTOR_SOURCE ||
+    connection.status === "disconnected"
+  ) {
+    log.info("github.webhook: connection not found or disconnected, delivery ignored");
     return { status: "ignored", reason: "connection not found" };
   }
   const receivedAt = new Date(job.receivedAt);
@@ -2207,6 +2222,50 @@ export function createGitHubModule(options: GitHubModuleOptions = {}): Connector
             throw err;
           }
         };
+
+      app.delete<{ Params: { id: string } }>(
+        "/api/connections/github/:id",
+        { config: { access: "admin" } },
+        async (req, reply) => {
+          if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(req.params.id))
+            return reply.code(404).send({ error: "not_found" });
+          const tenantId = requestTenant(req);
+          const connection = await withTransaction(ctx.pool, async (client) => {
+            await client.query(
+              "SELECT id FROM connections WHERE tenant_id = $1 AND id = $2 FOR NO KEY UPDATE",
+              [tenantId, req.params.id],
+            );
+            const current = await getConnection(client, tenantId, req.params.id);
+            if (!current || current.source !== CONNECTOR_SOURCE) return null;
+            if (current.status !== "disconnected") {
+              await setConnectionStatus(
+                client,
+                tenantId,
+                current.id,
+                "disconnected",
+                "disconnected by administrator",
+              );
+              await queueLifecycleEvent(
+                client,
+                current,
+                lifecycleEvent(current, ACTIONS.CONNECTION_DELETED, req.principal!),
+              );
+            }
+            return current;
+          });
+          if (!connection) return reply.code(404).send({ error: "not_found" });
+          // App credentials are shared across installations; never revoke them here.
+          (await rt.app())?.client.tokens.invalidate(connection.externalId);
+          await flushLifecycleEvents(ctx, connection);
+          req.log.info(
+            { source: CONNECTOR_SOURCE, connectionId: connection.id },
+            "github connection disconnected",
+          );
+          return {
+            note: "Afe stopped observing this installation. The GitHub App remains installed; uninstall it in GitHub Settings → GitHub Apps if needed.",
+          };
+        },
+      );
 
       app.post(GITHUB_ROUTES.webhook, { bodyLimit: WEBHOOK_BODY_LIMIT }, wrap(handleWebhook));
 
