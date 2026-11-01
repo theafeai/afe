@@ -7,7 +7,11 @@ import { useAccess } from "../access.tsx";
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
 const MODES = ["none", "source", "custom", "source + custom"];
-type Policy = { mode: string; custom: { resource: string; action: string }[] };
+type Policy = {
+  mode: string;
+  custom: { resource: string; action: string }[];
+  denied?: { resource: string; action: string }[];
+};
 export function UsersPage() {
   useDocumentTitle("Users");
   const { admin } = useAccess();
@@ -37,6 +41,7 @@ export function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [policies, setPolicies] = useState<Record<string, Policy> | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [restrictions, setRestrictions] = useState("");
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setFailure(null);
@@ -79,6 +84,9 @@ export function UsersPage() {
         `/api/admin/users/${u.id}/permissions`,
       );
       setPolicies(r.tools);
+      setRestrictions(
+        (r.tools.github?.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
+      );
       setDrafts(
         Object.fromEntries(
           TOOLS.map((t) => [
@@ -303,8 +311,9 @@ export function UsersPage() {
           <h3>Tool permissions</h3>
           <p>
             Source uses the user's linked tool account. Custom grants add read access to specific
-            resources. Source + custom combines both. GitHub run controls require an explicit
-            repository action grant plus the user’s GitHub write access.
+            resources. For GitHub, Source inherits your linked account’s permissions without
+            separate action grants. Custom and Source + custom keep explicit action allowlists.
+            Optional GitHub restrictions below apply in every mode; GitHub permissions still apply.
           </p>
           <p>
             Enter one resource per line: <code>repository:owner/name</code>,{" "}
@@ -313,10 +322,10 @@ export function UsersPage() {
             connection.
           </p>
           <p>
-            For GitHub operations, append <code>github.cancel</code>, <code>github.rerun</code>, or{" "}
-            <code>github.rerun_failed</code> after a lowercase repository resource, for example{" "}
-            <code>repository:owner/name github.cancel</code>. Each grant goes on its own line. The
-            catalog below lists all supported operations.
+            For GitHub action allowlists or restrictions, append <code>github.cancel</code>,{" "}
+            <code>github.rerun</code>, or <code>github.rerun_failed</code> after a lowercase
+            repository resource, for example <code>repository:owner/name github.cancel</code>. Each
+            grant goes on its own line. The catalog below lists all supported operations.
           </p>
           <details>
             <summary>GitHub operation grants</summary>
@@ -328,8 +337,8 @@ export function UsersPage() {
               ))}
             </ul>
             <p>
-              Each action requires its own exact repository grant. There are no wildcard mutation
-              grants.
+              Source mode inherits these actions. Allowlists and restrictions name an exact
+              repository and action; wildcard grants are not supported.
             </p>
           </details>
           {policies &&
@@ -342,6 +351,18 @@ export function UsersPage() {
                   void run(async () => {
                     await request("PUT", `/api/admin/users/${selected.id}/permissions/${tool}`, {
                       mode: policies[tool]!.mode,
+                      ...(tool === "github"
+                        ? {
+                            denied: restrictions
+                              .split("\n")
+                              .map((s) => s.trim())
+                              .filter(Boolean)
+                              .map((line) => {
+                                const [resource, action = ""] = line.split(/\s+/);
+                                return { resource, action };
+                              }),
+                          }
+                        : {}),
                       custom: (drafts[tool] ?? "")
                         .split("\n")
                         .map((s) => s.trim())
@@ -381,6 +402,23 @@ export function UsersPage() {
                       onChange={(e) => setDrafts({ ...drafts, [tool]: e.target.value })}
                     />
                   </>
+                )}
+                {tool === "github" && (
+                  <label className="field">
+                    <span>GitHub action restrictions (optional)</span>
+                    <textarea
+                      rows={4}
+                      aria-label="GitHub action restrictions"
+                      value={restrictions}
+                      onChange={(e) => setRestrictions(e.target.value)}
+                      aria-describedby="github-restrictions-help"
+                    />
+                    <span className="small muted" id="github-restrictions-help">
+                      Block one repository/action per line, for example repository:owner/name
+                      github.delete_run. Leave empty to apply no additional action restrictions.
+                      Restrictions override inherited access and allowlists.
+                    </span>
+                  </label>
                 )}
                 <button className="btn" disabled={busy}>
                   Save {tool} permissions
