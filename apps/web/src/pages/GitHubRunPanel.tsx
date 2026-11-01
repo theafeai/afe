@@ -20,7 +20,7 @@ export function hasGitHubRun(event: CanonicalEvent) {
   );
 }
 
-function ProgressState({
+export function ProgressState({
   status,
   conclusion,
 }: {
