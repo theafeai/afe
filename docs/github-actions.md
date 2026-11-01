@@ -7,6 +7,9 @@ workflow/deployment lifecycle in AFE-57, alongside the existing source observati
 connector. Repository code review, issue tracking and organization administration
 are separate product areas.
 
+Define new workflows in repository code under `.github/workflows`. Afe lists and
+operates existing workflows; the GitHub Actions UI does not create workflow files.
+
 ## Setup and permissions
 
 1. Open **Profile** as the administrator and link your personal GitHub token
@@ -36,7 +39,7 @@ are separate product areas.
    | Workflow/run/job controls, caches, artifact deletion | Actions: write; Metadata: read    | Repository write                                                           |
    | Artifact / archived log download                     | Actions: read; Metadata: read     | Repository read                                                            |
    | Workflow input schema from YAML                      | Contents: read                    | Dispatch or configuration Afe grant                                        |
-   | Create/edit/delete workflow files                    | Contents: write, Workflows: write | Repository write; branch protection applies                                |
+   | Edit/delete existing workflow files                  | Contents: write, Workflows: write | Repository write; branch protection applies                                |
    | Deployment create/status/delete                      | Deployments: write                | Repository write; source deletion restrictions apply                       |
    | Pending deployment review                            | Deployments: write                | GitHub's `current_user_can_approve` must permit every selected environment |
    | Environment protection and custom rule configuration | Environments: write               | Repository admin; plan and organization restrictions apply                 |
@@ -80,7 +83,7 @@ pagination; jobs/log downloads preserve run attempts.
 | Workflows                      | Discover workflows; inspect state, ref and dispatch schema                                                                                                                                                                                              |
 | Manual dispatch                | `github.dispatch`: branch/tag/SHA with string, number, boolean, choice and environment inputs; defaults, required fields and choices validated against YAML at the selected ref                                                                         |
 | Workflow state                 | `github.enable`, `github.disable`                                                                                                                                                                                                                       |
-| Workflow configuration         | `github.workflow_save`, `github.workflow_delete`: create, edit or remove a YAML file immediately under `.github/workflows`; commit message, branch and current blob SHA; provider CAS and branch protection                                             |
+| Workflow configuration         | `github.workflow_save`, `github.workflow_delete`: edit or remove an existing YAML file immediately under `.github/workflows`; commit message, branch and current blob SHA; provider CAS and branch protection                                           |
 | Runs/jobs/steps                | Run state, conclusion, attempt, job and step progress; inspect earlier attempts without mixing their output                                                                                                                                             |
 | Cancellation                   | `github.cancel`, `github.force_cancel`                                                                                                                                                                                                                  |
 | Re-running                     | `github.rerun`, `github.rerun_failed`, `github.rerun_job`; optional debug logging; jobs are verified against the selected run and attempt                                                                                                               |
