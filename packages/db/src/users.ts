@@ -80,7 +80,7 @@ export async function setLocalUserDisabled(
   return Boolean(result.rowCount);
 }
 export async function setUserToolPolicy(
-  pool: pg.Pool,
+  pool: pg.Pool | pg.PoolClient,
   tenantId: string,
   userId: string,
   tool: string,

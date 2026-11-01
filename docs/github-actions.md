@@ -9,8 +9,12 @@ are separate product areas.
 
 ## Setup and permissions
 
-1. Create an Afe managed user and assign GitHub `source + custom`, or `custom`
-   with an explicit repository/connection **read** grant. Missing/none denies all.
+1. Open **Profile** as the administrator and link your personal GitHub token
+   directly. Afe creates a GitHub account for this administrator login; you stay
+   signed in as the administrator. Alternatively, use a managed user assigned
+   GitHub `source + custom`, or `custom` with an explicit repository/connection
+   **read** grant. Missing/none denies access for existing accounts.
+
 2. Add exact lowercase repository/action grants in Users, one per line:
 
    ```text
@@ -44,11 +48,25 @@ are separate product areas.
    “Allow editing workflow files” before signing in requests the additional
    `workflow` scope. No existing App installation is elevated automatically.
 
-Bootstrap admin/viewer tokens have no personal source identity and cannot perform
-these operations. Agents can use a managed user's Afe bearer credential. Hosted
-compositions can supply `createAfe({ githubUserId: async (tenantId, principal) =>
-managedUserId })`; the server-owned mapping selects a tenant-managed tool account
-and policy. Neither the browser nor an agent can supply this mapping in a request.
+Administrator linking starts with source access and **no operation grants**.
+After linking, Profile identifies the `github-admin-…` account to select in
+**Users**. Set its GitHub mode to **source + custom** and assign exact
+repository/action grants. No separate Afe login or account switching is needed.
+Source access alone never permits a mutation.
+
+People using the same Afe administrator credential share its GitHub link. A static
+administrator token rotation changes the principal: link again and assign new
+operation grants. Disconnecting removes the encrypted token but retains the
+identity's explicit policy for later relinking. A failed token validation leaves
+an existing link intact. GitHub expiry, missing permissions, organization approval
+and SSO authorization failures are explained in Profile; unavailable/rate-limited
+GitHub responses are distinguished from token rejection.
+
+Static viewer tokens cannot link personal accounts. Agents can use the linked
+administrator's or a managed user's Afe bearer credential. Hosted compositions can
+supply `createAfe({ githubUserId: async (tenantId, principal) => managedUserId })`;
+this server-owned mapping remains authoritative. Neither the browser nor an agent
+can supply the mapping in a request. See [ADR 0012](decisions/0012-administrator-github-linking.md).
 
 Repository discovery intersects personal access, tenant policy and the active
 connection selection. A repository cannot be operated through an unrelated

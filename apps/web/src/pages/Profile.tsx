@@ -2,6 +2,7 @@ import { useState } from "react";
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx";
 import type { ProfileInfo, ProfileTool } from "../access.tsx";
+import { Link } from "../router.tsx";
 function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }) {
   const [token, setToken] = useState("");
   const [workflowAccess, setWorkflowAccess] = useState(false);
@@ -173,18 +174,35 @@ export function ProfilePage() {
   return (
     <div className="page narrow">
       <h1>Profile</h1>
-      <p>
-        Your Afe login opens the dashboard. Tool access is assigned separately by your
-        administrator.
-      </p>
+      <p>Your Afe login and personal tool accounts are separate.</p>
+      {data?.administratorGitHub && (
+        <section className="callout" role="note">
+          <p>
+            Link GitHub below using this administrator login. Anyone sharing the same Afe
+            administrator credential shares this GitHub link. Linking enables repository discovery;
+            operations also require explicit repository/action grants.
+          </p>
+          {data.administratorGitHub.username && (
+            <p>
+              To assign grants, select <code>{data.administratorGitHub.username}</code> in{" "}
+              <Link to="/users">Users</Link>. Use source + custom to keep repository discovery and
+              add operation grants.
+            </p>
+          )}
+        </section>
+      )}
       {error && <ErrorBox error={error} />}{" "}
       {loading ? (
         <Loading />
       ) : data?.tools.length ? (
         data.tools.map((t) => <ToolAccount key={t.tool} tool={t} reload={reload} />)
-      ) : (
+      ) : data?.administratorGitHub ? (
+        <p>GitHub access is disabled for this identity. Update its permissions in Users.</p>
+      ) : data && !data.managedUser ? (
+        <p>Ask your administrator to create a named user and assign GitHub access.</p>
+      ) : data ? (
         <p>No tools are assigned to your account. Contact your administrator for access.</p>
-      )}
+      ) : null}
     </div>
   );
 }

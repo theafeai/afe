@@ -614,6 +614,72 @@ it("links a fine-grained personal token without returning it and scopes custom-o
   expect((await afe.app.inject({ url: q("runs"), headers: headers() })).statusCode).toBe(200);
   expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(403);
 });
+it("lets a linked administrator discover repositories and operate only after explicit grants", async () => {
+  const adminHeaders = { authorization: `Bearer ${admin}` };
+  expect(
+    (
+      await afe.app.inject({
+        method: "POST",
+        url: "/api/profile/tools/github/token",
+        headers: adminHeaders,
+        payload: { token: "admin-personal-test-token", userId: user.user.id },
+      })
+    ).statusCode,
+  ).toBe(200);
+  const resources = await afe.app.inject({
+    url: "/api/actions/github/resources",
+    headers: adminHeaders,
+  });
+  expect(resources.statusCode).toBe(200);
+  expect(resources.json().items[0].repository).toBe("acme/app");
+  const body = { connectionId, action: "github.rerun", params: { runId: 123, attempt: 1 } };
+  const prepareAdmin = () =>
+    afe.app.inject({
+      method: "POST",
+      url: root + "/prepare",
+      headers: adminHeaders,
+      payload: body,
+    });
+  expect((await prepareAdmin()).statusCode).toBe(403);
+  expect(mutations).toEqual([]);
+  const uid = (await pool.query<{ user_id: string }>("SELECT user_id FROM github_admin_identities"))
+    .rows[0]!.user_id;
+  expect(uid).not.toBe(user.user.id);
+  expect(
+    (
+      await afe.app.inject({
+        method: "PUT",
+        url: `/api/admin/users/${uid}/permissions/github`,
+        headers: adminHeaders,
+        payload: {
+          mode: "source + custom",
+          custom: [{ resource: "repository:acme/app", action: "github.rerun" }],
+        },
+      })
+    ).statusCode,
+  ).toBe(200);
+  const prepared = await prepareAdmin();
+  expect(prepared.statusCode).toBe(200);
+  const executed = await afe.app.inject({
+    method: "POST",
+    url: root,
+    headers: adminHeaders,
+    payload: {
+      ...body,
+      expectedVersion: prepared.json().version,
+      requestId: randomUUID(),
+      confirmed: true,
+    },
+  });
+  expect(executed.statusCode).toBe(202);
+  expect(mutations).toHaveLength(1);
+  await afe.app.inject({
+    method: "DELETE",
+    url: "/api/profile/tools/github",
+    headers: adminHeaders,
+  });
+  expect((await prepareAdmin()).statusCode).toBe(403);
+});
 it("enforces tenant isolation for browsing, execution and history", async () => {
   await pool.query("INSERT INTO tenants (id,name) VALUES ('other','Other')");
   const other = await createLocalUser(pool, "other", "bob");
