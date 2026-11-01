@@ -33,7 +33,7 @@ import {
   useAsync,
   useDocumentTitle,
 } from "../components.tsx";
-import { formatDateTime, formatRelative, humanize } from "../format.ts";
+import { formatDateTime, formatRelative, humanize, qualifiedAction } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import {
   CARD_H,
@@ -70,8 +70,14 @@ export function ConfidenceBadge({ value, title }: { value: Confidence | null; ti
   );
 }
 
+/** Source-qualified name of the step with this id, or `fallback` when it is not in the journey. */
+function stepAction(byId: Map<string, JourneyStep>, id: string, fallback = ""): string {
+  const e = byId.get(id)?.event;
+  return e ? qualifiedAction(e) : fallback;
+}
+
 function EventLink({ e, children }: { e: EventSummary; children?: ReactNode }) {
-  return <Link to={`/events/${e.id}`}>{children ?? <code>{e.action}</code>}</Link>;
+  return <Link to={`/events/${e.id}`}>{children ?? <code>{qualifiedAction(e)}</code>}</Link>;
 }
 
 function When({ at }: { at: string }) {
@@ -525,8 +531,8 @@ function WhereItWent({
 type Active = { kind: "step"; id: string } | { kind: "edge"; index: number } | null;
 
 function edgeLabel(p: EdgePath, byId: Map<string, JourneyStep>): string {
-  const from = byId.get(p.edge.from)?.event.action ?? "step";
-  const to = byId.get(p.edge.to)?.event.action ?? "step";
+  const from = stepAction(byId, p.edge.from, "step");
+  const to = stepAction(byId, p.edge.to, "step");
   if (p.conflict) return `Conflict between ${from} and ${to}: ${p.conflict.detail}`;
   return `${from} to ${to}, path confidence ${p.edge.confidence}: ${p.edge.evidence.map(evidenceText).join("; ")}`;
 }
@@ -596,7 +602,7 @@ export function JourneyDiagram({ journey }: { journey: Journey }) {
                 className={`journey-card tool-edge-${e.source} conf-edge-${step.confidence}${dim ? " is-dim" : ""}${activeStep === step.eventId ? " is-active" : ""}`}
                 style={{ left: x, top: y, width: layout.cardW, height: CARD_H }}
                 data-testid="journey-card"
-                aria-label={`${STAGE_LABEL[step.stage]}: ${e.action} on ${e.target.label}, ${humanize(e.outcome)}, ${formatDateTime(e.at)}, ${step.reachedFrom ? `${step.confidence} link` : "carries the commit"}`}
+                aria-label={`${STAGE_LABEL[step.stage]}: ${qualifiedAction(e)} on ${e.target.label}, ${humanize(e.outcome)}, ${formatDateTime(e.at)}, ${step.reachedFrom ? `${step.confidence} link` : "carries the commit"}`}
                 onMouseEnter={() => setActive({ kind: "step", id: step.eventId })}
                 onFocus={() => setActive({ kind: "step", id: step.eventId })}
               >
@@ -610,7 +616,9 @@ export function JourneyDiagram({ journey }: { journey: Journey }) {
                     </span>
                   )}
                 </span>
-                <span className="jc-action">{e.action}</span>
+                <span className="jc-action" title={qualifiedAction(e)}>
+                  {qualifiedAction(e)}
+                </span>
                 <span className="jc-meta">
                   {e.target.label}
                   {e.actor ? ` · ${e.actor}` : ""}
@@ -755,7 +763,7 @@ function Inspector({
       ) : (
         <>
           <h3>
-            <code>{from?.action}</code> → <code>{to?.action}</code>{" "}
+            <code>{from && qualifiedAction(from)}</code> → <code>{to && qualifiedAction(to)}</code>{" "}
             <ConfidenceBadge value={p.edge.confidence} />
           </h3>
           <p className="small muted">
@@ -774,7 +782,7 @@ function Inspector({
       body = (
         <>
           <h3>
-            <code>{s.event.action}</code> <ConfidenceBadge value={s.confidence} />
+            <code>{qualifiedAction(s.event)}</code> <ConfidenceBadge value={s.confidence} />
           </h3>
           <p className="small">
             {toolLabel(s.event.source)} · {s.event.target.label} · {humanize(s.event.outcome)} ·{" "}
@@ -784,8 +792,8 @@ function Inspector({
           {s.reachedFrom ? (
             <>
               <p className="small">
-                Reached from <code>{byId.get(s.reachedFrom)?.event.action ?? s.reachedFrom}</code>{" "}
-                (path confidence {s.confidence}, the weakest link on the way):
+                Reached from <code>{stepAction(byId, s.reachedFrom, s.reachedFrom)}</code> (path
+                confidence {s.confidence}, the weakest link on the way):
               </p>
               <EvidenceList evidence={s.via} />
             </>
@@ -831,7 +839,7 @@ export function StepList({ journey }: { journey: Journey }) {
                   </span>
                   {s.reachedFrom && (
                     <span className="small muted">
-                      reached from <code>{byId.get(s.reachedFrom)?.event.action}</code> via{" "}
+                      reached from <code>{stepAction(byId, s.reachedFrom)}</code> via{" "}
                       {s.via.map(evidenceText).join("; ")}
                     </span>
                   )}

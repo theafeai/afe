@@ -188,20 +188,18 @@ it("expands run details directly after the selected row and moves or closes them
   fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
   await screen.findByText("Deploy 101");
   for (const id of [101, 102, 103]) {
-    const row = screen.getByText(`Deploy ${id}`).closest("tr")!;
+    const row = screen.getByText(`Deploy ${id}`).closest("li")!;
     const open = within(row).getByRole("button", { name: "Open details" });
     expect(open.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(open);
-    const details = await screen.findByRole("region", { name: `Run ${id} details` });
-    expect(screen.getAllByRole("region")).toHaveLength(1);
-    expect(row.nextElementSibling).toBe(details.closest("tr"));
-    expect(details.closest("td")?.colSpan).toBe(4);
-    if (id < 103)
-      expect(row.nextElementSibling?.nextElementSibling?.textContent).toContain(`Deploy ${id + 1}`);
-    else expect(row.nextElementSibling?.nextElementSibling).toBeNull();
-    const close = within(row).getByRole("button", { name: "Close details" });
+    const details = await screen.findByRole("region", { name: `Run ${id}` });
+    expect(screen.getAllByRole("region", { name: /^Run \d+$/ })).toHaveLength(1);
+    expect(row.firstElementChild?.nextElementSibling?.contains(details)).toBe(true);
+    if (id < 103) expect(row.nextElementSibling?.textContent).toContain(`Deploy ${id + 1}`);
+    else expect(row.nextElementSibling).toBeNull();
+    const close = within(row).getByRole("button", { name: "Hide details" });
     expect(close.getAttribute("aria-expanded")).toBe("true");
-    expect(close.getAttribute("aria-controls")).toBe(details.id);
+    expect(close.getAttribute("aria-controls")).toBe(details.parentElement?.id);
     await within(details).findByText(/Build and deploy/);
     expect(
       within(details).getByRole("link", { name: "Open source run" }).getAttribute("href"),
@@ -213,44 +211,56 @@ it("expands run details directly after the selected row and moves or closes them
         .getAttribute("href"),
     ).toContain(`id=${id}&attempt=2`);
   }
-  fireEvent.click(screen.getByRole("button", { name: "Close details" }));
-  expect(screen.queryByRole("region")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Hide details" }));
+  expect(screen.queryByRole("region", { name: /^Run \d+$/ })).toBeNull();
 });
 it("clears inline run details when changing pages or views", async () => {
   fixture();
   fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
   fireEvent.click(
-    within((await screen.findByText("Deploy 101")).closest("tr")!).getByRole("button", {
+    within((await screen.findByText("Deploy 101")).closest("li")!).getByRole("button", {
       name: "Open details",
     }),
   );
-  await screen.findByRole("region", { name: "Run 101 details" });
+  await screen.findByRole("region", { name: "Run 101" });
   fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-  await screen.findByText("No items on this page");
-  expect(screen.queryByRole("region")).toBeNull();
+  await screen.findByText("No runs on this page");
+  expect(screen.queryByRole("region", { name: /^Run \d+$/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
   fireEvent.click(
-    within((await screen.findByText("Deploy 101")).closest("tr")!).getByRole("button", {
+    within((await screen.findByText("Deploy 101")).closest("li")!).getByRole("button", {
       name: "Open details",
     }),
   );
-  await screen.findByRole("region", { name: "Run 101 details" });
+  await screen.findByRole("region", { name: "Run 101" });
   fireEvent.click(screen.getByRole("button", { name: "Workflows" }));
   await screen.findByText("Deploy");
-  expect(screen.queryByRole("region")).toBeNull();
+  expect(screen.queryByRole("region", { name: /^Run \d+$/ })).toBeNull();
 });
 it("keeps detail errors and job content beside the selected run", async () => {
   fixture({ runError: true });
   fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
   fireEvent.click(
-    within((await screen.findByText("Deploy 102")).closest("tr")!).getByRole("button", {
+    within((await screen.findByText("Deploy 102")).closest("li")!).getByRole("button", {
       name: "Open details",
     }),
   );
-  const details = await screen.findByRole("region", { name: "Run 102 details" });
+  const details = await screen.findByRole("region", { name: "Run 102" });
   await within(details).findByText(/Run details unavailable/);
   await within(details).findByText(/Build and deploy/);
-  expect(screen.getByText("Deploy 102").closest("tr")?.nextElementSibling).toBe(
-    details.closest("tr"),
-  );
+  expect(screen.getByText("Deploy 102").closest("li")?.contains(details)).toBe(true);
+});
+
+it("expands details directly beneath the selected row and collapses them again", async () => {
+  fixture();
+  const open = await screen.findByRole("button", { name: "Open details" });
+  expect(open.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(open);
+  const row = open.closest("li")!;
+  const hide = within(row).getByRole("button", { name: "Hide details" });
+  expect(hide.getAttribute("aria-expanded")).toBe("true");
+  expect(await within(row).findByRole("button", { name: "Prepare dispatch" })).toBeTruthy();
+  fireEvent.click(hide);
+  expect(screen.queryByRole("button", { name: "Prepare dispatch" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Open details" })).toBeTruthy();
 });

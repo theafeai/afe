@@ -1,3 +1,4 @@
+import { DisconnectAction } from "./DisconnectAction.tsx";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { ApiError, api } from "../api/client.ts";
 import type {
@@ -214,6 +215,7 @@ export function argocdErrorMessage(err: Error): string {
 }
 
 export function ConnectArgoCD() {
+  const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null);
   useDocumentTitle("Connect ArgoCD");
   const id = useId();
   const [form, setForm] = useState({ url: "", token: "", caPem: "", name: "" });
@@ -257,25 +259,16 @@ export function ConnectArgoCD() {
       setTests((t) => ({ ...t, [cid]: { busy: false, error: err as Error } }));
     }
   };
-  const disconnect = async (cid: string, name: string) => {
-    if (
-      !window.confirm(
-        `Disconnect ArgoCD “${name}”? Afe deletes its token. Recorded events are kept.`,
-      )
-    )
-      return;
-    try {
-      await api.argocdDisconnect(cid);
-      list.reload();
-    } catch (err) {
-      setTests((t) => ({ ...t, [cid]: { busy: false, error: err as Error } }));
-    }
-  };
 
   return (
     <div className="page narrow">
       <Back />
       <h1>Connect ArgoCD</h1>
+      {disconnectNotice && (
+        <p className="callout callout-ok" role="status">
+          {disconnectNotice}
+        </p>
+      )}
       <p className="lede">
         Afe reads ArgoCD with the API token of a dedicated local account with a{" "}
         <strong>read-only</strong> role (see docs/connectors/argocd.md). Afe checks the token cannot
@@ -384,13 +377,13 @@ export function ConnectArgoCD() {
                       >
                         {t?.busy ? "Testing…" : "Test"}
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger"
-                        onClick={() => void disconnect(c.id, c.name)}
-                      >
-                        Disconnect
-                      </button>
+                      <DisconnectAction
+                        connection={c}
+                        onDone={(note) => {
+                          setDisconnectNotice(note);
+                          list.reload();
+                        }}
+                      />
                     </div>
                   )}
                   {t?.result && <ReadOnlyResult r={t.result} />}

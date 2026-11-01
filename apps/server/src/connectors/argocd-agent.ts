@@ -1,3 +1,4 @@
+import { lifecycleEvent, queueLifecycleEvent, flushLifecycleEvents } from "../connection-events.ts";
 /**
  * In-cluster ArgoCD agent: registration, ingest endpoint and processing
  * (AFE-28). Design: docs/decisions/0004-argocd-connection-model.md "Agent
@@ -670,6 +671,11 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
               cred.id,
             );
             await resetAgentRow(client, tenantId, connection.id);
+            await queueLifecycleEvent(
+              client,
+              connection,
+              lifecycleEvent(connection, "connection.created", req.principal!),
+            );
             await client.query("COMMIT");
           } catch (e) {
             await client.query("ROLLBACK").catch(() => undefined);
@@ -677,6 +683,7 @@ export function createArgoCdAgentModule(options: ArgoCdAgentModuleOptions = {}):
           } finally {
             client.release();
           }
+          await flushLifecycleEvents(ctx, connection);
           req.log.info(
             { source: CONNECTOR_SOURCE, connectionId: connection.id },
             "argocd agent registered",

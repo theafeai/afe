@@ -203,6 +203,83 @@ describe("GitHub connector module", () => {
     });
   });
 
+  describe("administrator disconnect", () => {
+    it("disconnects only the selected installation and records the Afe actor once", async () => {
+      await send("installation", installed());
+      const connection = await only();
+      const other = await upsertConnection(pool, "default", {
+        source: "github",
+        externalId: "5555",
+        name: "other",
+        status: "active",
+      });
+      const remove = () =>
+        afe.app.inject({ method: "DELETE", url: `/api/connections/github/${connection.id}` });
+      const results = await Promise.all([remove(), remove()]);
+      expect(results.map((r) => r.statusCode)).toEqual([200, 200]);
+      expect(results[0]!.json().note).toContain("remains installed");
+      const connections = await listConnections(pool, "default");
+      expect(connections.find((c) => c.id === connection.id)?.status).toBe("disconnected");
+      expect(connections.find((c) => c.id === other.id)?.status).toBe("active");
+      const events = sink.events("default").filter((e) => e.action === "connection.deleted");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        connectionId: connection.id,
+        actor: { type: "user", id: "test-admin" },
+        data: { actorOrigin: "afe" },
+      });
+      for (const action of [
+        "created",
+        "suspend",
+        "unsuspend",
+        "new_permissions_accepted",
+        "deleted",
+      ]) {
+        expect((await send("installation", { ...installed(), action })).statusCode).toBe(202);
+      }
+      expect(
+        (await listConnections(pool, "default")).find((c) => c.id === connection.id)?.status,
+      ).toBe("disconnected");
+      expect(sink.events("default").filter((e) => e.action === "connection.deleted")).toHaveLength(
+        1,
+      );
+    });
+
+    it("rejects viewers, anonymous callers, other tenants and wrong connector ids", async () => {
+      await send("installation", installed());
+      const connection = await only();
+      const wrongSource = await upsertConnection(pool, "default", {
+        source: "argocd",
+        externalId: "argocd",
+        name: "ArgoCD",
+        status: "active",
+      });
+      await afe.app.close();
+      await start(
+        {},
+        tokenMapAuth({
+          admin: { tenantId: "default", roles: ["admin"] },
+          viewer: { tenantId: "default", roles: ["viewer"] },
+          other: { tenantId: "other", roles: ["admin"] },
+        }),
+      );
+      const remove = (id: string, token?: string) =>
+        afe.app.inject({
+          method: "DELETE",
+          url: `/api/connections/github/${id}`,
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+        });
+      expect((await remove(connection.id)).statusCode).toBe(401);
+      expect((await remove(connection.id, "viewer")).statusCode).toBe(403);
+      expect((await remove(connection.id, "other")).statusCode).toBe(404);
+      expect((await remove(wrongSource.id, "admin")).statusCode).toBe(404);
+      expect((await remove("invalid", "admin")).statusCode).toBe(404);
+      expect(
+        (await listConnections(pool, "default")).find((c) => c.id === connection.id)?.status,
+      ).toBe("active");
+    });
+  });
+
   describe("lifecycle events", () => {
     it("installation created: connection active with account, repos and permissions", async () => {
       const res = await send("installation", installed());
@@ -262,7 +339,12 @@ describe("GitHub connector module", () => {
         status: "revoked",
         statusReason: "GitHub App uninstalled",
       });
-      expect(sink.events("default").at(-1)!.action).toBe("connection.revoked");
+      expect(
+        sink
+          .events("default")
+          .slice(-2)
+          .map((e) => e.action),
+      ).toEqual(["connection.revoked", "connection.deleted"]);
     });
 
     it("suspend and unsuspend", async () => {
@@ -417,6 +499,24 @@ describe("GitHub connector module", () => {
       return { state: location.searchParams.get("state")!, cookie };
     }
 
+    it("keeps the Afe administrator when the installation webhook arrives before setup", async () => {
+      const { state, cookie } = await startInstall();
+      await send("installation", installed());
+      const res = await afe.app.inject({
+        url: `/api/connections/github/setup?installation_id=4242&state=${encodeURIComponent(state)}`,
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(200);
+      const applicationEvents = sink.events("default").filter((e) => e.data?.actorOrigin === "afe");
+      expect(applicationEvents).toHaveLength(1);
+      expect(applicationEvents[0]!.actor).toMatchObject({ type: "user", id: "test-admin" });
+      await afe.app.inject({
+        url: `/api/connections/github/setup?installation_id=4242&state=${encodeURIComponent(state)}`,
+        headers: { cookie },
+      });
+      expect(sink.events("default").filter((e) => e.data?.actorOrigin === "afe")).toHaveLength(1);
+    });
+
     it("redirects to GitHub and connects the installation on setup", async () => {
       const { state, cookie } = await startInstall();
       const res = await afe.app.inject({
@@ -436,9 +536,14 @@ describe("GitHub connector module", () => {
       const conn = await only();
       expect(conn.externalId).toBe("4242");
       expect(sink.events("default").map((e) => e.action)).toEqual(["connection.created"]);
-      // The later installation.created webhook does not create a second event.
+      expect(sink.events("default")[0]).toMatchObject({
+        actor: { type: "user", id: "test-admin" },
+        data: { actorOrigin: "afe", credentialOwner: { type: "bot", name: "GitHub App" } },
+      });
+      // Source installation and Afe connection actions retain their separate actors.
       await send("installation", installed());
-      expect(sink.events("default")).toHaveLength(1);
+      expect(sink.events("default")).toHaveLength(2);
+      expect(sink.events("default")[1]!.actor.login).toBe("octocat");
       // Token was narrowed to read permissions.
       const mint = api.requests.find((r) => r.method === "POST");
       expect(mint?.body).toEqual({

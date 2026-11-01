@@ -174,3 +174,27 @@ Requested artifact and completed-log ZIPs are streamed, with limits and inert
 attachment headers; signed storage URLs and GitHub credentials stay server-side.
 Personal fine-grained tokens use the existing encrypted user GitHub credential
 kind. Explicit OAuth workflow-edit consent adds `workflow` only to that sign-in.
+
+## Connection lifecycle identities (AFE-64)
+
+Lifecycle events retain the authenticated Afe principal id and optional display
+name, separate from `data.credentialOwner` (upstream public user id/username or
+GitHub App id). GitHub installation accounts remain installation scope, not
+human credential ownership. Vercel connection configuration also stores the
+resolved public credential owner id/username for later disconnect events. ArgoCD
+uses its existing verified account name. No token, API key, HMAC secret, or
+authorization header is copied into lifecycle events. Pending lifecycle payloads
+use `health_outbox` until delivered; retained events expire with the normal
+event window. See [connection lifecycle](../connection-lifecycle.md).
+
+## Administrator GitHub identity bindings (AFE-62)
+
+`github_admin_identities` stores the tenant ID, authenticated Afe principal ID
+(a non-secret token fingerprint for static administrators), and associated
+user UUID. The binding connects the administrator login to existing personal
+GitHub account storage and explicit tool policies. It is retained with the
+account; event retention does not purge it. Token rotation creates a new
+principal and does not transfer the old link or grants. Disconnecting destroys
+the linked credential ciphertext while retaining the identity and policy for
+relinking. GitHub account names and credential references remain in
+`user_tool_accounts`; personal tokens remain encrypted in `credentials`.

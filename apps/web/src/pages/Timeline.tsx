@@ -1,3 +1,4 @@
+import { credentialOwnerLabel } from "../credential-owner.ts";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import { icons } from "../icons.tsx";
@@ -23,7 +24,14 @@ import {
   parseFilters,
   type Filters,
 } from "../filters.ts";
-import { dayKey, formatDateTime, formatDay, formatTime, humanize } from "../format.ts";
+import {
+  dayKey,
+  formatDateTime,
+  formatDay,
+  formatTime,
+  humanize,
+  qualifiedAction,
+} from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import { usePaged } from "../usePaged.ts";
 import { useJourneyHighlight, type RowDecoration } from "./JourneyHighlight.tsx";
@@ -43,15 +51,6 @@ export function targetLabel(e: CanonicalEvent): string {
   const t = e.target;
   const name = t.application ?? t.project ?? t.name ?? t.repository ?? t.id;
   return name;
-}
-
-/**
- * The event name qualified by its source tool (`github.workflow_run.completed`), so the tool
- * is readable from the name itself. Actions that already carry the prefix (ArgoCD's
- * `argocd.sync.succeeded`) are left as they are.
- */
-export function qualifiedAction(e: Pick<CanonicalEvent, "source" | "action">): string {
-  return e.action.startsWith(`${e.source}.`) ? e.action : `${e.source}.${e.action}`;
 }
 
 function gapOf(e: CanonicalEvent): Partial<ObservationGap> | null {
@@ -103,7 +102,7 @@ export function EventRow({ item, decoration }: { item: EventItem; decoration?: R
   const hl = decoration?.highlight;
   return (
     <li
-      className={`event-row${late ? ` row-${m}` : ""}${hl ? ` row-hl-${hl}` : ""}${decoration?.action ? " has-action" : ""}`}
+      className={`event-row tool-row tool-${e.source}${late ? ` row-${m}` : ""}${hl ? ` row-hl-${hl}` : ""}${decoration?.action ? " has-action" : ""}`}
     >
       <Link to={`/events/${e.id}`} className="row-link">
         <time className="row-time" dateTime={e.occurredAt} title={e.occurredAt}>
@@ -118,8 +117,14 @@ export function EventRow({ item, decoration }: { item: EventItem; decoration?: R
           </span>
           <span className="row-meta">
             <span>
-              <span className="muted">by</span> {actorLabel(e)}
+              <span className="muted">{e.data?.actorOrigin === "afe" ? "Afe actor" : "by"}</span>{" "}
+              {actorLabel(e)}
             </span>
+            {credentialOwnerLabel(e) && (
+              <span>
+                <span className="muted">Credential owner</span> {credentialOwnerLabel(e)}
+              </span>
+            )}
             <span>
               <span className="muted">on</span> {targetLabel(e)}
               {e.target.environment && (

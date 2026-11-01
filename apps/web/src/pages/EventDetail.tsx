@@ -1,3 +1,4 @@
+import { credentialOwnerLabel } from "../credential-owner.ts";
 import { GitHubRunControls } from "./GitHubRunControls.tsx";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
@@ -13,7 +14,13 @@ import {
   useAsync,
   useDocumentTitle,
 } from "../components.tsx";
-import { formatBytes, formatDateTime, formatDuration, humanize } from "../format.ts";
+import {
+  formatBytes,
+  formatDateTime,
+  formatDuration,
+  humanize,
+  qualifiedAction,
+} from "../format.ts";
 import { Link } from "../router.tsx";
 import { ContainmentPanel, containmentSubject } from "./ContainmentPanel.tsx";
 import { JourneyLinks } from "./JourneyLinks.tsx";
@@ -52,7 +59,7 @@ const CORRELATION_PARAMS: Partial<Record<keyof Correlation, string>> = {
 export function EventDetailPage({ id }: { id: string }) {
   const { managed } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.event(id, s), [id]);
-  useDocumentTitle(data ? data.event.action : "Event");
+  useDocumentTitle(data ? qualifiedAction(data.event) : "Event");
   if (loading) return <Loading label="Loading event…" />;
   if (error)
     return (
@@ -78,7 +85,7 @@ export function EventDetailPage({ id }: { id: string }) {
       </p>
       <header className="page-header">
         <div>
-          <h1 className="mono-title">{e.action}</h1>
+          <h1 className="mono-title">{qualifiedAction(e)}</h1>
           <p className="lede">
             <ToolBadge source={e.source} /> <OutcomeBadge outcome={e.outcome} />{" "}
             <MethodBadge method={p.method} /> occurred{" "}
@@ -101,7 +108,15 @@ export function EventDetailPage({ id }: { id: string }) {
           <h2>Who</h2>
           <KeyValue
             items={[
-              ["Actor", actorText(e.actor)],
+              [e.data?.actorOrigin === "afe" ? "Afe actor" : "Actor", actorText(e.actor)],
+              ...(e.target.type === "connection"
+                ? [
+                    ["Credential owner", credentialOwnerLabel(e) ?? "Unavailable"] as [
+                      string,
+                      string,
+                    ],
+                  ]
+                : []),
               ["On behalf of", actorText(e.actor.onBehalfOf)],
               ["Triggered by", actorText(e.actor.triggeredBy)],
             ]}

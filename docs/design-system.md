@@ -1,7 +1,9 @@
 # Afe design system
 
 This is the binding reference for every change to the web UI (`apps/web`). It
-implements [ADR 0009](decisions/0009-web-ui-design-system.md). Humans and
+implements [ADR 0009](decisions/0009-web-ui-design-system.md) and the type scale of
+[ADR 0012](decisions/0012-readable-type-scale.md) and the tool colours of
+[ADR 0013](decisions/0013-tool-colour-coding.md). Humans and
 agents follow it for **all** UI work, new features included. The rules marked
 **[enforced]** are checked by `apps/web/src/design-system.test.ts`, which runs
 in `pnpm test`; a violation fails CI.
@@ -54,8 +56,8 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
   failures. If everything is highlighted, nothing is.
 - **One accent.** Indigo marks interactivity and selection (links, primary
   buttons, the current nav item, focus). It never encodes a status.
-- **Data-dense but legible.** 13–14px text, tabular numerals, monospace only
-  for identifiers.
+- **Data-dense but legible.** 15px body, 14px dense rows, nothing below 12px,
+  tabular numerals, monospace only for identifiers.
 - **Say what is known and how sure Afe is.** The UI never hides uncertainty;
   it shows it quietly and consistently ([Status language](#status-language)).
 
@@ -87,24 +89,25 @@ token whose **role** matches, not the one whose colour looks right.
 | `--ok` / `--ok-bg`                                        | Succeeded, healthy, certain                                         |
 | `--warn` / `--warn-bg` / `--warn-border`                  | Pending, degraded, observation gaps, probable                       |
 | `--bad` / `--bad-bg`                                      | Failed, revoked, weak, conflict, alerts                             |
-| `--recon` / `--recon-bg`                                  | Found by reconciliation; ambiguous                                  |
+| `--recon` / `--recon-bg`                                  | Found by reconciliation; ambiguous (magenta)                        |
 | `--backfill` / `--backfill-bg`                            | Imported by backfill                                                |
 | `--conf-*`                                                | Confidence scale (see [Status language](#status-language))          |
 | `--highlight` / `--highlight-bg` / `--env-selected`       | Journey highlight, selected matrix cell                             |
-| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool marks only                                                     |
+| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool logos and tool rows only; never status                         |
 
 ### Type, space, shape, depth, motion
 
-| Group          | Tokens                                                                                                                                                                                                     |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Font families  | `--font` (Inter), `--mono` (JetBrains Mono)                                                                                                                                                                |
-| Font sizes     | `--fs-xs` 11px (overlines, table heads) · `--fs-sm` 12px (badges, meta) · `--fs-md` 13px (controls, dense rows) · `--fs-base` 14px (body) · `--fs-lg` 16px (section titles) · `--fs-xl` 22px (page titles) |
-| Spacing        | `--space-1` 4px · `--space-2` 8px · `--space-3` 12px · `--space-4` 16px · `--space-5` 24px · `--space-6` 32px                                                                                              |
-| Radius         | `--radius-sm` 6px (controls, badges) · `--radius` 8px (cards, tables) · `--radius-lg` 12px (dialogs, sign-in card)                                                                                         |
-| Control height | `--control-h` 32px                                                                                                                                                                                         |
-| Elevation      | `--shadow-xs` (cards, controls) · `--shadow-sm` (hover lift) · `--shadow-md` (popovers, sign-in card) · `--sheen` (inner highlight on primary buttons)                                                     |
-| Motion         | `--dur` 120ms · `--ease`; respect `prefers-reduced-motion` (handled globally)                                                                                                                              |
-| Layout         | `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                                                      |
+| Group          | Tokens                                                                                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Font families  | `--font` (Inter), `--mono` (JetBrains Mono)                                                                                                                                                                        |
+| Font sizes     | `--fs-xs` 12px (overlines, table heads) · `--fs-sm` 13px (badges, labels, meta) · `--fs-md` 14px (controls, dense rows) · `--fs-base` 15px (body) · `--fs-lg` 17px (section titles) · `--fs-xl` 24px (page titles) |
+| Line height    | `--lh` 1.55 (running text) · `--lh-dense` 1.45 (rows, cells, callouts) · `--lh-tight` 1.25 (headings)                                                                                                              |
+| Spacing        | `--space-1` 4px · `--space-2` 8px · `--space-3` 12px · `--space-4` 16px · `--space-5` 24px · `--space-6` 32px                                                                                                      |
+| Radius         | `--radius-sm` 6px (controls, badges) · `--radius` 8px (cards, tables) · `--radius-lg` 12px (dialogs, sign-in card)                                                                                                 |
+| Control height | `--control-h` 36px                                                                                                                                                                                                 |
+| Elevation      | `--shadow-xs` (cards, controls) · `--shadow-sm` (hover lift) · `--shadow-md` (popovers, sign-in card) · `--sheen` (inner highlight on primary buttons)                                                             |
+| Motion         | `--dur` 120ms · `--ease`; respect `prefers-reduced-motion` (handled globally)                                                                                                                                      |
+| Layout         | `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                                                              |
 
 Prefer the spacing and size tokens for new CSS. Some older page rules still
 use literal `rem` values; convert them when you touch those rules.
@@ -114,8 +117,16 @@ use literal `rem` values; convert them when you touch those rules.
 - **Inter** for all UI text. **JetBrains Mono** only for identifiers: commit
   SHAs, image references, event types (`deployment.created`), times in
   timelines, rule expressions. Never for prose or labels.
-- Page title: `h1` (`--fs-xl`, weight 600). Section title: `h2` (`--fs-lg`).
-  Card title: `h2` or `h3` inside `.card`.
+- Page title: `h1` (`--fs-xl`, weight 650). Section title: `h2` (`--fs-lg`).
+  Card title: `h2` (or a first-child `h3`) inside `.card`, shown at `--fs-lg`;
+  later `h3`s in a card are subsections at `--fs-base`.
+- Body text has no negative letter spacing; only headings are tightened.
+  Inter's `cv05`/`cv08` alternates keep `l`, `I` and `1` distinct.
+- Labels are muted and values are `--text` (`.kv`, `.field`); ledes use
+  `--text-2`. `--faint` is never used for text that carries content, including
+  placeholders and navigation headings.
+- Never set a font size below `--fs-xs` (12px), and use the size tokens, not
+  literal `rem`/`px` font sizes.
 - Overlines and table headers: `--fs-xs`, uppercase, `letter-spacing: 0.06em`,
   `--muted`. Use sparingly.
 - Numbers that line up (tables, times, counts): `font-variant-numeric:
@@ -169,7 +180,7 @@ Use these instead of re-creating their markup.
 | `OutcomeBadge`, `HealthBadge`, `StatusBadge`, `MethodBadge`                  | Event outcome, connection health, connection status, observation method |
 | `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
 | `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
-| `icons.*`, `BrandMark`                                                       | 16px line icons (`aria-hidden`) and the Afe mark                        |
+| `icons.*`, `BrandMark`, `ToolMark`                                           | 16px line icons (`aria-hidden`), the Afe mark and tool logos            |
 | `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
 
 ### CSS classes (`styles.css`)
@@ -203,13 +214,18 @@ encodings, the same way on every page.
   succeeded/failed, hollow for pending/in progress.
 - **Health** (`HealthBadge`): a dot with a soft halo, plus a word.
 - **Tool** (`ToolBadge`, `.tool-<source>`): a neutral badge with the tool's
-  colour as a small square. Tool colours are never used for anything else.
+  logo in its colour (`ToolMark`). A row that belongs to one tool adds
+  `tool-row tool-<source>` for a 2px left rule in the tool colour (timeline
+  rows, table rows). Tool colours are never used for anything else, and the
+  tool rule always gives way to status emphasis (gaps, journey highlights).
+  See [ADR 0013](decisions/0013-tool-colour-coding.md).
 - **Observation gaps:** the loud form is `GapBanners`, one panel per page, at
   the top. The per-item form is quiet: `.gap-badge` (warn text with a hollow
   diamond, no fill), e.g. "possibly stale". Never hatch, stripe or fill whole
   rows or cells for a gap.
 - **Late observation:** `.row-reconciliation` and `.row-backfill` mark rows
-  with a 2px inset rule plus a note; `MethodBadge` names the method.
+  with a light tint (`--recon-bg`, `--backfill-bg`) plus a note; `MethodBadge`
+  names the method. The left edge is left to the tool rule.
 - **Alerts:** `.alert-badge` ("Alert open"), linking to where the full message
   is shown. Do not put long alert prose in tables.
 - **Severity** (drift): `.severity-high` / `.severity-critical` (bad),
@@ -217,6 +233,9 @@ encodings, the same way on every page.
 
 Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.
+
+The `.disconnect-dialog` class styles the native confirmation dialog for connection
+disconnect actions using theme tokens.
 
 ## Patterns
 

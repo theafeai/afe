@@ -1,8 +1,9 @@
+import { DisconnectAction } from "./DisconnectAction.tsx";
 import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
 import { useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
-import { icons } from "../icons.tsx";
+import { ToolMark, icons } from "../icons.tsx";
 import type { ConnectionWithHealth } from "../api/types.ts";
 import {
   Empty,
@@ -35,6 +36,7 @@ export function ConnectButtons() {
     <div className="connect-buttons">
       {TOOLS.map((t) => (
         <Link key={t.id} to={`/connections/${t.id}`} className={`connect-card tool-${t.id}`}>
+          <ToolMark source={t.id} />
           <strong>Connect {t.label}</strong>
           <span className="small muted">{t.blurb}</span>
         </Link>
@@ -56,6 +58,8 @@ function GapCell({ c }: { c: ConnectionWithHealth }) {
 
 export function Connections() {
   useDocumentTitle("Connections");
+  const { admin } = useAccess();
+  const [notice, setNotice] = useState<string | null>(null);
   const { data, error, loading, reload } = useAsync((s) => api.connections(s), []);
   return (
     <div className="page">
@@ -70,6 +74,11 @@ export function Connections() {
           Refresh
         </button>
       </header>
+      {notice && (
+        <p className="callout callout-ok" role="status">
+          {notice}
+        </p>
+      )}
       {loading ? (
         <Loading label="Loading connections…" />
       ) : error ? (
@@ -93,11 +102,15 @@ export function Connections() {
                     <th scope="col">Last successful observation</th>
                     <th scope="col">Observation gap</th>
                     <th scope="col">Alert</th>
+                    {admin && <th scope="col">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {data.connections.map((c) => (
-                    <tr key={c.id} className={c.health.openGap ? "row-has-gap" : undefined}>
+                    <tr
+                      key={c.id}
+                      className={`tool-row tool-${c.source}${c.health.openGap ? " row-has-gap" : ""}`}
+                    >
                       <td>
                         <ToolBadge source={c.source} />{" "}
                         <Link to={`/connections/${c.id}`}>{c.name}</Link>
@@ -133,6 +146,17 @@ export function Connections() {
                           <span className="muted">—</span>
                         )}
                       </td>
+                      {admin && (
+                        <td>
+                          <DisconnectAction
+                            connection={c}
+                            onDone={(note) => {
+                              setNotice(note);
+                              reload();
+                            }}
+                          />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -147,74 +171,8 @@ export function Connections() {
   );
 }
 
-function DisconnectSection({ c, onDone }: { c: ConnectionWithHealth; onDone: () => void }) {
-  const [state, setState] = useState<{ busy: boolean; error: Error | null; note: string | null }>({
-    busy: false,
-    error: null,
-    note: null,
-  });
-  if (c.status === "disconnected") {
-    return (
-      <p className="muted">
-        Disconnected{c.statusReason ? ` (${c.statusReason})` : ""}. Afe has deleted its credentials;
-        events recorded before are kept until they leave the retention window.
-      </p>
-    );
-  }
-  if (c.source === "github") {
-    return (
-      <p>
-        To disconnect, uninstall the Afe GitHub App from <strong>{c.name}</strong> on GitHub (
-        <em>Settings → GitHub Apps</em> for an organization or your account). Afe records the
-        uninstall and marks this connection revoked. Events recorded before are kept until they
-        leave the retention window.
-      </p>
-    );
-  }
-  if (c.source !== "argocd" && c.source !== "vercel" && c.source !== "terraform") return null;
-  const run = async () => {
-    if (
-      !window.confirm(
-        `Disconnect ${toolLabel(c.source)} “${c.name}”? Afe deletes its credentials and stops observing it. Recorded events are kept.`,
-      )
-    )
-      return;
-    setState({ busy: true, error: null, note: null });
-    try {
-      const note =
-        c.source === "argocd"
-          ? (await api.argocdDisconnect(c.id),
-            "Afe deleted its copy of the API token. You can also delete the token in ArgoCD.")
-          : c.source === "terraform"
-            ? (await api.terraformDisconnect(c.id)).note
-            : ((await api.vercelDisconnect(c.id)).note ?? "Disconnected.");
-      setState({ busy: false, error: null, note });
-      onDone();
-    } catch (err) {
-      setState({ busy: false, error: err as Error, note: null });
-    }
-  };
-  return (
-    <>
-      <button
-        type="button"
-        className="btn btn-danger"
-        onClick={() => void run()}
-        disabled={state.busy}
-      >
-        {state.busy ? "Disconnecting…" : "Disconnect"}
-      </button>
-      {state.note && (
-        <p className="callout callout-ok" role="status">
-          {state.note}
-        </p>
-      )}
-      {state.error && <ErrorBox error={state.error} title="Could not disconnect" />}
-    </>
-  );
-}
-
 export function ConnectionDetail({ id }: { id: string }) {
+  const [notice, setNotice] = useState<string | null>(null);
   const { admin } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.connectionHealth(id, s), [id]);
   const location = useLocation();
@@ -239,6 +197,11 @@ export function ConnectionDetail({ id }: { id: string }) {
       <p>
         <Link to="/connections">← Connections</Link>
       </p>
+      {notice && (
+        <p className="callout callout-ok" role="status">
+          {notice}
+        </p>
+      )}
       {justConnected && (
         <div className="callout callout-ok" role="status">
           <strong>{toolLabel(justConnected)} connected.</strong> Afe will start observing it; health
@@ -342,8 +305,24 @@ export function ConnectionDetail({ id }: { id: string }) {
               ["Afe id", <code key="i">{c.id}</code>],
             ]}
           />
-          <h3>Disconnect</h3>
-          <DisconnectSection c={c} onDone={reload} />
+          {c.status === "disconnected" ? (
+            <p className="muted">
+              Observation stopped. Recorded events remain until their retention window expires.
+            </p>
+          ) : (
+            admin && (
+              <>
+                <h3>Disconnect</h3>
+                <DisconnectAction
+                  connection={c}
+                  onDone={(note) => {
+                    setNotice(note);
+                    reload();
+                  }}
+                />
+              </>
+            )
+          )}
         </section>
       </div>
 

@@ -5,7 +5,7 @@ import type { CanonicalEvent } from "@afe/core/types";
 import { setFetch } from "../api/client.ts";
 import type { ConnectionWithHealth, EventItem } from "../api/types.ts";
 import { App } from "../App.tsx";
-import { qualifiedAction } from "./Timeline.tsx";
+import { qualifiedAction } from "../format.ts";
 
 function ev(seq: number, patch: Partial<CanonicalEvent>): EventItem {
   const event: CanonicalEvent = {
@@ -135,6 +135,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Timeline", () => {
+  it("distinguishes the Afe actor and credential owner on lifecycle events", async () => {
+    pages.first = {
+      items: [
+        ev(7, {
+          source: "afe",
+          action: "connection.created",
+          actor: { type: "user", id: "admin-1", name: "Administrator" },
+          data: { actorOrigin: "afe", credentialOwner: { id: "usr_alice", login: "alice-vercel" } },
+        }),
+      ],
+      nextCursor: null,
+    };
+    render(<App />);
+    const row = (await screen.findByText("afe.connection.created")).closest("li")!;
+    expect(within(row).getByText("Afe actor")).toBeTruthy();
+    expect(within(row).getByText("Administrator")).toBeTruthy();
+    expect(within(row).getByText("Credential owner")).toBeTruthy();
+    expect(within(row).getByText(/alice-vercel/)).toBeTruthy();
+  });
+
   it("shows open observation gaps, gap events and reconciled events distinctly", async () => {
     render(<App />);
     expect(await screen.findByText(/Data may be missing from ArgoCD/)).toBeTruthy();

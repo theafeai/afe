@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
+import { ToolMark } from "./icons.tsx";
 import {
   OBSERVATION_METHODS,
   OUTCOMES,
@@ -57,12 +58,13 @@ export function FilterBar({
       <fieldset className="filter-tools">
         <legend>Tool</legend>
         {TOOLS.filter((t) => visibleTool(t.id)).map((t) => (
-          <label key={t.id} className="check">
+          <label key={t.id} className={`check tool-${t.id}`}>
             <input
               type="checkbox"
               checked={filters.sources.includes(t.id)}
               onChange={(e) => toggleTool(t.id, e.target.checked)}
             />
+            <ToolMark source={t.id} />
             {t.label}
           </label>
         ))}

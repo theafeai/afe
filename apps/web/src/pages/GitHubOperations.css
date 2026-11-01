@@ -1,28 +1,459 @@
-.github-runs-table {
-  table-layout: fixed;
+/* GitHub Actions page (AFE-70). Tokens only; see docs/design-system.md. */
+
+/* Field labels on this page read like every other form label. */
+.gh-page .field > span {
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  color: var(--text-2);
+}
+
+/* Repository picker ----------------------------------------------------------- */
+.gh-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+.gh-picker-row .field {
+  flex: 1 1 18rem;
+}
+.gh-picker-row select {
+  width: 100%;
+}
+.gh-picker-hint {
+  margin: var(--space-3) 0 0;
+}
+.gh-picker .empty {
+  margin-top: var(--space-4);
+}
+
+/* Repository header and tabs -------------------------------------------------- */
+.card.gh-repo {
+  padding-bottom: 0;
+}
+.gh-repo-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-4);
+}
+.gh-repo-title {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+.gh-repo-title h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+.gh-repo-title p {
+  margin: var(--space-1) 0 0;
+  max-width: 72ch;
+}
+.gh-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin: var(--space-4) calc(-1 * var(--space-5)) 0;
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.gh-tab {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-3) var(--space-2) calc(var(--space-3) - 2px);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.gh-tab:hover {
+  color: var(--text);
+}
+.gh-tab[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent-solid);
+}
+.gh-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Operation outcome and confirmation ------------------------------------------ */
+.gh-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.gh-receipt-body {
+  min-width: 0;
+  flex: 1 1 20rem;
   overflow-wrap: anywhere;
 }
-.github-runs-table th {
-  white-space: normal;
+.card.gh-confirm {
+  box-shadow:
+    inset 2px 0 0 var(--accent-solid),
+    var(--shadow-sm);
 }
-.github-runs-table .btn {
-  white-space: normal;
-  overflow-wrap: normal;
-  max-width: 100%;
-  height: auto;
-  min-height: var(--control-h);
-  padding: var(--space-1) var(--space-2);
+.gh-confirm h2 {
+  margin-bottom: var(--space-2);
 }
-.github-runs-table tr[data-expanded] > td,
-.github-runs-table tr.github-run-details > td {
-  background: var(--accent-soft);
+.gh-confirm p {
+  margin: 0 0 var(--space-3);
 }
-.github-run-details > td > div > .card {
-  margin-bottom: 0;
+.gh-confirm-summary {
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
-@media (max-width: 600px) {
-  .github-runs-table th,
-  .github-runs-table td {
-    padding: var(--space-2) var(--space-1);
+
+/* List ------------------------------------------------------------------------ */
+.gh-list-section {
+  margin-bottom: var(--space-4);
+}
+.gh-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 var(--space-3);
+}
+.gh-list-head h2 {
+  margin: 0;
+}
+.gh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+.gh-row + .gh-row {
+  border-top: 1px solid var(--border);
+}
+.gh-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 9rem 7rem auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  transition: background var(--dur) var(--ease);
+}
+.gh-row-main:hover {
+  background: var(--surface-2);
+}
+.gh-row.is-open > .gh-row-main {
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent-solid);
+}
+.gh-row-text {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.gh-row-title {
+  font-weight: 550;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.gh-row-message {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--text-2);
+}
+.gh-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  min-width: 0;
+}
+.gh-row-meta > * + *::before {
+  content: "·";
+  margin-right: var(--space-2);
+  color: var(--faint);
+}
+.gh-row-meta code {
+  overflow-wrap: anywhere;
+}
+.gh-branch {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gh-row-state {
+  min-width: 0;
+}
+.gh-row-time {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gh-row-action {
+  justify-self: end;
+}
+.gh-row-detail {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: inset 2px 0 0 var(--accent-solid);
+  padding: var(--space-4) var(--space-4) var(--space-5) var(--space-5);
+}
+.badge.gh-badge-off {
+  color: var(--muted);
+  background: transparent;
+}
+.gh-pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+/* Detail panels ---------------------------------------------------------------- */
+.gh-detail {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.gh-detail h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-md);
+}
+.gh-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-5);
+}
+.gh-detail-head .kv {
+  flex: 1 1 20rem;
+  max-width: 36rem;
+}
+.gh-detail .kv > div {
+  grid-template-columns: minmax(7rem, 30%) 1fr;
+}
+.gh-section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+  min-width: 0;
+}
+.gh-section > p {
+  margin: 0 0 var(--space-3);
+}
+.gh-section > .check {
+  margin-top: var(--space-3);
+}
+details.gh-section > summary {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+details.gh-section[open] > summary {
+  margin-bottom: var(--space-3);
+}
+.gh-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+.gh-section-head h3 {
+  margin: 0;
+}
+.gh-detail .form {
+  max-width: 40rem;
+}
+.gh-detail form + h3,
+.gh-detail .gh-section + h3 {
+  margin-top: var(--space-2);
+}
+.gh-ref-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.gh-ref-form .field {
+  flex: 0 1 18rem;
+}
+.gh-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.gh-inline-field input {
+  width: 4.5rem;
+}
+.gh-danger h3 {
+  color: var(--bad);
+}
+
+/* Operation buttons: a disabled action states why, under the button. */
+.toolbar.gh-ops {
+  align-items: flex-start;
+}
+.gh-op {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 16rem;
+}
+.gh-op-reason {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* Jobs and steps --------------------------------------------------------------- */
+.gh-jobs {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.gh-job {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.gh-job-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+.gh-job-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.gh-job-action {
+  margin-left: auto;
+}
+.gh-steps {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-md);
+}
+.gh-steps li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+}
+.gh-step-number {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.gh-step-name {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* Simple lists inside panels (statuses, branch policies, protection rules). */
+.gh-plain-list {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--fs-md);
+}
+.gh-plain-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gh-plain-list time {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* Panels rendered inside a row or a create section are not separate cards. */
+.gh-row-detail .card,
+.gh-create .card {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.gh-detail .form > .btn,
+.gh-create .form > .btn {
+  justify-self: start;
+}
+.gh-create > summary {
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text);
+}
+.gh-create[open] > summary {
+  margin-bottom: var(--space-4);
+}
+
+@media (max-width: 760px) {
+  .gh-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "text action"
+      "state time";
+    align-items: start;
+    padding: var(--space-3);
+  }
+  .gh-row-text {
+    grid-area: text;
+  }
+  .gh-row-state {
+    grid-area: state;
+  }
+  .gh-row-time {
+    grid-area: time;
+    justify-self: end;
+  }
+  .gh-row-action {
+    grid-area: action;
+  }
+  .gh-row-detail {
+    padding: var(--space-3) var(--space-3) var(--space-4) var(--space-4);
+  }
+  .gh-branch {
+    max-width: 16ch;
+  }
+  .gh-detail .kv > div {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
   }
 }

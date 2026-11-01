@@ -3,6 +3,7 @@ import { ApiError } from "./api/client.ts";
 import type { ConnectionWithHealth, HealthState, ObservationMethod } from "./api/types.ts";
 import { formatDateTime, formatRelative, humanize } from "./format.ts";
 import { Link } from "./router.tsx";
+import { ToolMark } from "./icons.tsx";
 
 // --- Data loading -------------------------------------------------------------
 
@@ -126,7 +127,12 @@ export function toolLabel(source: string): string {
 }
 
 export function ToolBadge({ source }: { source: string }) {
-  return <span className={`badge tool tool-${source}`}>{toolLabel(source)}</span>;
+  return (
+    <span className={`badge tool tool-${source}`}>
+      <ToolMark source={source} />
+      {toolLabel(source)}
+    </span>
+  );
 }
 
 const METHOD_HELP: Record<ObservationMethod, string> = {

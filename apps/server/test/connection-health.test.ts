@@ -174,6 +174,14 @@ describe("connection health", () => {
       await service.reportFailure("default", c.id, "unreachable", "again");
       expect((await health(c.id)).consecutiveFailures).toBe(5);
       expect(gapEvents(c.id)).toHaveLength(1);
+      const lost = sink
+        .events("default")
+        .filter((e) => e.connectionId === c.id && e.action === "connection.lost");
+      expect(lost).toHaveLength(1);
+      expect(lost[0]).toMatchObject({
+        actor: { type: "system" },
+        data: { reason: "unreachable", gapId: h.openGapId },
+      });
 
       // Blind for > 15 minutes: alert opened (once), recorded as an event.
       await alertCheck();

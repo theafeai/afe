@@ -36,6 +36,7 @@ const B = { authorization: "Bearer tenant-b-token" };
 const MIN = 60_000;
 
 interface EventRow {
+  source: string;
   action: string;
   connection_id: string;
   source_event_id: string;
@@ -201,7 +202,7 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
   const events = async (connectionId?: string) =>
     (
       await pool.query<EventRow>(
-        `SELECT action, connection_id, source_event_id, observation, data FROM events
+        `SELECT source, action, connection_id, source_event_id, observation, data FROM events
          WHERE tenant_id = 'default' ${connectionId ? "AND connection_id = $1" : ""} ORDER BY seq`,
         connectionId ? [connectionId] : [],
       )
@@ -349,7 +350,8 @@ describe("ArgoCD in-cluster agent ingest (database)", () => {
     await sendBatch(agent, snapshotItems([guestbook]));
     const first = await events(agent.id);
     expect(first.length).toBeGreaterThan(0);
-    for (const e of first) expect(["reconciliation", "backfill"]).toContain(e.observation.method);
+    for (const e of first.filter((e) => e.source === "argocd"))
+      expect(["reconciliation", "backfill"]).toContain(e.observation.method);
 
     advance(MIN);
     guestbook.startSync({ at: iso(0), by: "bob", revision: SHA2 });

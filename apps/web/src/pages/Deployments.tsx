@@ -102,7 +102,10 @@ export function Deployments() {
                   const late =
                     r.provenance.method === "reconciliation" || r.provenance.method === "backfill";
                   return (
-                    <tr key={r.eventId} className={late ? `row-${r.provenance.method}` : undefined}>
+                    <tr
+                      key={r.eventId}
+                      className={`tool-row tool-${r.source}${late ? ` row-${r.provenance.method}` : ""}`}
+                    >
                       <td>
                         <Link to={`/events/${r.eventId}`}>
                           <time dateTime={r.when}>{formatDateTime(r.when)}</time>

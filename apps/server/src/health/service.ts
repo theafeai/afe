@@ -1,3 +1,4 @@
+import { credentialOwnerOf } from "../connection-events.ts";
 /**
  * Connection health service (AFE-13): tracks the health and last successful
  * observation of every connection, records observation gaps as events,
@@ -308,6 +309,25 @@ export class HealthService implements HealthReporter {
             observedAt: this.now(),
           }),
         );
+        await this.outboxEvent(client, tenantId, connectionId, {
+          source: "afe",
+          sourceEventId: `connection:${connectionId}:lost:${gapId}`,
+          connectionId,
+          action: "connection.lost",
+          actor: { type: "system", name: "Afe health monitor" },
+          target: { type: "connection", id: connectionId, name: c.name },
+          trigger: { type: "system" },
+          outcome: "failed",
+          occurredAt: at,
+          observedAt: this.now(),
+          observation: { method: "internal" },
+          data: {
+            source: c.source,
+            gapId,
+            reason,
+            ...(credentialOwnerOf(c) ? { credentialOwner: credentialOwnerOf(c) } : {}),
+          },
+        });
         patch.openGapId = gapId;
         patch.openGapStartedAt = startedAt;
         patch.openGapReason = gapReason;
