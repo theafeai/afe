@@ -8,7 +8,7 @@ import {
   type MemoryEventSink,
   type ProbeResult,
 } from "@afe/core";
-import { getConnectionHealth, listAlerts, upsertConnection } from "@afe/db";
+import { getConnectionHealth, listAlerts, setConnectionStatus, upsertConnection } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
 import {
   buildAfe,
@@ -386,6 +386,31 @@ describe("connection health", () => {
     expect(res.statusCode).toBe(404);
     const list = await afe.app.inject({ method: "GET", url: "/api/connections" });
     expect(list.json().connections.map((x: { id: string }) => x.id)).not.toContain(c.id);
+  });
+
+  it("omits disconnected connections while retaining their detail and other statuses", async () => {
+    const c = await connect("github");
+    for (const status of [
+      "active",
+      "pending",
+      "suspended",
+      "revoked",
+      "disconnected",
+      "active",
+    ] as const) {
+      await setConnectionStatus(pool, "default", c.id, status);
+      const list = await afe.app.inject({ method: "GET", url: "/api/connections" });
+      expect(list.statusCode).toBe(200);
+      expect(list.json().connections.some((row: { id: string }) => row.id === c.id)).toBe(
+        status !== "disconnected",
+      );
+      const detail = await afe.app.inject({
+        method: "GET",
+        url: `/api/connections/${c.id}/health`,
+      });
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json().connection.status).toBe(status);
+    }
   });
 
   it("serves connection health and gap history over the API", async () => {

@@ -180,6 +180,7 @@ Use these instead of re-creating their markup.
 | `OutcomeBadge`, `HealthBadge`, `StatusBadge`, `MethodBadge`                  | Event outcome, connection health, connection status, observation method |
 | `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
 | `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
+| `useToast` (`toast.tsx`)                                                     | Confirming an action the user just took (see [Patterns](#patterns))     |
 | `icons.*`, `BrandMark`, `ToolMark`                                           | 16px line icons (`aria-hidden`), the Afe mark and tool logos            |
 | `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
 
@@ -194,6 +195,7 @@ Use these instead of re-creating their markup.
 | Containers       | `.card` · `.grid-2` · `.table-wrap` + `.table` · `.kv` · `.json` (raw data)                                                                                                                                                                                                        |
 | Lists            | `.events` / `.event-row` / `.row-link` (timeline rows) · `.inline-list` · `.plain` · `.conn-list`                                                                                                                                                                                  |
 | Callouts         | `.callout` + `.callout-error` / `.callout-ok` / `.callout-gap` / `.callout-reconciled`                                                                                                                                                                                             |
+| Toasts           | `.toasts` / `.toast` + `.toast-ok` / `.toast-info` / `.toast-error` (rendered by `ToastProvider`; do not write this markup by hand)                                                                                                                                                |
 | States           | `.state` (inline status text) · `.spinner` · `.empty` (+ `.empty-icon`) · `.end` (end of list)                                                                                                                                                                                     |
 | Badges           | `.badge` + a modifier from [Status language](#status-language)                                                                                                                                                                                                                     |
 | Text             | `.muted` · `.small` · `.lede` · `.mono-title` · `.hash` · `.sr-only`                                                                                                                                                                                                               |
@@ -252,6 +254,16 @@ disconnect actions using theme tokens.
 - **Identifiers**: short SHA (7 characters) in `<code>`, full value in `title`.
   Times: absolute in `title` / `dateTime`, relative in the text (`TimeAgo`).
 - **Destructive actions** use `.btn-danger` and confirm first.
+- **Confirmations are toasts, state is a callout.** After an action succeeds
+  ("Saved", "Invitation queued", "disconnected"), call `useToast()` instead of
+  rendering a banner on the page: `toast("Saved.")`, or
+  `toast({ message, action: { label, to } })` for a next step. Toasts sit at the
+  bottom right, leave after a few seconds (they wait while hovered or focused)
+  and carry an icon and a screen-reader word as well as the colour rule. Errors
+  from a form or a page load stay in an `ErrorBox` next to what failed; use
+  `kind: "error"` only for a failure with no place on the page. Anything the user
+  must read again later (a one-time credential, observation gaps, a read-only
+  check) stays a callout.
 - **Forms**: labels above controls (`.field`), one primary button, errors in an
   `ErrorBox` or `.callout-error` with `role="alert"` next to the form.
 - **Accessibility**: real `<button>`/`<a>` elements, labelled controls, visible

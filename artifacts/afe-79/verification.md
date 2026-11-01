@@ -14,4 +14,4 @@ Browser checks use local API fixtures, not a live personal GitHub account. The s
 
 Screenshots: [light desktop](light-1440.png), [light mobile](light-390.png), [dark desktop](dark-1440.png), [dark mobile](dark-390.png).
 
-Validation: `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed. The full suite passed 99 files and 1,052 tests. Browser checks passed for 35 repository choices, switching, reload persistence, light/dark themes, desktop/mobile layouts, console errors and document overflow.
+Validation: `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed. The full suite passed 100 files and 1,088 tests. Browser checks passed for 35 repository choices, switching, reload persistence, light/dark themes, desktop/mobile layouts, console errors and document overflow.

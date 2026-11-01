@@ -1,3 +1,5 @@
+import type { GitHubOperation } from "./github-operations.ts";
+
 /** Per-tool policy. Source grants must come from a verified, current upstream account. */
 export const TOOL_PERMISSION_MODES = ["none", "source", "custom", "source + custom"] as const;
 export type ToolPermissionMode = (typeof TOOL_PERMISSION_MODES)[number];
@@ -10,6 +12,8 @@ export interface ToolGrant {
 export interface ToolPolicy {
   mode: ToolPermissionMode;
   custom: readonly ToolGrant[];
+  /** Optional exact GitHub action restrictions. Deny takes precedence over inheritance/allowlists. */
+  denied?: readonly ToolGrant[];
 }
 
 /** Authentication alone never grants tool access. A missing policy denies access. */
@@ -18,7 +22,12 @@ export function permitsToolAction(
   requested: ToolGrant,
   source: { verified: boolean; grants: readonly ToolGrant[] } | null,
 ): boolean {
-  if (!policy || policy.mode === "none") return false;
+  if (
+    !policy ||
+    policy.mode === "none" ||
+    policy.denied?.some((g) => g.resource === requested.resource && g.action === requested.action)
+  )
+    return false;
   const includes = (grants: readonly ToolGrant[]) =>
     grants.some((g) => g.resource === requested.resource && g.action === requested.action);
   const fromSource =
@@ -28,6 +37,19 @@ export function permitsToolAction(
   const fromCustom =
     (policy.mode === "custom" || policy.mode === "source + custom") && includes(policy.custom);
   return fromSource || fromCustom;
+}
+
+/** Afe's GitHub action gate only; callers must also enforce current upstream permission. */
+export function permitsGitHubAction(
+  policy: ToolPolicy,
+  repository: string,
+  action: GitHubOperation,
+) {
+  const resource = `repository:${repository.toLowerCase()}`;
+  const matches = (g: ToolGrant) => g.resource === resource && g.action === action;
+  if (policy.mode === "none" || policy.denied?.some(matches)) return false;
+  // Keep custom and source + custom as explicit allowlists for existing installations.
+  return policy.mode === "source" || policy.custom.some(matches);
 }
 
 export interface EventAccessRule {

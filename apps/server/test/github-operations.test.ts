@@ -2,12 +2,29 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type pg from "pg";
 import { createTestPool } from "@afe/db/testing";
-import { createLocalUser, upsertConnection, setUserToolPolicy, storeCredential } from "@afe/db";
+import {
+  createLocalUser,
+  upsertConnection,
+  setUserToolPolicy,
+  storeCredential,
+  revokeCredential,
+} from "@afe/db";
 import { GITHUB_OPERATION_NAMES, type GitHubOperation } from "@afe/core";
 import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe, type AfeApp } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import { githubActionsModule } from "../src/actions/github.ts";
+vi.mock("../src/connectors/github-log-download.ts", async (original) => {
+  const actual = await original<typeof GitHubLogDownload>();
+  return {
+    ...actual,
+    downloadGitHubJobLog: vi.fn(
+      async () => "2026-11-01T00:00:00Z Build output <script>inert</script>",
+    ),
+  };
+});
+import type * as GitHubLogDownload from "../src/connectors/github-log-download.ts";
+import { downloadGitHubJobLog } from "../src/connectors/github-log-download.ts";
 const admin = "a".repeat(40),
   sha = "a".repeat(40);
 const yaml =
@@ -60,6 +77,7 @@ beforeEach(async () => {
   fileSha = sha;
   failure = null;
   mutations = [];
+  vi.mocked(downloadGitHubJobLog).mockClear();
   currentAction = "github.rerun";
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     const u = new URL(url),
@@ -81,6 +99,16 @@ beforeEach(async () => {
       ]);
     if (path === "/repos/acme/app")
       return Response.json({ id: 1, permissions: { push: write, admin: sourceAdmin } });
+    if (path === "/repos/acme/app/actions/runs/123/attempts/1") return Response.json(run());
+    if (path === "/repos/acme/app/actions/jobs/234/logs")
+      return failure
+        ? Response.json({ message: "private-upstream-secret" }, { status: Number(failure) })
+        : new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://results.blob.core.windows.net/log?sig=private-signed-secret",
+            },
+          });
     if (path === "/repos/acme/app/actions/runs/123") return Response.json(run());
     if (path === "/repos/acme/app/actions/jobs/234")
       return Response.json({
@@ -528,7 +556,10 @@ it("revalidates permissions on replay and compares all inputs when reusing an ID
   expect((await execute("github.rerun", params, p.json().version, requestId)).json().state).toBe(
     "accepted",
   );
-  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source + custom",
+    custom: [],
+  });
   expect((await execute("github.rerun", params, p.json().version, requestId)).statusCode).toBe(403);
   expect(mutations).toHaveLength(1);
 });
@@ -614,7 +645,7 @@ it("links a fine-grained personal token without returning it and scopes custom-o
   expect((await afe.app.inject({ url: q("runs"), headers: headers() })).statusCode).toBe(200);
   expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(403);
 });
-it("lets a linked administrator discover repositories and operate only after explicit grants", async () => {
+it("lets a linked administrator inherit operations immediately and retain optional allowlists", async () => {
   const adminHeaders = { authorization: `Bearer ${admin}` };
   expect(
     (
@@ -640,7 +671,7 @@ it("lets a linked administrator discover repositories and operate only after exp
       headers: adminHeaders,
       payload: body,
     });
-  expect((await prepareAdmin()).statusCode).toBe(403);
+  expect((await prepareAdmin()).statusCode).toBe(200);
   expect(mutations).toEqual([]);
   const uid = (await pool.query<{ user_id: string }>("SELECT user_id FROM github_admin_identities"))
     .rows[0]!.user_id;
@@ -871,5 +902,212 @@ it("rejects a branch policy type change because the source only permits name-pat
       })
     ).statusCode,
   ).toBe(409);
+  expect(mutations).toHaveLength(0);
+});
+
+it.each(["success", "failure"])(
+  "views completed %s job logs using the linked PAT without an App",
+  async (result) => {
+    conclusion = result;
+    const res = await afe.app.inject({
+      url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+      headers: headers(),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.json()).toMatchObject({
+      jobId: 234,
+      attempt: 1,
+      text: expect.stringContaining("Build output"),
+    });
+    expect(res.body).not.toMatch(
+      /fine-grained-test-token|private-signed-secret|blob.core.windows.net/,
+    );
+    expect(downloadGitHubJobLog).toHaveBeenCalledTimes(1);
+    expect(mutations).toHaveLength(0);
+  },
+);
+it("pins logs to the selected run and attempt before requesting storage", async () => {
+  jobRun = 999;
+  const res = await afe.app.inject({
+    url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+    headers: headers(),
+  });
+  expect(res.statusCode).toBe(404);
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+  jobRun = 123;
+  attempt = 2;
+  expect(
+    (
+      await afe.app.inject({
+        url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+        headers: headers(),
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+});
+it.each([403, 404, 410])("reports log availability/permission status %s safely", async (code) => {
+  failure = code;
+  const res = await afe.app.inject({
+    url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+    headers: headers(),
+  });
+  expect(res.statusCode).toBe(code);
+  expect(res.body).not.toContain("private-upstream-secret");
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+});
+it("reports pending logs and enforces exact log grants", async () => {
+  const url = q("job_log", { runId: "123", attempt: "1", jobId: "234" });
+  status = "in_progress";
+  expect((await afe.app.inject({ url, headers: headers() })).statusCode).toBe(409);
+  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source + custom",
+    custom: [],
+  });
+  expect((await afe.app.inject({ url, headers: headers() })).statusCode).toBe(403);
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+});
+
+it("inherits all Afe action gates in Source mode and still applies provider roles", async () => {
+  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  const caps = await afe.app.inject({ url: q("capabilities"), headers: headers() });
+  expect(caps.statusCode).toBe(200);
+  expect(caps.json().items.every((c: { enabled: boolean }) => c.enabled)).toBe(true);
+  expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(200);
+  expect(
+    (
+      await afe.app.inject({
+        url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+        headers: headers(),
+      })
+    ).statusCode,
+  ).toBe(200);
+  write = false;
+  sourceAdmin = false;
+  const restricted = (await afe.app.inject({ url: q("capabilities"), headers: headers() })).json()
+    .items;
+  expect(
+    restricted.find((c: { action: string }) => c.action === "github.logs_download").enabled,
+  ).toBe(true);
+  expect(restricted.find((c: { action: string }) => c.action === "github.rerun").reason).toContain(
+    "GitHub repository write",
+  );
+  expect(
+    restricted.find((c: { action: string }) => c.action === "github.environment_save").reason,
+  ).toContain("GitHub repository admin");
+  expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(403);
+  expect(
+    (
+      await afe.app.inject({
+        url: q("workflow_file", { id: "42", ref: "main" }),
+        headers: headers(),
+      })
+    ).statusCode,
+  ).toBe(403);
+});
+it("applies admin restrictions over Source access and rechecks them on replay", async () => {
+  const params = { runId: 123, attempt: 1 };
+  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  const p = await prepare("github.rerun", params),
+    requestId = randomUUID();
+  expect((await execute("github.rerun", params, p.json().version, requestId)).statusCode).toBe(202);
+  const target = `/api/admin/users/${user.user.id}/permissions/github`;
+  const denied = [{ resource: "repository:acme/app", action: "github.rerun" }];
+  expect(
+    (
+      await afe.app.inject({
+        method: "PUT",
+        url: target,
+        headers: { authorization: `Bearer ${admin}` },
+        payload: { mode: "source", custom: [], denied },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect((await execute("github.rerun", params, p.json().version, requestId)).statusCode).toBe(403);
+  // Older clients that omit the new field must not erase administrator restrictions.
+  expect(
+    (
+      await afe.app.inject({
+        method: "PUT",
+        url: target,
+        headers: { authorization: `Bearer ${admin}` },
+        payload: { mode: "source", custom: [] },
+      })
+    ).statusCode,
+  ).toBe(200);
+  const caps = (await afe.app.inject({ url: q("capabilities"), headers: headers() })).json().items;
+  expect(caps.find((c: { action: string }) => c.action === "github.rerun").reason).toContain(
+    "Afe policy restricts",
+  );
+  expect(caps.find((c: { action: string }) => c.action === "github.logs_download").enabled).toBe(
+    true,
+  );
+  expect(mutations).toHaveLength(1);
+  expect(
+    (
+      await afe.app.inject({
+        method: "PUT",
+        url: target,
+        headers: { authorization: `Bearer ${admin}` },
+        payload: { mode: "source", custom: [], denied: [] },
+      })
+    ).statusCode,
+  ).toBe(200);
+  expect((await execute("github.rerun", params, p.json().version, requestId)).json().state).toBe(
+    "accepted",
+  );
+  expect(mutations).toHaveLength(1);
+});
+it.each(["github.*", "read", "github.unknown"])(
+  "rejects invalid action restriction %s",
+  async (action) => {
+    expect(
+      (
+        await afe.app.inject({
+          method: "PUT",
+          url: `/api/admin/users/${user.user.id}/permissions/github`,
+          headers: { authorization: `Bearer ${admin}` },
+          payload: {
+            mode: "source",
+            custom: [],
+            denied: [{ resource: "repository:acme/app", action }],
+          },
+        })
+      ).statusCode,
+    ).toBe(400);
+  },
+);
+
+it.each(["ghp_classic_fixture", "github_pat_fine_grained_fixture"])(
+  "inherits Source operations with a linked %s",
+  async (token) => {
+    await setUserToolPolicy(pool, "default", user.user.id, "github", {
+      mode: "source",
+      custom: [],
+    });
+    expect(
+      (
+        await afe.app.inject({
+          method: "POST",
+          url: "/api/profile/tools/github/token",
+          headers: headers(),
+          payload: { token },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(200);
+  },
+);
+it("denies Source operations after credential revocation", async () => {
+  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  const id = (
+    await pool.query<{ credential_id: string }>(
+      "SELECT credential_id FROM user_tool_accounts WHERE tenant_id='default' AND user_id=$1 AND tool='github'",
+      [user.user.id],
+    )
+  ).rows[0]!.credential_id;
+  await revokeCredential(pool, "default", id);
+  expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(403);
   expect(mutations).toHaveLength(0);
 });

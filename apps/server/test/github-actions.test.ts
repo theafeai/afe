@@ -26,6 +26,7 @@ const headers = () => ({ authorization: `Bearer ${user.token}` });
 async function policy(mode: "none" | "source" | "source + custom" = "source + custom") {
   await setUserToolPolicy(pool, "default", user.user.id, "github", {
     mode,
+    denied: [],
     custom: ["github.cancel", "github.rerun", "github.rerun_failed"].map((action) => ({
       resource: "repository:acme/app",
       action,
@@ -135,15 +136,15 @@ it("discovers current state and accepts a confirmed rerun without fabricating a 
   ]);
   expect((await pool.query("SELECT count(*) FROM events")).rows[0].count).toBe("1");
 });
-it("requires explicit grants plus current upstream write access", async () => {
+it("inherits Source actions but still requires current upstream write access", async () => {
   await policy("source");
-  expect((await post()).statusCode).toBe(403);
-  await policy();
+  const controls = await afe.app.inject({ url: url(), headers: headers() });
+  expect(controls.json().capabilities.some((c: { enabled: boolean }) => c.enabled)).toBe(true);
   write = false;
   expect((await post()).statusCode).toBe(403);
   write = true;
   await policy("none");
-  expect((await post()).statusCode).toBe(404);
+  expect((await post()).statusCode).toBe(403);
   expect(requests.every((r) => r.method === "GET")).toBe(true);
 });
 it("rejects other tenants, unauthenticated callers and legacy admin tokens", async () => {
@@ -326,7 +327,11 @@ it("denies revoked credentials and revoked action grants even when replaying a s
     confirmed: true,
   };
   expect((await post(payload)).statusCode).toBe(202);
-  await policy("source");
+  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source",
+    custom: [],
+    denied: [{ resource: "repository:acme/app", action: "github.rerun" }],
+  });
   expect((await post(payload)).statusCode).toBe(403);
   await policy();
   await pool.query("DELETE FROM user_tool_accounts WHERE tenant_id='default' AND user_id=$1", [
