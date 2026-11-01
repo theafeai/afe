@@ -745,6 +745,23 @@ legend {
 .project-list .check {
   display: flex;
 }
+/* Profile: one personal tool account per card, an evenly spaced stack. */
+.tool-account {
+  display: grid;
+  gap: var(--space-4);
+}
+.tool-account > * {
+  margin: 0;
+}
+.tool-account > h3 {
+  margin-top: var(--space-2);
+}
+.tool-account > h3 + * {
+  margin-top: calc(-1 * var(--space-2));
+}
+.tool-account .check {
+  margin-right: 0;
+}
 
 /* Filters */
 .filters {

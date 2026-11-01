@@ -37,14 +37,14 @@ it("lets administrators link GitHub directly and then manage operation grants", 
   });
   window.history.replaceState(null, "", "/profile");
   render(<App />);
-  fireEvent.change(await screen.findByLabelText("Your tool access token"), {
+  fireEvent.change(await screen.findByLabelText("Personal access token"), {
     target: { value: "fixture-personal-token" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Link account" }));
   await screen.findByText(/Linked as octocat/);
   expect(screen.getAllByRole("link", { name: "Users" })[0]!.getAttribute("href")).toBe("/users");
   expect(screen.getByText("github-admin-fixture")).toBeTruthy();
-  expect((screen.getByLabelText("Your tool access token") as HTMLInputElement).value).toBe("");
+  expect((screen.getByLabelText("Personal access token") as HTMLInputElement).value).toBe("");
   expect(screen.queryByText(/No tools are assigned/)).toBeNull();
 });
 
@@ -88,4 +88,41 @@ it("shows a failed profile request without misleading account setup guidance", a
   await screen.findByText("Profile unavailable");
   expect(screen.queryByText(/No tools are assigned/)).toBeNull();
   expect(screen.queryByRole("link", { name: "Open Users" })).toBeNull();
+});
+
+it("shows token rejections and keeps the GitHub token guidance tied to the field", async () => {
+  setFetch(async (url) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/profile/tools/github/token")
+      return json({ message: "GitHub rejected the token" }, 400);
+    if (url === "/api/profile")
+      return json({
+        managedUser: true,
+        tools: [
+          {
+            tool: "github",
+            mode: "source",
+            linked: false,
+            accountName: null,
+            sourceEnabled: true,
+            sourceAvailable: true,
+            oauthAvailable: false,
+          },
+        ],
+      });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  window.history.replaceState(null, "", "/profile");
+  render(<App />);
+  const input = (await screen.findByLabelText("Personal access token")) as HTMLInputElement;
+  expect(screen.getByRole("heading", { name: "GitHub" })).toBeTruthy();
+  const help = document.getElementById(input.getAttribute("aria-describedby")!);
+  expect(help?.textContent).toMatch(/Actions read and write/);
+  fireEvent.change(input, { target: { value: "fixture-bad-token" } });
+  fireEvent.click(screen.getByRole("button", { name: "Link account" }));
+  expect((await screen.findByRole("alert")).textContent).toMatch(
+    /Account not linked.*GitHub rejected the token/,
+  );
+  expect(screen.queryByRole("status", { name: /linked/ })).toBeNull();
 });
