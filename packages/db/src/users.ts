@@ -90,6 +90,16 @@ export async function setUserToolPolicy(
     !TOOL_PERMISSION_MODES.includes(policy.mode) ||
     !tool ||
     tool.length > 100 ||
+    (policy.denied !== undefined &&
+      (!Array.isArray(policy.denied) ||
+        policy.denied.some(
+          (g) =>
+            !g ||
+            typeof g.resource !== "string" ||
+            !g.resource ||
+            typeof g.action !== "string" ||
+            !g.action,
+        ))) ||
     !Array.isArray(policy.custom) ||
     policy.custom.some(
       (g) =>
@@ -99,9 +109,10 @@ export async function setUserToolPolicy(
     throw new Error("invalid tool policy");
   }
   await pool.query(
-    `INSERT INTO user_tool_permissions (tenant_id,user_id,tool,mode,custom_grants)
-     VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,user_id,tool)
-     DO UPDATE SET mode=EXCLUDED.mode, custom_grants=EXCLUDED.custom_grants`,
+    `INSERT INTO user_tool_permissions (tenant_id,user_id,tool,mode,custom_grants,denied_grants)
+     VALUES ($1,$2,$3,$4,$5,COALESCE($6::jsonb,'[]'::jsonb)) ON CONFLICT (tenant_id,user_id,tool)
+     DO UPDATE SET mode=EXCLUDED.mode, custom_grants=EXCLUDED.custom_grants,
+       denied_grants=COALESCE($6::jsonb,user_tool_permissions.denied_grants)`,
     [
       tenantId,
       userId,
@@ -113,6 +124,16 @@ export async function setUserToolPolicy(
           resource: g.resource.startsWith("repository:") ? g.resource.toLowerCase() : g.resource,
         })),
       ),
+      policy.denied === undefined
+        ? null
+        : JSON.stringify(
+            policy.denied.map((g) => ({
+              ...g,
+              resource: g.resource.startsWith("repository:")
+                ? g.resource.toLowerCase()
+                : g.resource,
+            })),
+          ),
     ],
   );
 }
@@ -123,10 +144,12 @@ export async function getUserToolPolicy(
   tool: string,
 ): Promise<ToolPolicy> {
   const result = await pool.query<ToolPolicy>(
-    `SELECT mode, custom_grants AS custom FROM user_tool_permissions WHERE tenant_id=$1 AND user_id=$2 AND tool=$3`,
+    `SELECT mode, custom_grants AS custom, denied_grants AS denied FROM user_tool_permissions WHERE tenant_id=$1 AND user_id=$2 AND tool=$3`,
     [tenantId, userId, tool],
   );
-  return result.rows[0] ?? { mode: "none", custom: [] };
+  const policy = result.rows[0];
+  if (policy?.denied?.length === 0) delete policy.denied;
+  return policy ?? { mode: "none", custom: [] };
 }
 
 export async function getLocalUser(

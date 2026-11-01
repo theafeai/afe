@@ -7,6 +7,13 @@ Afe answers "who deployed what, to where, and when" for the recent past. It
 stores what is needed to answer that, deliberately nothing more, and only for
 a limited time (see "Retention and deletion").
 
+## Optional GitHub action restrictions (AFE-77)
+
+`user_tool_permissions.denied_grants` stores administrator-selected repository
+identifiers and supported GitHub action names, scoped by tenant/user/tool. It
+contains no credentials or source content and remains until the policy is changed
+or the user is deleted. Existing custom grants and modes remain intact.
+
 ## Transient GitHub workflow reads (AFE-52)
 
 The workflow progress viewer holds sanitized run/job/step names, status, timing

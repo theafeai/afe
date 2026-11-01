@@ -1,6 +1,6 @@
 # ADR 0011: Opt-in delivery actions
 
-- Status: Accepted (product direction authorized by AFE-56/AFE-57)
+- Status: Accepted (product direction authorized by AFE-56/AFE-57); GitHub permission inheritance amended by [ADR 0014](0014-github-source-permissions.md)
 - Date: 2026-10-28
 - Issues: AFE-56, AFE-57
 
@@ -11,13 +11,14 @@ blanket mutation prohibition only for the explicit action catalog and routes in
 [GitHub operations](../github-actions.md). Observation clients, App manifests,
 installation-token narrowing, webhooks and reconciliation remain read-only.
 
-Every operation requires an exact repository/action Afe grant, resource **read**
-access, an active tenant-owned connection that selects that repository, a linked
-personal identity and the current GitHub role/permissions. Source/read policy,
-custom read grants and bootstrap admin tokens cannot imply mutation permission.
-Environment administration requires source admin; human deployment review also
-requires GitHub's current per-environment reviewer eligibility. Custom App rule
-callbacks cannot be impersonated with a personal identity.
+GitHub Source mode inherits supported operations from the linked identity,
+subject to optional administrator action restrictions. Custom and Source + custom
+preserve explicit action allowlists. All modes still require resource **read**
+access, an active tenant-owned connection selecting the repository, a linked
+personal identity and current GitHub permissions. Bootstrap administrator tokens
+alone never imply GitHub authority. Environment administration requires source
+admin; human reviews require GitHub's current reviewer eligibility. See
+[ADR 0014](0014-github-source-permissions.md) for precedence and upgrade behavior.
 
 Personal OAuth credentials already use `repo read:user`; only explicit additional
 consent before OAuth sign-in adds `workflow` for file editing. A fine-grained token
@@ -33,7 +34,7 @@ Dispatch input discovery and workflow configuration require reading one YAML fil
 immediately inside `.github/workflows`, at an explicit ref. They never read
 arbitrary source paths. Dispatch-only users receive typed input definitions;
 workflow source is shown only with a configuration grant. Create/update/delete
-operations require explicit workflow grants and GitHub Contents/Workflows write
+operations require Afe policy permission and GitHub Contents/Workflows write
 permissions; provider branch protection and blob SHA checks still apply. This
 explicit, user-requested capability supersedes the blanket “never download file
 contents” rule for workflow YAML alone. Source content and submitted deployment
