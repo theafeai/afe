@@ -25,6 +25,7 @@ import { LoginPage } from "./pages/Login.tsx";
 import { MappingPage } from "./pages/Mapping.tsx";
 import { Timeline } from "./pages/Timeline.tsx";
 import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx";
+import { ToastProvider } from "./toast.tsx";
 
 /**
  * Client routes. The server serves index.html for every path under these
@@ -283,7 +284,9 @@ function Shell() {
 export function App() {
   return (
     <Router>
-      <Shell />
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
     </Router>
   );
 }

@@ -1,6 +1,5 @@
 import { DisconnectAction } from "./DisconnectAction.tsx";
 import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
-import { useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import { ToolMark, icons } from "../icons.tsx";
@@ -21,6 +20,7 @@ import {
 } from "../components.tsx";
 import { formatDateTime, formatDuration, formatRelative, humanize } from "../format.ts";
 import { Link, useLocation, useNavigate } from "../router.tsx";
+import { useToast } from "../toast.tsx";
 
 const TOOLS = [
   { id: "github", label: "GitHub", blurb: "GitHub App with read-only permissions." },
@@ -59,10 +59,7 @@ function GapCell({ c }: { c: ConnectionWithHealth }) {
 export function Connections() {
   useDocumentTitle("Connections");
   const { admin } = useAccess();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const disconnected = new URLSearchParams(location.search).get("disconnected");
-  const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const { data, error, loading, reload } = useAsync((s) => api.connections(s), []);
   return (
     <div className="page">
@@ -77,21 +74,6 @@ export function Connections() {
           Refresh
         </button>
       </header>
-      {(notice || disconnected) && (
-        <p className="callout callout-ok" role="status">
-          {notice || disconnected}{" "}
-          <button
-            type="button"
-            className="btn-link"
-            onClick={() => {
-              setNotice(null);
-              navigate("/connections", { replace: true });
-            }}
-          >
-            Dismiss
-          </button>
-        </p>
-      )}
       {loading ? (
         <Loading label="Loading connections…" />
       ) : error ? (
@@ -164,7 +146,7 @@ export function Connections() {
                           <DisconnectAction
                             connection={c}
                             onDone={(note) => {
-                              setNotice(note);
+                              toast(note);
                               reload();
                             }}
                           />
@@ -189,6 +171,7 @@ export function ConnectionDetail({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync((s) => api.connectionHealth(id, s), [id]);
   const location = useLocation();
   const navigate = useNavigate();
+  const toast = useToast();
   const justConnected = new URLSearchParams(location.search).get("connected");
   useDocumentTitle(data ? data.connection.name : "Connection");
   if (loading) return <Loading label="Loading connection…" />;
@@ -323,9 +306,8 @@ export function ConnectionDetail({ id }: { id: string }) {
                 <DisconnectAction
                   connection={c}
                   onDone={(note) => {
-                    navigate(`/connections?disconnected=${encodeURIComponent(note)}`, {
-                      replace: true,
-                    });
+                    toast(note);
+                    navigate("/connections", { replace: true });
                   }}
                 />
               </>
