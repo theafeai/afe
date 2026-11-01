@@ -234,6 +234,9 @@ encodings, the same way on every page.
 Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.
 
+The `.disconnect-dialog` class styles the native confirmation dialog for connection
+disconnect actions using theme tokens.
+
 ## Patterns
 
 - **Loading → error → empty → data.** Every data view handles all four, with
