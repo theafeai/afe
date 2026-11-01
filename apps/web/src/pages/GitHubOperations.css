@@ -7,24 +7,15 @@
   color: var(--text-2);
 }
 
-/* Repository picker ----------------------------------------------------------- */
-.gh-picker-row {
+/* Repository navigation stays scrollable at narrow widths and with many repositories. */
+.gh-picker {
+  min-width: 0;
+}
+.gh-repository-tabs {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3);
-}
-.gh-picker-row .field {
-  flex: 1 1 18rem;
-}
-.gh-picker-row select {
-  width: 100%;
-}
-.gh-picker-hint {
-  margin: var(--space-3) 0 0;
-}
-.gh-picker .empty {
-  margin-top: var(--space-4);
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
 }
 
 /* Repository header and tabs -------------------------------------------------- */

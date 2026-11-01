@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { setFetch } from "../api/client.ts";
@@ -291,6 +291,156 @@ it("expands details directly beneath the selected row and collapses them again",
   fireEvent.click(hide);
   expect(screen.queryByRole("button", { name: "Prepare dispatch" })).toBeNull();
   expect(screen.getByRole("button", { name: "Open details" })).toBeTruthy();
+});
+
+it("loads every repository page, defaults automatically, remembers selection and rejects stale access", async () => {
+  localStorage.clear();
+  window.history.replaceState(null, "", "/github");
+  let accessible = true;
+  const pages: string[] = [];
+  setFetch(async (url) => {
+    const q = new URL(url, "http://afe.test").searchParams;
+    if (url.startsWith("/api/actions/github/resources")) {
+      pages.push(q.get("page")!);
+      return Response.json({
+        items:
+          q.get("page") === "1"
+            ? [{ connectionId: "c", connectionName: "acme", repository: "acme/app" }]
+            : q.get("page") === "3" && accessible
+              ? [{ connectionId: "c2", connectionName: "other", repository: "acme/api" }]
+              : [],
+        hasMore: q.get("page") !== "3",
+      });
+    }
+    if (q.get("view") === "capabilities") return Response.json({ items: [] });
+    return Response.json({
+      items: [
+        {
+          id: 1,
+          name: url.includes("acme/api") ? "API workflow" : "App workflow",
+          state: "active",
+        },
+      ],
+      page: 1,
+      hasMore: false,
+    });
+  });
+  const mount = () =>
+    render(
+      <Router>
+        <GitHubOperationsPage />
+      </Router>,
+    );
+  let view = mount();
+  await screen.findByText("App workflow");
+  expect(pages).toEqual(["1", "2", "3"]);
+  fireEvent.click(screen.getByRole("button", { name: "acme/api · other" }));
+  await screen.findByText("API workflow");
+  expect(screen.queryByText("App workflow")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "acme/api · other" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  view.unmount();
+  view = mount();
+  await screen.findByText("API workflow");
+  view.unmount();
+  accessible = false;
+  mount();
+  await screen.findByText("App workflow");
+  expect(screen.queryByRole("button", { name: "acme/api · other" })).toBeNull();
+});
+
+it("never renders inaccessible deep links and handles empty repositories", async () => {
+  window.history.replaceState(null, "", "/github?connectionId=hidden&repository=secret/repo");
+  const calls: string[] = [];
+  setFetch(async (url) => {
+    calls.push(url);
+    return Response.json({ items: [], hasMore: false });
+  });
+  render(
+    <Router>
+      <GitHubOperationsPage />
+    </Router>,
+  );
+  await screen.findByText("No accessible repositories");
+  expect(calls).toEqual(["/api/actions/github/resources?page=1"]);
+  expect(screen.queryByText("secret/repo")).toBeNull();
+});
+
+it("ignores a late workflow response after switching repository tabs", async () => {
+  localStorage.clear();
+  window.history.replaceState(null, "", "/github");
+  let resolveOld!: (response: Response) => void;
+  setFetch(async (url) => {
+    if (url.startsWith("/api/actions/github/resources"))
+      return Response.json({
+        items: ["app", "api"].map((name) => ({
+          connectionId: "c",
+          connectionName: "acme",
+          repository: `acme/${name}`,
+        })),
+        hasMore: false,
+      });
+    const q = new URL(url, "http://afe.test").searchParams;
+    if (q.get("view") === "capabilities") return Response.json({ items: [] });
+    if (url.includes("acme/app"))
+      return new Promise<Response>((resolve) => {
+        resolveOld = resolve;
+      });
+    return Response.json({
+      items: [{ id: 42, name: "New workflow", state: "active" }],
+      page: 1,
+      hasMore: false,
+    });
+  });
+  render(
+    <Router>
+      <GitHubOperationsPage />
+    </Router>,
+  );
+  await waitFor(() => expect(resolveOld).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("button", { name: "acme/api · acme" }));
+  await screen.findByText("New workflow");
+  await act(async () => {
+    resolveOld(
+      Response.json({
+        items: [{ id: 42, name: "Old workflow", state: "active" }],
+        page: 1,
+        hasMore: false,
+      }),
+    );
+  });
+  await waitFor(() => expect(screen.queryByText("Old workflow")).toBeNull());
+  expect(screen.getByText("New workflow")).toBeTruthy();
+});
+
+it("shows discovery loading and retry states before selecting a repository", async () => {
+  window.history.replaceState(null, "", "/github");
+  let fail = true;
+  setFetch(async (url) => {
+    if (url.startsWith("/api/actions/github/resources")) {
+      if (fail)
+        return Response.json({ message: "GitHub temporarily unavailable" }, { status: 503 });
+      return Response.json({
+        items: [{ connectionId: "c", connectionName: "acme", repository: "acme/app" }],
+        hasMore: false,
+      });
+    }
+    return Response.json({ items: [], page: 1, hasMore: false });
+  });
+  render(
+    <Router>
+      <GitHubOperationsPage />
+    </Router>,
+  );
+  expect(screen.getByText("Loading GitHub repositories…")).toBeTruthy();
+  await screen.findByText("GitHub temporarily unavailable");
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await screen.findByText("No workflows on this page");
+  expect(screen.getByRole("button", { name: "acme/app · acme" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
 });
 
 async function openRunLogs() {

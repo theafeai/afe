@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type FormEvent } from "react";
+import { useEffect, useState, useRef, useContext, type FormEvent } from "react";
 import type {
   GitHubOperation,
   GitHubOperationCapability,
@@ -8,6 +8,7 @@ import type {
   GitHubRepositoryChoice,
   GitHubDispatchInput,
 } from "@afe/core";
+import { AccessContext } from "../access.tsx";
 import { ApiError, request } from "../api/client.ts";
 import { Empty, ErrorBox, Loading, KeyValue, useAsync, useDocumentTitle } from "../components.tsx";
 import { formatBytes, humanize } from "../format.ts";
@@ -232,34 +233,68 @@ function Pager({
     </nav>
   );
 }
+function repositoryKey(scope: Pick<GitHubRepositoryChoice, "connectionId" | "repository">) {
+  return JSON.stringify([scope.connectionId, scope.repository]);
+}
 export function GitHubOperationsPage() {
   useDocumentTitle("GitHub Actions");
-  const [page, setPage] = useState(1);
+  const { session } = useContext(AccessContext);
+  const storageKey = `afe.github.repository:${JSON.stringify([
+    session?.principal.tenantId,
+    session?.principal.id,
+  ])}`;
   const resources = useAsync(
-    (s) =>
-      request<{ items: GitHubRepositoryChoice[]; hasMore: boolean }>(
-        "GET",
-        `/api/actions/github/resources?page=${page}`,
-        undefined,
-        s,
-      ),
-    [page],
+    async (signal) => {
+      const choices = new Map<string, GitHubRepositoryChoice>();
+      // Pages may be empty after permission filtering even when GitHub has more repositories.
+      for (let page = 1; ; page++) {
+        const result = await request<{ items: GitHubRepositoryChoice[]; hasMore: boolean }>(
+          "GET",
+          `/api/actions/github/resources?page=${page}`,
+          undefined,
+          signal,
+        );
+        for (const item of result.items) choices.set(repositoryKey(item), item);
+        if (!result.hasMore) return [...choices.values()];
+        if (page === 1000) throw new Error("Too many repository pages. Narrow your GitHub access.");
+      }
+    },
+    [storageKey],
   );
   const { search } = useLocation();
   const initial = new URLSearchParams(search);
-  const [selected, setSelected] = useState(
+  const [selected, setSelected] = useState<string | null>(null);
+  let remembered: string | null = null;
+  try {
+    remembered = localStorage.getItem(storageKey);
+  } catch {
+    // Repository navigation still works when browser storage is unavailable.
+  }
+  const requested =
     initial.get("connectionId") && initial.get("repository")
-      ? {
+      ? repositoryKey({
           connectionId: initial.get("connectionId")!,
           repository: initial.get("repository")!,
-          connectionName: "",
-        }
-      : null,
-  );
-  const known = resources.data?.items.find(
-    (r) => r.connectionId === selected?.connectionId && r.repository === selected?.repository,
-  );
-  const scope = selected && known ? known : selected;
+        })
+      : null;
+  const choices = resources.loading ? [] : (resources.data ?? []);
+  const scope =
+    choices.find((r) => repositoryKey(r) === (selected ?? requested)) ??
+    choices.find((r) => repositoryKey(r) === remembered) ??
+    choices[0];
+  const currentKey = scope ? repositoryKey(scope) : null;
+  const repositoryTabs = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!currentKey) return;
+    try {
+      localStorage.setItem(storageKey, currentKey);
+    } catch {
+      // Persistence is optional; access is always revalidated against the resource list.
+    }
+    repositoryTabs.current
+      ?.querySelector('[aria-pressed="true"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [storageKey, currentKey]);
   return (
     <div className="page gh-page">
       <header className="page-header">
@@ -277,66 +312,38 @@ export function GitHubOperationsPage() {
       </header>
       {resources.loading && <Loading label="Loading GitHub repositories…" />}
       {resources.error && <ErrorBox error={resources.error} onRetry={resources.reload} />}
-      {resources.data && (
-        <section className="card gh-picker" aria-label="Repository">
-          <div className="gh-picker-row">
-            <Field label="Connected repository">
-              <select
-                value={selected ? `${selected.connectionId}|${selected.repository}` : ""}
-                onChange={(e) => {
-                  const item = resources.data!.items.find(
-                    (x) => `${x.connectionId}|${x.repository}` === e.target.value,
-                  );
-                  setSelected(item ?? null);
-                }}
-              >
-                <option value="">Select a repository</option>
-                {selected && !known && (
-                  <option value={`${selected.connectionId}|${selected.repository}`}>
-                    {selected.repository}
-                  </option>
-                )}
-                {resources.data.items.map((r) => (
-                  <option
-                    key={`${r.connectionId}|${r.repository}`}
-                    value={`${r.connectionId}|${r.repository}`}
-                  >
-                    {r.repository} · {r.connectionName}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {(page > 1 || resources.data.hasMore) && (
-              <div className="toolbar">
-                <button className="btn" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous repositories
-                </button>
+      {!resources.loading && resources.data && (
+        <section className="card gh-picker" aria-label="Repositories">
+          {choices.length ? (
+            <div
+              className="gh-repository-tabs"
+              role="group"
+              aria-label="Repositories"
+              ref={repositoryTabs}
+            >
+              {choices.map((r) => (
                 <button
-                  className="btn"
-                  disabled={!resources.data.hasMore}
-                  onClick={() => setPage((p) => p + 1)}
+                  type="button"
+                  className="gh-tab"
+                  key={repositoryKey(r)}
+                  aria-pressed={currentKey === repositoryKey(r)}
+                  onClick={() => setSelected(repositoryKey(r))}
                 >
-                  More repositories
+                  {r.repository} · {r.connectionName}
                 </button>
-              </div>
-            )}
-          </div>
-          {!resources.data.items.length && (
-            <Empty title="No repositories on this page">
+              ))}
+            </div>
+          ) : (
+            <Empty title="No accessible repositories">
               <p>
                 Only connected repositories available to your GitHub identity and Afe policy appear.
-                Try the next page or update your account in Profile.
+                Update your account in Profile to check access.
               </p>
             </Empty>
           )}
-          {resources.data.items.length > 0 && !selected && (
-            <p className="small muted gh-picker-hint">
-              Choose a repository to see its workflows, runs and deployments.
-            </p>
-          )}
         </section>
       )}
-      {scope && <GitHubWorkspace key={`${scope.connectionId}|${scope.repository}`} scope={scope} />}
+      {scope && <GitHubWorkspace key={currentKey} scope={scope} />}
     </div>
   );
 }
@@ -698,6 +705,17 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
         </div>
         {list.loading && <Loading label="Loading GitHub state…" />}
         {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
+        {tab === "workflows" &&
+          list.data &&
+          list.data.items.length > 0 &&
+          !list.data.items.some((item) => item.state === "active") && (
+            <Empty title="No active workflows on this page">
+              <p>
+                The workflows below are disabled. Select another repository or check another page
+                for active workflows.
+              </p>
+            </Empty>
+          )}
         {list.data && !list.data.items.length && (
           <Empty title={`No ${tabLabel.toLowerCase()} on this page`}>
             <p>Refresh after source changes, select another repository, or check another page.</p>
