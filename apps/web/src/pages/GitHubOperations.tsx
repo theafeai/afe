@@ -1167,7 +1167,7 @@ function RunPanel({
           ]}
         />
         {current.html_url && (
-          <a className="btn btn-ghost" href={current.html_url} target="_blank" rel="noreferrer">
+          <a className="btn" href={current.html_url} target="_blank" rel="noreferrer">
             Open source run
           </a>
         )}
@@ -1235,6 +1235,13 @@ function RunPanel({
                 attempt={attempt}
                 read={read}
                 enabled={logCapability?.enabled === true}
+                unavailableReason={
+                  archives.loading
+                    ? "Checking log access…"
+                    : archives.error
+                      ? "Could not check log access. Retry above."
+                      : (logCapability?.reason ?? "Log access is unavailable.")
+                }
                 action={button("github.rerun_job", {
                   ...params,
                   jobId: job.id,
@@ -1845,6 +1852,7 @@ function RunJob({
   attempt,
   read,
   enabled,
+  unavailableReason,
   action,
 }: {
   job: Item;
@@ -1852,6 +1860,7 @@ function RunJob({
   attempt: number;
   read: Reader;
   enabled: boolean;
+  unavailableReason: string;
   action: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -1863,8 +1872,9 @@ function RunJob({
         <RunState item={job} />
         <div className="toolbar gh-job-action">
           <button
-            className="btn btn-ghost"
-            disabled={!enabled}
+            className="btn gh-log-toggle"
+            disabled={!enabled && !open}
+            aria-describedby={!enabled ? `${outputId}-access` : undefined}
             aria-label={`${open ? "Hide" : "View"} logs for ${job.name}`}
             aria-expanded={open}
             aria-controls={open ? outputId : undefined}
@@ -1872,9 +1882,16 @@ function RunJob({
           >
             {open ? "Hide logs" : "View logs"}
           </button>
-          {action}
         </div>
       </div>
+      {!enabled && (
+        <p className="small muted gh-job-access" id={`${outputId}-access`}>
+          {unavailableReason}
+        </p>
+      )}
+      {open && enabled && (
+        <RunJobLogOutput id={outputId} runId={runId} attempt={attempt} job={job} read={read} />
+      )}
       {!!job.steps?.length && (
         <ol className="gh-steps">
           {job.steps.map((step) => (
@@ -1886,9 +1903,7 @@ function RunJob({
           ))}
         </ol>
       )}
-      {open && enabled && (
-        <RunJobLogOutput id={outputId} runId={runId} attempt={attempt} job={job} read={read} />
-      )}
+      <div className="toolbar gh-job-secondary">{action}</div>
     </li>
   );
 }
