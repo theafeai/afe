@@ -8,6 +8,17 @@ import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe, type AfeApp } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
 import { githubActionsModule } from "../src/actions/github.ts";
+vi.mock("../src/connectors/github-log-download.ts", async (original) => {
+  const actual = await original<typeof GitHubLogDownload>();
+  return {
+    ...actual,
+    downloadGitHubJobLog: vi.fn(
+      async () => "2026-11-01T00:00:00Z Build output <script>inert</script>",
+    ),
+  };
+});
+import type * as GitHubLogDownload from "../src/connectors/github-log-download.ts";
+import { downloadGitHubJobLog } from "../src/connectors/github-log-download.ts";
 const admin = "a".repeat(40),
   sha = "a".repeat(40);
 const yaml =
@@ -60,6 +71,7 @@ beforeEach(async () => {
   fileSha = sha;
   failure = null;
   mutations = [];
+  vi.mocked(downloadGitHubJobLog).mockClear();
   currentAction = "github.rerun";
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     const u = new URL(url),
@@ -81,6 +93,16 @@ beforeEach(async () => {
       ]);
     if (path === "/repos/acme/app")
       return Response.json({ id: 1, permissions: { push: write, admin: sourceAdmin } });
+    if (path === "/repos/acme/app/actions/runs/123/attempts/1") return Response.json(run());
+    if (path === "/repos/acme/app/actions/jobs/234/logs")
+      return failure
+        ? Response.json({ message: "private-upstream-secret" }, { status: Number(failure) })
+        : new Response(null, {
+            status: 302,
+            headers: {
+              location: "https://results.blob.core.windows.net/log?sig=private-signed-secret",
+            },
+          });
     if (path === "/repos/acme/app/actions/runs/123") return Response.json(run());
     if (path === "/repos/acme/app/actions/jobs/234")
       return Response.json({
@@ -872,4 +894,65 @@ it("rejects a branch policy type change because the source only permits name-pat
     ).statusCode,
   ).toBe(409);
   expect(mutations).toHaveLength(0);
+});
+
+it.each(["success", "failure"])(
+  "views completed %s job logs using the linked PAT without an App",
+  async (result) => {
+    conclusion = result;
+    const res = await afe.app.inject({
+      url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+      headers: headers(),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    expect(res.json()).toMatchObject({
+      jobId: 234,
+      attempt: 1,
+      text: expect.stringContaining("Build output"),
+    });
+    expect(res.body).not.toMatch(
+      /fine-grained-test-token|private-signed-secret|blob.core.windows.net/,
+    );
+    expect(downloadGitHubJobLog).toHaveBeenCalledTimes(1);
+    expect(mutations).toHaveLength(0);
+  },
+);
+it("pins logs to the selected run and attempt before requesting storage", async () => {
+  jobRun = 999;
+  const res = await afe.app.inject({
+    url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+    headers: headers(),
+  });
+  expect(res.statusCode).toBe(404);
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+  jobRun = 123;
+  attempt = 2;
+  expect(
+    (
+      await afe.app.inject({
+        url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+        headers: headers(),
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+});
+it.each([403, 404, 410])("reports log availability/permission status %s safely", async (code) => {
+  failure = code;
+  const res = await afe.app.inject({
+    url: q("job_log", { runId: "123", attempt: "1", jobId: "234" }),
+    headers: headers(),
+  });
+  expect(res.statusCode).toBe(code);
+  expect(res.body).not.toContain("private-upstream-secret");
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
+});
+it("reports pending logs and enforces exact log grants", async () => {
+  const url = q("job_log", { runId: "123", attempt: "1", jobId: "234" });
+  status = "in_progress";
+  expect((await afe.app.inject({ url, headers: headers() })).statusCode).toBe(409);
+  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  expect((await afe.app.inject({ url, headers: headers() })).statusCode).toBe(403);
+  expect(downloadGitHubJobLog).not.toHaveBeenCalled();
 });

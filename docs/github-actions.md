@@ -193,6 +193,32 @@ Operational receipts contain actor, resource, action, input digest and minimal
 source result metadata, not input values, YAML, deployment payloads or logs. They
 expire with the tenant retention policy; this is not long-term audit storage.
 
+### Viewing completed job logs
+
+Open **GitHub Actions → choose the connection/repository → Runs → Open details**
+for the desired run. Details expand directly beneath that run. Under **Jobs and
+steps**, select **Inspect log/job attempt**, then **View logs for <job name>**.
+The output appears beside that job's step list, labelled with the job and attempt.
+Successful and failed runs both support viewing logs. **Download this attempt's
+archived logs** remains available for the full ZIP archive.
+
+The repository workspace uses the personal GitHub identity linked in **Profile**
+(OAuth or a fine-grained PAT), including when the selected connection is backed by
+a GitHub App. The PAT needs repository access and **Actions: read**; the Afe user
+needs resource read access and the exact `github.logs_download` repository grant
+in **Users**. A GitHub App installation alone does not replace the workspace's
+personal identity. The event-detail progress panel continues to use the App's
+read-only installation token.
+
+`GET …?connectionId=…&view=job_log&runId=…&attempt=…&jobId=…` verifies the exact
+run attempt and job membership before fetching output. Logs are read on demand,
+limited to 2 MiB and four concurrent reads per process, and never persisted or
+logged by Afe. Signed storage URLs stay server-side and receive no credentials.
+Loading, pending availability, missing grants, denied access, unavailable/expired
+logs and transfer failures are shown inline with retry controls. GitHub can take
+time to publish logs after completion; use **Try again**. For oversized output,
+download the archive or open the source run.
+
 ### Downloads
 
 `GET …/download?connectionId=…&kind=artifact&id=…` or

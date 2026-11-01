@@ -23,6 +23,7 @@ import type { ServerContext } from "../context.ts";
 import { requestTenant } from "../auth/index.ts";
 import { toolAccounts } from "../auth/tool-accounts.ts";
 import { githubUserId } from "./github-identity.ts";
+import { downloadGitHubJobLog, JobLogError } from "../connectors/github-log-download.ts";
 import { registerGitHubDownloads } from "./github-downloads.ts";
 
 export const githubOperationError = (statusCode: number, message: string) =>
@@ -228,6 +229,62 @@ export class GitHubOperations {
     if (attempt !== undefined && r.run_attempt !== attempt)
       throw fail(409, "The run attempt changed. Refresh before continuing.");
     return r;
+  }
+  private activeLogs = 0;
+  async jobLog(c: GitHubOperationContext, runId: number, attempt: number, jobId: number) {
+    // Logs use the same exact read grant as archive downloads, including PAT identities.
+    this.require(c, "github.logs_download");
+    if (this.activeLogs >= 4) throw fail(429, "Log downloads are busy. Try again shortly.");
+    this.activeLogs++;
+    try {
+      const run = (
+        await this.request<SourceObject>(c, `${c.path}/actions/runs/${runId}/attempts/${attempt}`)
+      ).data;
+      if (run.id !== runId || (run.run_attempt ?? 1) !== attempt)
+        throw fail(404, "Workflow attempt not found.");
+      if (run.status !== "completed")
+        throw fail(
+          409,
+          "Logs are available after this workflow attempt finishes. Refresh and try again.",
+        );
+      const job = (await this.request<SourceObject>(c, `${c.path}/actions/jobs/${jobId}`)).data;
+      if (job.id !== jobId || job.run_id !== runId || (job.run_attempt ?? 1) !== attempt)
+        throw fail(404, "Job not found in this workflow attempt.");
+      const response = await this.http.request<null>({
+        method: "GET",
+        path: `${c.path}/actions/jobs/${jobId}/logs`,
+        token: c.token.secret,
+        bucket: `operations:${c.tid}:${c.uid}`,
+        expectLogRedirect: true,
+      });
+      const location = response.headers.get("location");
+      if (response.status !== 302 || !location)
+        throw fail(502, "GitHub did not provide a job log. Try again or open the source run.");
+      return { jobId, attempt, text: await downloadGitHubJobLog(location) };
+    } catch (err) {
+      if (err instanceof JobLogError)
+        throw fail(
+          err.code === "logs_too_large" ? 413 : 502,
+          err.code === "logs_too_large"
+            ? "This job log exceeds Afe's 2 MiB viewing limit. Download the archive or open the source run."
+            : "The job log could not be downloaded. Try again or open the source run.",
+        );
+      if (err instanceof GitHubApiError) {
+        if ([404, 410].includes(err.status))
+          throw fail(
+            err.status,
+            "GitHub could not provide this log. It may be unavailable, deleted, expired, or inaccessible.",
+          );
+        if ([401, 403].includes(err.status))
+          throw fail(
+            403,
+            "GitHub denied log access. Check the linked token's Actions read permission and repository access.",
+          );
+      }
+      throw err;
+    } finally {
+      this.activeLogs--;
+    }
   }
   async workflowFile(c: GitHubOperationContext, path: string, ref: string, missing = false) {
     if (!isWorkflowPath(path))
@@ -1029,6 +1086,8 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         path = q.workflowId ? `/actions/workflows/${numeric(q.workflowId)}/runs` : "/actions/runs";
         key = "workflow_runs";
         if (q.branch) params.branch = q.branch;
+      } else if (view === "job_log") {
+        return service.jobLog(c, numeric(q.runId), numeric(q.attempt), numeric(q.jobId));
       } else if (view === "jobs") {
         const run = await service.run(c, numeric(q.runId));
         const attempt = q.attempt ? numeric(q.attempt) : Number(run.run_attempt);

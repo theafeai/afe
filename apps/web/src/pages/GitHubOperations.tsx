@@ -1151,6 +1151,7 @@ function RunPanel({
       }),
     [item.id, attempt],
   );
+  const logCapability = archives.data?.items.find((c) => c.action === "github.logs_download");
   const params = { runId: item.id, attempt: current.run_attempt ?? 1 };
   return (
     <div className="gh-detail" aria-label={`Run ${item.id}`} role="region">
@@ -1210,16 +1211,23 @@ function RunPanel({
           </div>
         </div>
         <p className="small muted">
-          Attempts remain separate. These archives are completed output; full live source capture is
-          being developed separately.
+          Select View logs for a job below to read its completed output alongside its steps.
+          Attempts remain separate. Logs may take a short time to become available after completion.
         </p>
+        {archives.loading && <Loading label="Checking log access…" />}
+        {archives.error && <ErrorBox error={archives.error} onRetry={archives.reload} />}
+        {logCapability && !logCapability.enabled && (
+          <p className="callout" role="note">
+            Logs unavailable: {logCapability.reason}
+          </p>
+        )}
         {jobs.loading && <Loading />}
         {jobs.error && <ErrorBox error={jobs.error} onRetry={jobs.reload} />}
         {jobs.data && !jobs.data.items.length && <Empty title="No jobs available" />}
-        {jobs.data && jobs.data.items.length > 0 && (
+        {!jobs.loading && jobs.data && jobs.data.items.length > 0 && (
           <ul className="gh-jobs">
             {jobs.data.items.map((job) => (
-              <li className="gh-job" key={job.id}>
+              <li className="gh-job" key={`${attempt}:${job.id}`}>
                 <div className="gh-job-head">
                   <span className="gh-job-name">{job.name}</span>
                   <RunState item={job} />
@@ -1231,6 +1239,13 @@ function RunPanel({
                     })}
                   </span>
                 </div>
+                <RunJobLog
+                  job={job}
+                  runId={item.id}
+                  attempt={attempt}
+                  read={read}
+                  enabled={logCapability?.enabled === true}
+                />
                 {!!job.steps?.length && (
                   <ol className="gh-steps">
                     {job.steps.map((step) => (
@@ -1838,5 +1853,84 @@ function EnvironmentEditor({
         </>
       )}
     </div>
+  );
+}
+
+function RunJobLog({
+  job,
+  runId,
+  attempt,
+  read,
+  enabled,
+}: {
+  job: Item;
+  runId: number;
+  attempt: number;
+  read: Reader;
+  enabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        className="btn"
+        disabled={!enabled}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? `Hide logs for ${job.name}` : `View logs for ${job.name}`}
+      </button>
+      {open && <RunJobLogOutput runId={runId} attempt={attempt} job={job} read={read} />}
+    </div>
+  );
+}
+function RunJobLogOutput({
+  runId,
+  attempt,
+  job,
+  read,
+}: {
+  runId: number;
+  attempt: number;
+  job: Item;
+  read: Reader;
+}) {
+  const log = useAsync(
+    () =>
+      read<{ text: string }>("job_log", {
+        runId: String(runId),
+        attempt: String(attempt),
+        jobId: String(job.id),
+      }),
+    [runId, attempt, job.id],
+  );
+  return (
+    <section aria-label={`Logs for ${job.name}, attempt ${attempt}`}>
+      <h4>
+        {job.name} · Attempt {attempt} · Job log
+      </h4>
+      {log.loading && <Loading label="Fetching job logs…" />}
+      {log.error && (
+        <ErrorBox
+          error={log.error}
+          title={
+            log.error instanceof ApiError && log.error.status === 409
+              ? "Logs not ready yet"
+              : log.error instanceof ApiError && log.error.status === 403
+                ? "Log access denied"
+                : "Job logs unavailable"
+          }
+          onRetry={log.reload}
+        />
+      )}
+      {log.data &&
+        (log.data.text ? (
+          <pre className="json github-run-log" aria-label={`Job log for ${job.name}`} tabIndex={0}>
+            {log.data.text}
+          </pre>
+        ) : (
+          <p className="muted">This job has no log output.</p>
+        ))}
+    </section>
   );
 }
