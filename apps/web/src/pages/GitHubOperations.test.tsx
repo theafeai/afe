@@ -356,8 +356,25 @@ it("explains missing log grants instead of silently omitting log access", async 
     }),
   );
   await screen.findByText("Logs unavailable: Requires explicit log permission.");
-  expect(
-    (screen.getByRole("button", { name: "View logs for Build and deploy" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+  const view = screen.getByRole("button", { name: "View logs for Build and deploy" });
+  expect((view as HTMLButtonElement).disabled).toBe(true);
+  expect(document.getElementById(view.getAttribute("aria-describedby")!)?.textContent).toBe(
+    "Requires explicit log permission.",
+  );
+});
+
+it("keeps the log toggle associated with output and collapses without losing the job", async () => {
+  fixture();
+  const details = await openRunLogs();
+  const hide = within(details).getByRole("button", { name: "Hide logs for Build and deploy" });
+  expect(hide.getAttribute("aria-expanded")).toBe("true");
+  const output = document.getElementById(hide.getAttribute("aria-controls")!);
+  expect(output?.getAttribute("aria-label")).toBe("Logs for Build and deploy, attempt 2");
+  hide.focus();
+  fireEvent.click(hide);
+  const view = within(details).getByRole("button", { name: "View logs for Build and deploy" });
+  expect(document.activeElement).toBe(view);
+  expect(view.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Logs for Build and deploy, attempt 2" })).toBeNull();
+  expect(within(details).getByText("Build")).toBeTruthy();
 });
