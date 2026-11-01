@@ -11,7 +11,7 @@ import {
   type MatrixCell,
 } from "../api/environments.ts";
 import { ErrorBox, Loading, ToolBadge, toolLabel } from "../components.tsx";
-import { humanize } from "../format.ts";
+import { humanize, qualifiedAction } from "../format.ts";
 import { Link } from "../router.tsx";
 import { usePaged } from "../usePaged.ts";
 import {
@@ -47,7 +47,7 @@ function Step({ item, multiTarget }: { item: HistoryItem; multiTarget: boolean }
         <span className="muted small">{CHANGE_LABEL[item.change]}</span>
       </div>
       <div className="small">
-        <code>{item.event.action}</code> · {howText(p)}
+        <code>{qualifiedAction(item.event)}</code> · {howText(p)}
         {multiTarget && (
           <>
             {" "}
@@ -67,7 +67,7 @@ function Step({ item, multiTarget }: { item: HistoryItem; multiTarget: boolean }
               <li key={c.event.id}>
                 <span className="muted">{c.stage}</span>{" "}
                 <Link to={`/events/${c.event.id}`}>
-                  <code>{c.event.action}</code>
+                  <code>{qualifiedAction(c.event)}</code>
                 </Link>{" "}
                 {toolLabel(c.event.source)} · {c.event.target.label}
                 {c.event.actor ? ` · ${c.event.actor}` : ""} · <TimeAgo iso={c.event.at} />{" "}

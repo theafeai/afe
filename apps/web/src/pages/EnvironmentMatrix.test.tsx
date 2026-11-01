@@ -423,6 +423,7 @@ describe("Environment matrix (AFE-24)", () => {
     expect(eventLinks).toContain(`/events/${ev(200)}`);
     expect(eventLinks).toContain(`/journeys?repository=github.com%2Facme%2Fshop&commit=${SHA_A}`);
     expect(within(panel).getByText(/Linked earlier events \(1\)/)).toBeTruthy();
+    expect(within(panel).getByText("github.pull_request.merged")).toBeTruthy();
 
     fireEvent.click(within(panel).getByRole("button", { name: "Load older placements" }));
     expect(await within(panel).findByText("3 of 3 placements, newest first")).toBeTruthy();

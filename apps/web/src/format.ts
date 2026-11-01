@@ -69,3 +69,12 @@ export function formatBytes(n: number | null | undefined): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
   return `${(n / 1024 / 1024).toFixed(1)} MiB`;
 }
+
+/**
+ * The event name qualified by its source tool (`github.workflow_run.completed`), so the tool
+ * is readable from the name itself. Actions that already carry the prefix (ArgoCD's
+ * `argocd.sync.succeeded`) are left as they are.
+ */
+export function qualifiedAction(e: { source: string; action: string }): string {
+  return e.action.startsWith(`${e.source}.`) ? e.action : `${e.source}.${e.action}`;
+}

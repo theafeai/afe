@@ -155,7 +155,7 @@ describe("Where is this commit live? (AFE-22)", () => {
   it("is not shown for events without a GitHub repository and commit", async () => {
     current = event({ repositories: ["gitlab.com/acme/web"], commitShas: [SHA] });
     render(<App />);
-    await screen.findByText("pull_request.merged");
+    await screen.findByText("github.pull_request.merged");
     expect(screen.queryByText("Where is this commit live?")).toBeNull();
     expect(requests.some((r) => r.startsWith("/api/containment"))).toBe(false);
   });

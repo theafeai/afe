@@ -283,8 +283,8 @@
 .env-panel-kicker {
   margin: 0;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  font-size: var(--fs-xs);
 }
 .env-target-filter {
   margin: 0.6rem 0;
