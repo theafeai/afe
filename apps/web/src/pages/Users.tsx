@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx";
 import { useAccess } from "../access.tsx";
+import { useToast } from "../toast.tsx";
 
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
@@ -37,7 +38,7 @@ export function UsersPage() {
   const [selected, setSelected] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [policies, setPolicies] = useState<Record<string, Policy> | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -45,7 +46,6 @@ export function UsersPage() {
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setFailure(null);
-    setNotice(null);
     try {
       await action();
     } catch (e) {
@@ -66,7 +66,7 @@ export function UsersPage() {
         },
       );
       setToken(r.token ?? null);
-      if (invite) setNotice("Invitation queued. Delivery status appears below.");
+      if (invite) toast("Invitation queued. Delivery status appears below.");
       setUsername("");
       setEmail("");
       reloadMail();
@@ -161,7 +161,6 @@ export function UsersPage() {
           </button>
         </section>
       )}
-      {notice && <p role="status">{notice}</p>}
       {(failure || error) && <ErrorBox error={(failure || error)!} />}
       {loading ? (
         <Loading />
@@ -188,7 +187,7 @@ export function UsersPage() {
                 e.preventDefault();
                 void run(async () => {
                   await request("POST", "/api/admin/email/test", { email: testEmail });
-                  setNotice("Test email queued.");
+                  toast("Test email queued.");
                   reloadMail();
                 });
               }}
@@ -267,7 +266,7 @@ export function UsersPage() {
                     email: userEmail || null,
                   });
                   setSelected({ ...selected, email: userEmail || null });
-                  setNotice("Email saved. Earlier email links are invalidated.");
+                  toast("Email saved. Earlier email links are invalidated.");
                   reload();
                 });
               }}
@@ -296,7 +295,7 @@ export function UsersPage() {
                           await request("POST", `/api/admin/users/${selected.id}/email`, {
                             purpose,
                           });
-                          setNotice("Email queued. Previous links are invalidated.");
+                          toast("Email queued. Previous links are invalidated.");
                           reloadMail();
                         })
                       }
@@ -372,7 +371,7 @@ export function UsersPage() {
                           return { resource, action };
                         }),
                     });
-                    setNotice(`Saved ${tool} permissions.`);
+                    toast(`Saved ${tool} permissions.`);
                   });
                 }}
               >

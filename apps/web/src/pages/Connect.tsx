@@ -18,6 +18,7 @@ import {
 } from "../components.tsx";
 import { formatRelative } from "../format.ts";
 import { Link, useLocation, useNavigate } from "../router.tsx";
+import { useToast } from "../toast.tsx";
 
 function ExistingConnections({ source }: { source: string }) {
   const { data, error, loading, reload } = useAsync((s) => api.connections(s), [source]);
@@ -215,7 +216,7 @@ export function argocdErrorMessage(err: Error): string {
 }
 
 export function ConnectArgoCD() {
-  const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null);
+  const toast = useToast();
   useDocumentTitle("Connect ArgoCD");
   const id = useId();
   const [form, setForm] = useState({ url: "", token: "", caPem: "", name: "" });
@@ -264,11 +265,6 @@ export function ConnectArgoCD() {
     <div className="page narrow">
       <Back />
       <h1>Connect ArgoCD</h1>
-      {disconnectNotice && (
-        <p className="callout callout-ok" role="status">
-          {disconnectNotice}
-        </p>
-      )}
       <p className="lede">
         Afe reads ArgoCD with the API token of a dedicated local account with a{" "}
         <strong>read-only</strong> role (see docs/connectors/argocd.md). Afe checks the token cannot
@@ -380,7 +376,7 @@ export function ConnectArgoCD() {
                       <DisconnectAction
                         connection={c}
                         onDone={(note) => {
-                          setDisconnectNotice(note);
+                          toast(note);
                           list.reload();
                         }}
                       />
@@ -543,14 +539,10 @@ export function VercelProjectsPage({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync((s) => api.vercelProjects(id, s), [id]);
   const [mode, setMode] = useState<"none" | "all" | "selected">("none");
   const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [save, setSave] = useState<{
-    busy: boolean;
-    error: Error | null;
-    saved: ProjectSelection | null;
-  }>({
+  const toast = useToast();
+  const [save, setSave] = useState<{ busy: boolean; error: Error | null }>({
     busy: false,
     error: null,
-    saved: null,
   });
 
   useEffect(() => {
@@ -567,15 +559,19 @@ export function VercelProjectsPage({ id }: { id: string }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setSave({ busy: true, error: null, saved: null });
+    setSave({ busy: true, error: null });
     try {
       const r = await api.vercelSaveProjects(
         id,
         mode === "all" ? { projects: "all" } : { projectIds: mode === "none" ? [] : [...chosen] },
       );
-      setSave({ busy: false, error: null, saved: r.selection });
+      setSave({ busy: false, error: null });
+      toast({
+        message: `Saved: Afe now observes ${selectionSummary(r.selection)}.`,
+        action: { label: "Back to the connection", to: `/connections/${id}` },
+      });
     } catch (err) {
-      setSave({ busy: false, error: err as Error, saved: null });
+      setSave({ busy: false, error: err as Error });
     }
   };
 
@@ -661,12 +657,6 @@ export function VercelProjectsPage({ id }: { id: string }) {
             <button type="submit" className="btn btn-primary" disabled={save.busy}>
               {save.busy ? "Saving…" : "Save selection"}
             </button>
-            {save.saved && (
-              <p className="callout callout-ok" role="status">
-                Saved: Afe now observes {selectionSummary(save.saved)}.{" "}
-                <Link to={`/connections/${id}`}>Back to the connection</Link>
-              </p>
-            )}
             {save.error && <ErrorBox error={save.error} title="Could not save" />}
           </form>
         )

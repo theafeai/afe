@@ -21,6 +21,7 @@ import {
 import { Empty, ErrorBox, Loading, ToolBadge, useAsync, useDocumentTitle } from "../components.tsx";
 import { formatDateTime } from "../format.ts";
 import { Link } from "../router.tsx";
+import { useToast } from "../toast.tsx";
 
 const LABEL_FIELD = "argocd.label:<key>";
 const MATCH_LABEL: Record<MatchType, string> = {
@@ -111,15 +112,14 @@ function EditableMappingPage() {
   const unmapped = useAsync((s) => mappingApi.unmapped(s), [tick]);
   const current = useAsync((s) => mappingApi.preview({ items: 20 }, s), [tick]);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const [actionError, setActionError] = useState<Error | null>(null);
 
   async function act(what: () => Promise<unknown>, done: string) {
     setActionError(null);
-    setNotice(null);
     try {
       await what();
-      setNotice(done);
+      toast(done);
       reload();
       return true;
     } catch (err) {
@@ -140,11 +140,6 @@ function EditableMappingPage() {
           </p>
         </div>
       </header>
-      {notice && (
-        <div className="callout callout-ok" role="status">
-          {notice}
-        </div>
-      )}
       {actionError && <ErrorBox error={actionError} title="The change was not saved" />}
       {state.loading && !state.data ? (
         <Loading label="Loading mapping…" />
