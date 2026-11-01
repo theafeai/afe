@@ -791,12 +791,6 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
           />
         )}
       </section>
-      {tab === "workflows" && can("github.workflow_save") && (
-        <details className="card gh-create">
-          <summary>Create workflow</summary>
-          <WorkflowEditor key="new-workflow" prepare={prepare} canSave={true} canDelete={false} />
-        </details>
-      )}
       {tab === "deployments" && !selected && (
         <details className="card gh-create">
           <summary>Create deployment</summary>
@@ -1037,18 +1031,14 @@ function WorkflowEditor({
   canSave: boolean;
   canDelete: boolean;
   prepare: Prepare;
-  file?: { path: string; sha: string; content: string; branch: string };
+  file: { path: string; sha: string; content: string; branch: string };
 }) {
-  const [path, setPath] = useState(file?.path ?? ".github/workflows/deploy.yml"),
-    [branch, setBranch] = useState(file?.branch ?? "main"),
-    [content, setContent] = useState(
-      file?.content ??
-        'name: Deploy\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo "Add your deployment steps"\n',
-    ),
+  const { path, branch, sha } = file;
+  const [content, setContent] = useState(file.content),
     [message, setMessage] = useState("Update workflow from Afe");
   return (
     <section className="card">
-      <h3>{file ? "Edit workflow file" : "Create workflow file"}</h3>
+      <h3>Edit workflow file</h3>
       <form
         className="form"
         onSubmit={(e) => {
@@ -1058,25 +1048,15 @@ function WorkflowEditor({
             branch,
             content,
             message,
-            ...(file ? { sha: file.sha } : {}),
+            sha,
           });
         }}
       >
         <Field label="Workflow file path">
-          <input
-            value={path}
-            readOnly={!!file}
-            onChange={(e) => setPath(e.target.value)}
-            required
-          />
+          <input value={path} readOnly required />
         </Field>
         <Field label="Target branch">
-          <input
-            value={branch}
-            readOnly={!!file}
-            onChange={(e) => setBranch(e.target.value)}
-            required
-          />
+          <input value={branch} readOnly required />
         </Field>
         <Field label="Commit message">
           <input
@@ -1102,18 +1082,14 @@ function WorkflowEditor({
         <button className="btn" disabled={!canSave}>
           Prepare workflow save
         </button>
-        {file && (
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={!canDelete}
-            onClick={() =>
-              void prepare("github.workflow_delete", { path, branch, message, sha: file.sha })
-            }
-          >
-            Prepare workflow deletion
-          </button>
-        )}
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={!canDelete}
+          onClick={() => void prepare("github.workflow_delete", { path, branch, message, sha })}
+        >
+          Prepare workflow deletion
+        </button>
       </form>
     </section>
   );
