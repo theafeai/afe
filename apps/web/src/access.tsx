@@ -13,6 +13,7 @@ export interface ProfileTool {
 export interface ProfileInfo {
   managedUser: boolean;
   tools: ProfileTool[];
+  administratorGitHub?: { username: string | null };
 }
 export const AccessContext = createContext<{
   session: SessionInfo | null;

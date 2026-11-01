@@ -1,4 +1,4 @@
-import { githubUserId } from "../actions/github-identity.ts";
+import { canLinkAdminGitHub, githubUserId } from "../actions/github-identity.ts";
 import type pg from "pg";
 import {
   argocdOidcConfig,
@@ -8,7 +8,12 @@ import {
 } from "./argocd-oidc.ts";
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { GitHubHttp, exchangeUserCode } from "@afe/connector-github";
+import {
+  GitHubApiError,
+  GitHubHttp,
+  GitHubRateLimitError,
+  exchangeUserCode,
+} from "@afe/connector-github";
 import { VercelClient, buildInstallUrl, exchangeOAuthCode } from "@afe/connector-vercel";
 import { createArgoCdClient } from "@afe/connector-argocd";
 import { parseCookies, SESSION_COOKIE } from "./session.ts";
@@ -16,6 +21,8 @@ import { Secret } from "@afe/core/security";
 import {
   getConnection,
   getCredential,
+  getGitHubAdminIdentity,
+  getLocalUser,
   getUserToolPolicy,
   revokeCredential,
   storeCredential,
@@ -185,12 +192,18 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
   app.get("/api/profile", { config: { access: "viewer" } }, async (req) => {
     const tid = requestTenant(req),
       uid = req.principal?.localUserId ?? (await githubUserId(ctx, req));
-    if (!uid) return { tools: [], managedUser: false };
-    const accounts = await toolAccounts(ctx, tid, uid);
+    const administrator = canLinkAdminGitHub(ctx, req);
+    if (!uid && !administrator) return { tools: [], managedUser: false };
+    const adminUserId = administrator
+      ? await getGitHubAdminIdentity(ctx.pool, tid, req.principal!.id)
+      : null;
+    const adminUser = adminUserId ? await getLocalUser(ctx.pool, tid, adminUserId) : null;
+    const accounts = uid ? await toolAccounts(ctx, tid, uid) : [];
     const tools = [];
     for (const tool of USER_TOOLS) {
+      if (adminUser?.disabled) continue;
       if (!req.principal?.localUserId && tool !== "github") continue;
-      const policy = await getUserToolPolicy(ctx.pool, tid, uid, tool);
+      const policy = uid ? await getUserToolPolicy(ctx.pool, tid, uid, tool) : { mode: "source" };
       if (policy.mode === "none") continue;
       const account = accounts.find((a) => a.tool === tool);
       const oidcConnections =
@@ -216,23 +229,39 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           tool === "github" || policy.mode === "source" || policy.mode === "source + custom",
       });
     }
-    return { tools, managedUser: true };
+    return {
+      tools,
+      managedUser: Boolean(uid),
+      ...(administrator
+        ? {
+            administratorGitHub: {
+              username: adminUser?.username ?? null,
+            },
+          }
+        : {}),
+    };
   });
   app.post<{ Body: { token?: unknown } }>(
     "/api/profile/tools/github/token",
     { config: { access: "viewer" }, bodyLimit: 8192 },
     async (req, reply) => {
-      const tid = requestTenant(req),
-        uid = await githubUserId(ctx, req);
-      if (!uid) return reply.code(409).send({ error: "local_account_required" });
-      const policy = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-      if (policy.mode === "none") return reply.code(403).send({ error: "forbidden" });
+      const tid = requestTenant(req);
+      let uid = await githubUserId(ctx, req);
+      if (!uid && !canLinkAdminGitHub(ctx, req))
+        return reply.code(409).send({
+          error: "local_account_required",
+          message:
+            "Personal GitHub linking requires an administrator or a managed Afe user with GitHub access.",
+        });
+      if (uid && (await getUserToolPolicy(ctx.pool, tid, uid, "github")).mode === "none")
+        return reply.code(403).send({ error: "forbidden" });
       const value = req.body?.token;
       if (typeof value !== "string" || value.length < 10 || value.length > 4096 || /\s/.test(value))
         return reply.code(400).send({
           error: "invalid_token",
           message: "Enter your GitHub fine-grained or personal access token.",
         });
+      let login: string;
       try {
         const identity = await new GitHubHttp({ maxRetries: 0 }).request<{
           id: number;
@@ -241,18 +270,40 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           method: "GET",
           path: "/user",
           token: new Secret(value),
-          bucket: `personal:${tid}:${uid}`,
+          bucket: `personal:${tid}:${req.principal!.id}`,
         });
-        if (!identity.data.id || !identity.data.login) throw new Error("invalid identity");
-        await saveAccount(ctx, tid, uid, "github", identity.data.login, value, {});
-        return { ok: true };
-      } catch {
-        return reply.code(403).send({
-          error: "link_failed",
-          message:
-            "GitHub rejected this personal identity. Check the token expiry and organization approval.",
+        if (
+          !Number.isSafeInteger(identity.data.id) ||
+          identity.data.id <= 0 ||
+          typeof identity.data.login !== "string" ||
+          !identity.data.login
+        )
+          throw new Error("invalid identity");
+        login = identity.data.login;
+      } catch (error) {
+        if (error instanceof GitHubRateLimitError)
+          return reply.code(429).send({
+            error: "github_rate_limited",
+            message: "GitHub is rate limiting account linking. Try again later.",
+          });
+        if (error instanceof GitHubApiError && [401, 403].includes(error.status))
+          return reply.code(403).send({
+            error: "link_failed",
+            message:
+              "GitHub rejected this token. Check its expiry, permissions, organization approval and SSO authorization.",
+          });
+        return reply.code(502).send({
+          error: "github_unavailable",
+          message: "GitHub could not validate the token. Try again later.",
         });
       }
+      uid ??= await githubUserId(ctx, req, true);
+      if (!uid)
+        return reply
+          .code(403)
+          .send({ error: "forbidden", message: "This GitHub identity is disabled." });
+      await saveAccount(ctx, tid, uid, "github", login, value, {});
+      return { ok: true };
     },
   );
   app.post(
@@ -260,17 +311,18 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
     { config: { access: "viewer" } },
     async (req, reply) => {
       const tid = requestTenant(req),
-        uid = await githubUserId(ctx, req),
         config = githubConfig();
-      if (!uid || !config || !ctx.config.publicUrl)
+      if (!config || !ctx.config.publicUrl)
         return reply.code(409).send({
           error: "oauth_unavailable",
           message: "GitHub account linking is not configured.",
         });
-      const p = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-      if (p.mode === "none") return reply.code(403).send({ error: "forbidden" });
       if (!parseCookies(req.headers.cookie)[SESSION_COOKIE])
         return reply.code(400).send({ error: "session_required" });
+      const uid = await githubUserId(ctx, req, true);
+      if (!uid) return reply.code(409).send({ error: "local_account_required" });
+      const p = await getUserToolPolicy(ctx.pool, tid, uid, "github");
+      if (p.mode === "none") return reply.code(403).send({ error: "forbidden" });
       const state = randomBytes(32).toString("base64url");
       await ctx.pool.query(
         "DELETE FROM user_oauth_states WHERE tenant_id=$1 AND expires_at<now()",

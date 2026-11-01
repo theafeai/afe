@@ -174,3 +174,15 @@ Requested artifact and completed-log ZIPs are streamed, with limits and inert
 attachment headers; signed storage URLs and GitHub credentials stay server-side.
 Personal fine-grained tokens use the existing encrypted user GitHub credential
 kind. Explicit OAuth workflow-edit consent adds `workflow` only to that sign-in.
+
+## Administrator GitHub identity bindings (AFE-62)
+
+`github_admin_identities` stores the tenant ID, authenticated Afe principal ID
+(a non-secret token fingerprint for static administrators), and associated
+user UUID. The binding connects the administrator login to existing personal
+GitHub account storage and explicit tool policies. It is retained with the
+account; event retention does not purge it. Token rotation creates a new
+principal and does not transfer the old link or grants. Disconnecting destroys
+the linked credential ciphertext while retaining the identity and policy for
+relinking. GitHub account names and credential references remain in
+`user_tool_accounts`; personal tokens remain encrypted in `credentials`.

@@ -151,4 +151,5 @@ export {
 } from "./drift.ts";
 
 export * from "./users.ts";
+export * from "./github-admin-identities.ts";
 export * from "./email.ts";
