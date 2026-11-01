@@ -1,7 +1,8 @@
 # ADR 0009: Web UI design system
 
 - Status: Accepted; type sizes and control height superseded by
-  [ADR 0012](0012-readable-type-scale.md)
+  [ADR 0012](0012-readable-type-scale.md); tool marks superseded by
+  [ADR 0013](0013-tool-colour-coding.md)
 - Date: 2026-10-28
 - Linear: AFE-42 (parent), AFE-43 tokens, AFE-44 shell, AFE-45 components
 

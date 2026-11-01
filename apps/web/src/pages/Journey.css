@@ -415,11 +415,13 @@
     opacity: 1;
   }
 }
-.row-hl-on {
+.row-hl-on,
+.row-hl-on > .row-link {
   box-shadow: inset 2px 0 0 var(--highlight);
   background: var(--highlight-bg);
 }
-.row-hl-excluded {
+.row-hl-excluded,
+.row-hl-excluded > .row-link {
   box-shadow: inset 2px 0 0 var(--conf-weak);
 }
 .row-hl-dim > .row-link {

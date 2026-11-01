@@ -2,7 +2,7 @@ import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
 import { useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
-import { icons } from "../icons.tsx";
+import { ToolMark, icons } from "../icons.tsx";
 import type { ConnectionWithHealth } from "../api/types.ts";
 import {
   Empty,
@@ -35,6 +35,7 @@ export function ConnectButtons() {
     <div className="connect-buttons">
       {TOOLS.map((t) => (
         <Link key={t.id} to={`/connections/${t.id}`} className={`connect-card tool-${t.id}`}>
+          <ToolMark source={t.id} />
           <strong>Connect {t.label}</strong>
           <span className="small muted">{t.blurb}</span>
         </Link>
@@ -97,7 +98,10 @@ export function Connections() {
                 </thead>
                 <tbody>
                   {data.connections.map((c) => (
-                    <tr key={c.id} className={c.health.openGap ? "row-has-gap" : undefined}>
+                    <tr
+                      key={c.id}
+                      className={`tool-row tool-${c.source}${c.health.openGap ? " row-has-gap" : ""}`}
+                    >
                       <td>
                         <ToolBadge source={c.source} />{" "}
                         <Link to={`/connections/${c.id}`}>{c.name}</Link>

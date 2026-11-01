@@ -2,7 +2,8 @@
 
 This is the binding reference for every change to the web UI (`apps/web`). It
 implements [ADR 0009](decisions/0009-web-ui-design-system.md) and the type scale of
-[ADR 0012](decisions/0012-readable-type-scale.md). Humans and
+[ADR 0012](decisions/0012-readable-type-scale.md) and the tool colours of
+[ADR 0013](decisions/0013-tool-colour-coding.md). Humans and
 agents follow it for **all** UI work, new features included. The rules marked
 **[enforced]** are checked by `apps/web/src/design-system.test.ts`, which runs
 in `pnpm test`; a violation fails CI.
@@ -88,11 +89,11 @@ token whose **role** matches, not the one whose colour looks right.
 | `--ok` / `--ok-bg`                                        | Succeeded, healthy, certain                                         |
 | `--warn` / `--warn-bg` / `--warn-border`                  | Pending, degraded, observation gaps, probable                       |
 | `--bad` / `--bad-bg`                                      | Failed, revoked, weak, conflict, alerts                             |
-| `--recon` / `--recon-bg`                                  | Found by reconciliation; ambiguous                                  |
+| `--recon` / `--recon-bg`                                  | Found by reconciliation; ambiguous (magenta)                        |
 | `--backfill` / `--backfill-bg`                            | Imported by backfill                                                |
 | `--conf-*`                                                | Confidence scale (see [Status language](#status-language))          |
 | `--highlight` / `--highlight-bg` / `--env-selected`       | Journey highlight, selected matrix cell                             |
-| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool marks only                                                     |
+| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool logos and tool rows only; never status                         |
 
 ### Type, space, shape, depth, motion
 
@@ -179,7 +180,7 @@ Use these instead of re-creating their markup.
 | `OutcomeBadge`, `HealthBadge`, `StatusBadge`, `MethodBadge`                  | Event outcome, connection health, connection status, observation method |
 | `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
 | `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
-| `icons.*`, `BrandMark`                                                       | 16px line icons (`aria-hidden`) and the Afe mark                        |
+| `icons.*`, `BrandMark`, `ToolMark`                                           | 16px line icons (`aria-hidden`), the Afe mark and tool logos            |
 | `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
 
 ### CSS classes (`styles.css`)
@@ -213,13 +214,18 @@ encodings, the same way on every page.
   succeeded/failed, hollow for pending/in progress.
 - **Health** (`HealthBadge`): a dot with a soft halo, plus a word.
 - **Tool** (`ToolBadge`, `.tool-<source>`): a neutral badge with the tool's
-  colour as a small square. Tool colours are never used for anything else.
+  logo in its colour (`ToolMark`). A row that belongs to one tool adds
+  `tool-row tool-<source>` for a 2px left rule in the tool colour (timeline
+  rows, table rows). Tool colours are never used for anything else, and the
+  tool rule always gives way to status emphasis (gaps, journey highlights).
+  See [ADR 0013](decisions/0013-tool-colour-coding.md).
 - **Observation gaps:** the loud form is `GapBanners`, one panel per page, at
   the top. The per-item form is quiet: `.gap-badge` (warn text with a hollow
   diamond, no fill), e.g. "possibly stale". Never hatch, stripe or fill whole
   rows or cells for a gap.
 - **Late observation:** `.row-reconciliation` and `.row-backfill` mark rows
-  with a 2px inset rule plus a note; `MethodBadge` names the method.
+  with a light tint (`--recon-bg`, `--backfill-bg`) plus a note; `MethodBadge`
+  names the method. The left edge is left to the tool rule.
 - **Alerts:** `.alert-badge` ("Alert open"), linking to where the full message
   is shown. Do not put long alert prose in tables.
 - **Severity** (drift): `.severity-high` / `.severity-critical` (bad),
