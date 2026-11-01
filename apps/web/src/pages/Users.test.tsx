@@ -159,7 +159,7 @@ const initialTools = () =>
     ]),
   );
 
-it("preserves hidden grants when changing mode and clears saved feedback on edits", async () => {
+it("preserves hidden grants when changing mode and confirms saves through shared toasts", async () => {
   const writes: unknown[] = [];
   setFetch(async (url, init) => {
     if (url === "/api/session")
@@ -195,6 +195,10 @@ it("preserves hidden grants when changing mode and clears saved feedback on edit
       denied: initialTools().github!.denied,
     },
   ]);
+  expect(screen.getByRole("region", { name: "Notifications" }).textContent).toContain(
+    "Saved GitHub permissions.",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
   fireEvent.change(mode, { target: { value: "custom" } });
   expect(screen.queryByText("Saved GitHub permissions.")).toBeNull();
   expect(

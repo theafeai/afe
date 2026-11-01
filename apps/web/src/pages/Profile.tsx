@@ -10,6 +10,7 @@ import {
 } from "../components.tsx";
 import type { ProfileInfo, ProfileTool } from "../access.tsx";
 import { Link } from "../router.tsx";
+import { useToast } from "../toast.tsx";
 
 const MODE_LABEL: Record<string, string> = {
   none: "No access",
@@ -33,15 +34,14 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
   const [context, setContext] = useState("");
   const [oidcConnection, setOidcConnection] = useState(tool.oidcConnections?.[0]?.id ?? "");
   const [error, setError] = useState<{ title: string; error: Error } | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const [busy, setBusy] = useState<Busy>(null);
   async function run(kind: Exclude<Busy, null>, action: () => Promise<string | void>) {
     setBusy(kind);
     setError(null);
-    setNotice(null);
     try {
       const done = await action();
-      if (done) setNotice(done);
+      if (done) toast(done);
     } catch (e) {
       setError({
         title: FAILED[kind],
@@ -230,11 +230,6 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
         </>
       )}
       {error && <ErrorBox error={error.error} title={error.title} />}
-      {notice && (
-        <p className="callout callout-ok" role="status">
-          {notice}
-        </p>
-      )}
       {tool.linked && !(ready && tokenForm) && <div className="button-row">{disconnect}</div>}
     </section>
   );

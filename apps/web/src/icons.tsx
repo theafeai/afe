@@ -78,6 +78,29 @@ export const icons = {
       <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" />
     </Icon>
   ),
+  check: (
+    <Icon>
+      <circle cx="8" cy="8" r="6.25" />
+      <path d="m5.25 8.25 1.9 1.9 3.6-3.9" />
+    </Icon>
+  ),
+  info: (
+    <Icon>
+      <circle cx="8" cy="8" r="6.25" />
+      <path d="M8 7.25v3.75M8 4.9v.1" />
+    </Icon>
+  ),
+  alert: (
+    <Icon>
+      <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.5 9.75a1 1 0 0 1-.87 1.5H2.5a1 1 0 0 1-.87-1.5Z" />
+      <path d="M8 6.25v3M8 11.4v.1" />
+    </Icon>
+  ),
+  close: (
+    <Icon>
+      <path d="m4 4 8 8M12 4l-8 8" />
+    </Icon>
+  ),
 };
 
 /**

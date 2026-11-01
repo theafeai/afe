@@ -7,6 +7,7 @@ import { setFetch } from "../api/client.ts";
 import type { ConnectionWithHealth, SessionInfo } from "../api/types.ts";
 import { ConnectionDetail, Connections } from "./Connections.tsx";
 import { DisconnectAction } from "./DisconnectAction.tsx";
+import { ToastProvider } from "../toast.tsx";
 
 beforeAll(() => {
   // jsdom has no native dialog implementation; browser behavior is checked separately.
@@ -92,7 +93,9 @@ it("shows failures in the dialog, prevents duplicate requests, then removes the 
   });
   render(
     <Router>
-      <Connections />
+      <ToastProvider>
+        <Connections />
+      </ToastProvider>
     </Router>,
   );
   fireEvent.click(await screen.findByRole("button", { name: "Disconnect production" }));
@@ -176,7 +179,9 @@ it.each(["github", "argocd", "vercel", "terraform"])(
     });
     render(
       <Router>
-        <ConnectionRoutes />
+        <ToastProvider>
+          <ConnectionRoutes />
+        </ToastProvider>
       </Router>,
     );
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect production" }));
@@ -191,8 +196,8 @@ it.each(["github", "argocd", "vercel", "terraform"])(
     expect(screen.getByText(/production.*disconnected/)).toBeTruthy();
     expect(await screen.findByText("No tools connected")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "production" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByText(/production.*disconnected/)).toBeNull();
     expect(window.location.search).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    expect(screen.queryByText(/production.*disconnected/)).toBeNull();
   },
 );

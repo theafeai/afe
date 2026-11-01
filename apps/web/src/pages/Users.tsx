@@ -12,6 +12,7 @@ import {
 } from "../components.tsx";
 import "./Users.css";
 import { useAccess } from "../access.tsx";
+import { useToast } from "../toast.tsx";
 
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
@@ -69,12 +70,11 @@ export function UsersPage() {
   const [selected, setSelected] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setFailure(null);
-    setNotice(null);
     try {
       await action();
     } catch (e) {
@@ -95,7 +95,7 @@ export function UsersPage() {
         },
       );
       setToken(r.token ?? null);
-      if (invite) setNotice("Invitation queued. Delivery status appears below.");
+      if (invite) toast("Invitation queued. Delivery status appears below.");
       setUsername("");
       setEmail("");
       reloadMail();
@@ -107,7 +107,6 @@ export function UsersPage() {
     setUserEmail(u.email ?? "");
     setToken(null);
     setFailure(null);
-    setNotice(null);
   }
   if (!admin)
     return (
@@ -171,7 +170,6 @@ export function UsersPage() {
           </button>
         </section>
       )}
-      {notice && <p role="status">{notice}</p>}
       {(failure || error) && <ErrorBox error={(failure || error)!} />}
       {loading ? (
         <Loading />
@@ -198,7 +196,7 @@ export function UsersPage() {
                 e.preventDefault();
                 void run(async () => {
                   await request("POST", "/api/admin/email/test", { email: testEmail });
-                  setNotice("Test email queued.");
+                  toast("Test email queued.");
                   reloadMail();
                 });
               }}
@@ -277,7 +275,7 @@ export function UsersPage() {
                     email: userEmail || null,
                   });
                   setSelected({ ...selected, email: userEmail || null });
-                  setNotice("Email saved. Earlier email links are invalidated.");
+                  toast("Email saved. Earlier email links are invalidated.");
                   reload();
                 });
               }}
@@ -306,7 +304,7 @@ export function UsersPage() {
                           await request("POST", `/api/admin/users/${selected.id}/email`, {
                             purpose,
                           });
-                          setNotice("Email queued. Previous links are invalidated.");
+                          toast("Email queued. Previous links are invalidated.");
                           reloadMail();
                         })
                       }
@@ -386,13 +384,12 @@ function ToolPermissionEditor({
     (policy.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
   );
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const toast = useToast();
   const [error, setError] = useState<Error | null>(null);
   const custom = ["custom", "source + custom"].includes(mode);
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setSaved(false);
     setError(null);
     try {
       await request("PUT", `/api/admin/users/${userId}/permissions/${tool}`, {
@@ -418,7 +415,7 @@ function ToolPermissionEditor({
             return { resource, action };
           }),
       });
-      setSaved(true);
+      toast(`Saved ${name} permissions.`);
     } catch (e) {
       setError(e instanceof Error ? e : new Error("Request failed"));
     } finally {
@@ -444,7 +441,6 @@ function ToolPermissionEditor({
             aria-describedby={`mode-help-${tool}`}
             onChange={(e) => {
               setMode(e.target.value);
-              setSaved(false);
             }}
           >
             {Object.entries(MODES).map(([value, { label }]) => (
@@ -473,7 +469,6 @@ function ToolPermissionEditor({
                 placeholder={EXAMPLES[tool]}
                 onChange={(e) => {
                   setGrants(e.target.value);
-                  setSaved(false);
                 }}
               />
               <p className="small muted" id={`grants-help-${tool}`}>
@@ -510,7 +505,6 @@ function ToolPermissionEditor({
                 placeholder="repository:owner/name github.delete_run"
                 onChange={(e) => {
                   setRestrictions(e.target.value);
-                  setSaved(false);
                 }}
               />
               <p className="small muted" id="github-restrictions-help">
@@ -539,11 +533,6 @@ function ToolPermissionEditor({
         </div>
       </fieldset>
       {error && <ErrorBox title={`${name} permissions were not saved`} error={error} />}
-      {saved && (
-        <p className="callout callout-ok" role="status">
-          Saved {name} permissions.
-        </p>
-      )}
     </form>
   );
 }
