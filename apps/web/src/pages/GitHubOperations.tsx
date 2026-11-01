@@ -236,6 +236,154 @@ function Pager({
 function repositoryKey(scope: Pick<GitHubRepositoryChoice, "connectionId" | "repository">) {
   return JSON.stringify([scope.connectionId, scope.repository]);
 }
+function RepositoryPicker({
+  choices,
+  currentKey,
+  storageKey,
+  onSelect,
+  tabsRef,
+}: {
+  choices: GitHubRepositoryChoice[];
+  currentKey: string | null;
+  storageKey: string;
+  onSelect: (key: string) => void;
+  tabsRef: React.RefObject<HTMLDivElement>;
+}) {
+  const [pins, setPins] = useState<string[]>(() => {
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
+      return Array.isArray(value)
+        ? value.filter((key): key is string => typeof key === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const [search, setSearch] = useState("");
+  const dropdown = useRef<HTMLDetailsElement>(null);
+  const trigger = useRef<HTMLElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const available = new Set(choices.map(repositoryKey));
+  const accessiblePins = pins.filter((key) => available.has(key));
+  const pinSet = new Set(accessiblePins);
+  const pinned = choices.filter((r) => pinSet.has(repositoryKey(r)));
+  const query = search.trim().toLowerCase();
+  const matches = choices.filter((r) => r.repository.toLowerCase().includes(query));
+  const current = choices.find((r) => repositoryKey(r) === currentKey)!;
+  const savedPins = JSON.stringify(accessiblePins);
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, savedPins);
+    } catch {
+      // Storage may be disabled; pins still work for this visit.
+    }
+  }, [storageKey, savedPins]);
+  function select(key: string) {
+    onSelect(key);
+    if (dropdown.current) dropdown.current.open = false;
+    setSearch("");
+    trigger.current?.focus();
+  }
+  return (
+    <>
+      <details
+        className="gh-repository-dropdown"
+        ref={dropdown}
+        onToggle={() => {
+          if (dropdown.current?.open) searchInput.current?.focus();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            if (dropdown.current) dropdown.current.open = false;
+            trigger.current?.focus();
+          }
+        }}
+      >
+        <summary ref={trigger}>
+          Repository: {current.repository} · {current.connectionName}
+        </summary>
+        <div className="gh-repository-menu">
+          <label className="field">
+            <span>Search repositories</span>
+            <input
+              type="search"
+              value={search}
+              ref={searchInput}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by repository name"
+            />
+          </label>
+          <p className="small muted" role="status">
+            {matches.length} of {choices.length} repositories
+          </p>
+          {matches.length ? (
+            <ul className="gh-repository-options" aria-label="Repository results">
+              {matches.map((r) => {
+                const key = repositoryKey(r);
+                const isPinned = pinSet.has(key);
+                const label = `${r.repository} · ${r.connectionName}`;
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      className="gh-tab gh-repository-choice"
+                      aria-pressed={key === currentKey}
+                      onClick={() => select(key)}
+                    >
+                      {label}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      aria-label={`${isPinned ? "Unpin" : "Pin"} ${label}`}
+                      aria-pressed={isPinned}
+                      onClick={() =>
+                        setPins(
+                          isPinned
+                            ? accessiblePins.filter((p) => p !== key)
+                            : [...accessiblePins, key],
+                        )
+                      }
+                    >
+                      {isPinned ? "Unpin" : "Pin"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <Empty title="No matching repositories">
+              <p>Try another repository name.</p>
+            </Empty>
+          )}
+        </div>
+      </details>
+      {pinned.length ? (
+        <div
+          className="gh-repository-tabs"
+          role="group"
+          aria-label="Pinned repositories"
+          ref={tabsRef}
+        >
+          {pinned.map((r) => (
+            <button
+              type="button"
+              className="gh-tab"
+              key={repositoryKey(r)}
+              aria-pressed={currentKey === repositoryKey(r)}
+              onClick={() => onSelect(repositoryKey(r))}
+            >
+              {r.repository} · {r.connectionName}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="small muted">Pin repositories in the dropdown for quick access here.</p>
+      )}
+    </>
+  );
+}
 export function GitHubOperationsPage() {
   useDocumentTitle("GitHub Actions");
   const { session } = useContext(AccessContext);
@@ -315,24 +463,14 @@ export function GitHubOperationsPage() {
       {!resources.loading && resources.data && (
         <section className="card gh-picker" aria-label="Repositories">
           {choices.length ? (
-            <div
-              className="gh-repository-tabs"
-              role="group"
-              aria-label="Repositories"
-              ref={repositoryTabs}
-            >
-              {choices.map((r) => (
-                <button
-                  type="button"
-                  className="gh-tab"
-                  key={repositoryKey(r)}
-                  aria-pressed={currentKey === repositoryKey(r)}
-                  onClick={() => setSelected(repositoryKey(r))}
-                >
-                  {r.repository} · {r.connectionName}
-                </button>
-              ))}
-            </div>
+            <RepositoryPicker
+              key={storageKey}
+              choices={choices}
+              currentKey={currentKey}
+              storageKey={`${storageKey}:pins`}
+              onSelect={setSelected}
+              tabsRef={repositoryTabs}
+            />
           ) : (
             <Empty title="No accessible repositories">
               <p>

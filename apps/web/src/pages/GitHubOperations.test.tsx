@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { setFetch } from "../api/client.ts";
 import { Router } from "../router.tsx";
@@ -334,15 +334,28 @@ it("loads every repository page, defaults automatically, remembers selection and
   let view = mount();
   await screen.findByText("App workflow");
   expect(pages).toEqual(["1", "2", "3"]);
-  fireEvent.click(screen.getByRole("button", { name: "acme/api · other" }));
+  fireEvent.click(screen.getByText(/^Repository:/));
+  fireEvent.click(screen.getByRole("button", { name: "Pin acme/api · other" }));
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Pinned repositories" })).getByRole("button", {
+      name: "acme/api · other",
+    }),
+  );
   await screen.findByText("API workflow");
   expect(screen.queryByText("App workflow")).toBeNull();
   expect(
-    screen.getByRole("button", { name: "acme/api · other" }).getAttribute("aria-pressed"),
+    within(screen.getByRole("group", { name: "Pinned repositories" }))
+      .getByRole("button", { name: "acme/api · other" })
+      .getAttribute("aria-pressed"),
   ).toBe("true");
   view.unmount();
   view = mount();
   await screen.findByText("API workflow");
+  expect(
+    within(screen.getByRole("group", { name: "Pinned repositories" })).getByRole("button", {
+      name: "acme/api · other",
+    }),
+  ).toBeTruthy();
   view.unmount();
   accessible = false;
   mount();
@@ -399,6 +412,7 @@ it("ignores a late workflow response after switching repository tabs", async () 
     </Router>,
   );
   await waitFor(() => expect(resolveOld).toBeTypeOf("function"));
+  fireEvent.click(screen.getByText(/^Repository:/));
   fireEvent.click(screen.getByRole("button", { name: "acme/api · acme" }));
   await screen.findByText("New workflow");
   await act(async () => {
@@ -438,6 +452,7 @@ it("shows discovery loading and retry states before selecting a repository", asy
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await screen.findByText("No workflows on this page");
+  fireEvent.click(screen.getByText(/^Repository:/));
   expect(screen.getByRole("button", { name: "acme/app · acme" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
@@ -527,4 +542,102 @@ it("keeps the log toggle associated with output and collapses without losing the
   expect(view.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("region", { name: "Logs for Build and deploy, attempt 2" })).toBeNull();
   expect(within(details).getByText("Build")).toBeTruthy();
+});
+
+it("searches repository names, keeps pins separate from selection and remembers unpinning", async () => {
+  localStorage.clear();
+  window.history.replaceState(null, "", "/github");
+  setFetch(async (url) => {
+    if (url.startsWith("/api/actions/github/resources"))
+      return Response.json({
+        items: ["app", "api", "worker"].map((name) => ({
+          connectionId: "c",
+          connectionName: "acme",
+          repository: `acme/${name}`,
+        })),
+        hasMore: false,
+      });
+    const q = new URL(url, "http://afe.test").searchParams;
+    return Response.json({
+      items:
+        q.get("view") === "capabilities"
+          ? []
+          : [{ id: 1, name: `${url.split("?")[0]!.split("/").at(-1)} workflow`, state: "active" }],
+      page: 1,
+      hasMore: false,
+    });
+  });
+  const mount = () =>
+    render(
+      <Router>
+        <GitHubOperationsPage />
+      </Router>,
+    );
+  let view = mount();
+  await screen.findByText("app workflow");
+  expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
+  fireEvent.click(screen.getByText(/^Repository:/));
+  const search = screen.getByRole("searchbox", { name: "Search repositories" });
+  fireEvent.change(search, { target: { value: " API " } });
+  expect(screen.getByRole("status").textContent).toBe("1 of 3 repositories");
+  expect(screen.queryByRole("button", { name: "acme/app · acme" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Pin acme/api · acme" }));
+  expect(screen.getByText(/^Repository:/).textContent).toContain("acme/app");
+  const tabs = screen.getByRole("group", { name: "Pinned repositories" });
+  fireEvent.click(within(tabs).getByRole("button", { name: "acme/api · acme" }));
+  await screen.findByText("api workflow");
+  fireEvent.change(search, { target: { value: "missing" } });
+  await screen.findByText("No matching repositories");
+  expect(screen.getByText("api workflow")).toBeTruthy();
+  fireEvent.change(search, { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Unpin acme/api · acme" }));
+  expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
+  expect(screen.getByText("api workflow")).toBeTruthy();
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect(document.activeElement).toBe(screen.getByText(/^Repository:/));
+  expect(screen.getByText(/^Repository:/).closest("details")!.open).toBe(false);
+  view.unmount();
+  view = mount();
+  await screen.findByText("api workflow");
+  expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
+  fireEvent.click(screen.getByText(/^Repository:/));
+  expect(screen.getByRole("button", { name: "acme/api · acme" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+});
+
+it.each(["broken json", '{"unexpected":true}', '[null,1,"inaccessible"]'])(
+  "ignores invalid pin preferences: %s",
+  async (stored) => {
+    localStorage.clear();
+    localStorage.setItem("afe.github.repository:[null,null]:pins", stored);
+    fixture();
+    await screen.findByText("Deploy");
+    expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
+    fireEvent.click(screen.getByText(/^Repository:/));
+    fireEvent.click(screen.getByRole("button", { name: "Pin acme/app · acme" }));
+    expect(screen.getByRole("group", { name: "Pinned repositories" })).toBeTruthy();
+  },
+);
+it("supports selection and pins when browser storage is unavailable", async () => {
+  const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new Error("Storage unavailable");
+  });
+  const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("Storage unavailable");
+  });
+  try {
+    fixture();
+    await screen.findByText("Deploy");
+    fireEvent.click(screen.getByText(/^Repository:/));
+    fireEvent.click(screen.getByRole("button", { name: "Pin acme/app · acme" }));
+    const tabs = screen.getByRole("group", { name: "Pinned repositories" });
+    fireEvent.click(within(tabs).getByRole("button", { name: "acme/app · acme" }));
+    expect(screen.getByText("Deploy")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Unpin acme/app · acme" }));
+    expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
+  } finally {
+    get.mockRestore();
+    set.mockRestore();
+  }
 });
