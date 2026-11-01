@@ -500,7 +500,7 @@ describe("journey page and timeline highlight (app)", () => {
     await waitFor(() => expect(within(banner).getByText(/related events/)).toBeTruthy());
     expect(within(banner).getByText(/1 ruled out/)).toBeTruthy();
 
-    const on = screen.getByText("ref.pushed").closest("li")!;
+    const on = screen.getByText("github.ref.pushed").closest("li")!;
     expect(on.className).toContain("row-hl-on");
     expect(within(on).getByRole("link", { name: "View journey" }).getAttribute("href")).toBe(
       `/journeys?repository=acme%2Fshop&commit=${SHA}`,
@@ -508,7 +508,7 @@ describe("journey page and timeline highlight (app)", () => {
     expect(screen.getByText("argocd.sync.succeeded").closest("li")!.className).toContain(
       "row-hl-excluded",
     );
-    const other = screen.getByText("workflow_run.completed").closest("li")!;
+    const other = screen.getByText("github.workflow_run.completed").closest("li")!;
     expect(other.className).toContain("row-hl-dim");
 
     // Selecting another commit is URL-driven.
@@ -522,9 +522,9 @@ describe("journey page and timeline highlight (app)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear highlight" }));
     expect(window.location.search).not.toContain("journey=");
     await waitFor(() =>
-      expect(screen.getByText("workflow_run.completed").closest("li")!.className).not.toContain(
-        "row-hl",
-      ),
+      expect(
+        screen.getByText("github.workflow_run.completed").closest("li")!.className,
+      ).not.toContain("row-hl"),
     );
   });
 
