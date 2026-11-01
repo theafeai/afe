@@ -59,6 +59,9 @@ function GapCell({ c }: { c: ConnectionWithHealth }) {
 export function Connections() {
   useDocumentTitle("Connections");
   const { admin } = useAccess();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const disconnected = new URLSearchParams(location.search).get("disconnected");
   const [notice, setNotice] = useState<string | null>(null);
   const { data, error, loading, reload } = useAsync((s) => api.connections(s), []);
   return (
@@ -74,9 +77,19 @@ export function Connections() {
           Refresh
         </button>
       </header>
-      {notice && (
+      {(notice || disconnected) && (
         <p className="callout callout-ok" role="status">
-          {notice}
+          {notice || disconnected}{" "}
+          <button
+            type="button"
+            className="btn-link"
+            onClick={() => {
+              setNotice(null);
+              navigate("/connections", { replace: true });
+            }}
+          >
+            Dismiss
+          </button>
         </p>
       )}
       {loading ? (
@@ -172,7 +185,6 @@ export function Connections() {
 }
 
 export function ConnectionDetail({ id }: { id: string }) {
-  const [notice, setNotice] = useState<string | null>(null);
   const { admin } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.connectionHealth(id, s), [id]);
   const location = useLocation();
@@ -197,11 +209,6 @@ export function ConnectionDetail({ id }: { id: string }) {
       <p>
         <Link to="/connections">← Connections</Link>
       </p>
-      {notice && (
-        <p className="callout callout-ok" role="status">
-          {notice}
-        </p>
-      )}
       {justConnected && (
         <div className="callout callout-ok" role="status">
           <strong>{toolLabel(justConnected)} connected.</strong> Afe will start observing it; health
@@ -316,8 +323,9 @@ export function ConnectionDetail({ id }: { id: string }) {
                 <DisconnectAction
                   connection={c}
                   onDone={(note) => {
-                    setNotice(note);
-                    reload();
+                    navigate(`/connections?disconnected=${encodeURIComponent(note)}`, {
+                      replace: true,
+                    });
                   }}
                 />
               </>
