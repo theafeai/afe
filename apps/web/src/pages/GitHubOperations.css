@@ -28,7 +28,7 @@
 }
 
 /* Repository header and tabs -------------------------------------------------- */
-.gh-repo {
+.card.gh-repo {
   padding-bottom: 0;
 }
 .gh-repo-head {
@@ -53,8 +53,8 @@
 .gh-tabs {
   display: flex;
   gap: var(--space-1);
-  margin: var(--space-4) -1.125rem 0;
-  padding: 0 var(--space-3);
+  margin: var(--space-4) calc(-1 * var(--space-5)) 0;
+  padding: 0 var(--space-4);
   border-top: 1px solid var(--border);
   overflow-x: auto;
   scrollbar-width: none;
@@ -99,7 +99,7 @@
   flex: 1 1 20rem;
   overflow-wrap: anywhere;
 }
-.gh-confirm {
+.card.gh-confirm {
   box-shadow:
     inset 2px 0 0 var(--accent-solid),
     var(--shadow-sm);
@@ -214,7 +214,7 @@
   box-shadow: inset 2px 0 0 var(--accent-solid);
   padding: var(--space-4) var(--space-4) var(--space-5) var(--space-5);
 }
-.gh-badge-off {
+.badge.gh-badge-off {
   color: var(--muted);
   background: transparent;
 }
