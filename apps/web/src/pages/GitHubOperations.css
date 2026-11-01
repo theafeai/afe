@@ -543,3 +543,34 @@ details.gh-section[open] > summary {
     gap: 0.1rem;
   }
 }
+
+/* The picker stays in flow so a long result list cannot cover workflow controls. */
+.gh-repository-dropdown > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 550;
+}
+.gh-repository-menu {
+  margin-top: var(--space-3);
+}
+.gh-repository-options {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.gh-repository-options li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.gh-repository-choice {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
