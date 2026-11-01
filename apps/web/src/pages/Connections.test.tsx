@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, expect, it } from "vitest";
-import { Router } from "../router.tsx";
+import { useLocation, Router } from "../router.tsx";
 import { AccessContext } from "../access.tsx";
 import { setFetch } from "../api/client.ts";
 import type { ConnectionWithHealth, SessionInfo } from "../api/types.ts";
-import { Connections } from "./Connections.tsx";
+import { ConnectionDetail, Connections } from "./Connections.tsx";
 import { DisconnectAction } from "./DisconnectAction.tsx";
 
 beforeAll(() => {
@@ -17,7 +17,10 @@ beforeAll(() => {
     this.open = false;
   };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  window.history.replaceState(null, "", "/connections");
+});
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 const connection = (source = "github"): ConnectionWithHealth => ({
   id: "c1",
@@ -67,7 +70,7 @@ it.each(["github", "argocd", "vercel", "terraform"])(
   },
 );
 
-it("shows failures in the dialog, prevents duplicate requests, then refreshes status and success", async () => {
+it("shows failures in the dialog, prevents duplicate requests, then removes the connection and confirms success", async () => {
   let attempts = 0;
   let disconnected = false;
   let finish: ((r: Response) => void) | undefined;
@@ -84,7 +87,7 @@ it("shows failures in the dialog, prevents duplicate requests, then refreshes st
       });
     }
     return json(200, {
-      connections: [{ ...connection(), status: disconnected ? "disconnected" : "active" }],
+      connections: disconnected ? [] : [connection()],
     });
   });
   render(
@@ -104,7 +107,10 @@ it("shows failures in the dialog, prevents duplicate requests, then refreshes st
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Disconnect production" })).toBeNull(),
   );
-  expect(screen.getByText("disconnected")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "production" })).toBeNull();
+  expect(await screen.findByText("No tools connected")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(await screen.findByText("No tools connected")).toBeTruthy();
 });
 
 it("hides disconnect actions from viewers", async () => {
@@ -144,5 +150,49 @@ it.each(["github", "argocd", "vercel", "terraform"])(
     fireEvent.click(screen.getByRole("button", { name: "Disconnect connection" }));
     await waitFor(() => expect(notice).toContain("production” disconnected."));
     expect(screen.queryByRole("dialog")).toBeNull();
+  },
+);
+
+function ConnectionRoutes() {
+  const location = useLocation();
+  return location.pathname === "/connections/c1" ? <ConnectionDetail id="c1" /> : <Connections />;
+}
+
+it.each(["github", "argocd", "vercel", "terraform"])(
+  "redirects a successful %s detail disconnect with confirmation; failures stay on detail",
+  async (source) => {
+    window.history.replaceState(null, "", "/connections/c1");
+    const c = connection(source);
+    let disconnected = false;
+    let fail = true;
+    setFetch(async (url, init) => {
+      if (init?.method === "DELETE") {
+        if (fail) return json(500, { message: "Temporary failure" });
+        disconnected = true;
+        return json(200, { note: "Recorded events remain." });
+      }
+      if (url.endsWith("/health")) return json(200, { connection: c, gaps: [], alerts: [] });
+      return json(200, { connections: disconnected ? [] : [c] });
+    });
+    render(
+      <Router>
+        <ConnectionRoutes />
+      </Router>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect production" }));
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect connection" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(window.location.pathname).toBe("/connections/c1");
+    expect(screen.queryByText(/production.*disconnected/)).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Disconnect connection" }));
+    expect(await screen.findByRole("heading", { name: "Connections" })).toBeTruthy();
+    expect(window.location.pathname).toBe("/connections");
+    expect(screen.getByText(/production.*disconnected/)).toBeTruthy();
+    expect(await screen.findByText("No tools connected")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "production" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/production.*disconnected/)).toBeNull();
+    expect(window.location.search).toBe("");
   },
 );

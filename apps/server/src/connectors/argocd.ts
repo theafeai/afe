@@ -252,7 +252,9 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
       app.get("/api/connections/argocd", async (req) => {
         const tenantId = requestTenant(req);
         const rows = await listConnections(ctx.pool, tenantId, { source: CONNECTOR_SOURCE });
-        return { connections: rows.map(connectionView) };
+        return {
+          connections: rows.filter((c) => c.status !== "disconnected").map(connectionView),
+        };
       });
 
       app.post<{ Body: ConnectBody }>(

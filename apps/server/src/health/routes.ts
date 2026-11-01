@@ -93,9 +93,10 @@ export function registerHealthRoutes(
       : rows;
     const alertByConnection = new Map(open.map((a) => [a.connectionId, a]));
     return {
-      connections: visible.map((r) =>
-        connectionHealthView(r, alertByConnection.get(r.connection.id) ?? null),
-      ),
+      // Keep historical records addressable, but omit disconnected tools from the live list.
+      connections: visible
+        .filter((r) => r.connection.status !== "disconnected")
+        .map((r) => connectionHealthView(r, alertByConnection.get(r.connection.id) ?? null)),
     };
   });
 

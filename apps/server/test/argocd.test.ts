@@ -196,6 +196,9 @@ describe("ArgoCD connector module", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().connection.status).toBe("disconnected");
+    const list = await app.inject({ method: "GET", url: "/api/connections/argocd" });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().connections.map((c: { id: string }) => c.id)).not.toContain(connectionId);
     await expectLifecycle(pool, connectionId, "connection.deleted", "afe");
     expect(await listCredentials(pool, DEFAULT_TENANT_ID)).toHaveLength(0);
     const conn = await getConnection(pool, DEFAULT_TENANT_ID, connectionId);
