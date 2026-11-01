@@ -1,3 +1,4 @@
+import { lifecycleEvent, queueLifecycleEvent, flushLifecycleEvents } from "../connection-events.ts";
 /**
  * ArgoCD connector wiring (AFE-9): connection management API and health probe.
  * Design: docs/decisions/0004-argocd-connection-model.md, docs/connectors/argocd.md.
@@ -351,6 +352,11 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
               API_TOKEN_ROLE,
               cred.id,
             );
+            await queueLifecycleEvent(
+              client,
+              connection,
+              lifecycleEvent(connection, "connection.created", req.principal!),
+            );
             await client.query("COMMIT");
           } catch (e) {
             await client.query("ROLLBACK");
@@ -358,6 +364,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
           } finally {
             client.release();
           }
+          await flushLifecycleEvents(ctx, connection);
           // Start observing a newly connected (or reconnected) instance now.
           // Waiting for the five-minute dispatcher can miss short-lived sync
           // failures that are no longer present in the latest operation state.
@@ -422,8 +429,13 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
         async (req, reply) => {
           const tenantId = requestTenant(req);
           const client = await ctx.pool.connect();
+          let removed: Connection | null = null;
           try {
             await client.query("BEGIN");
+            await client.query(
+              "SELECT id FROM connections WHERE tenant_id = $1 AND id = $2 FOR NO KEY UPDATE",
+              [tenantId, req.params.id],
+            );
             const connection = await getConnection(client, tenantId, req.params.id);
             if (!connection || connection.source !== CONNECTOR_SOURCE) {
               await client.query("ROLLBACK");
@@ -438,7 +450,14 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
               "disconnected",
               "disconnected by user",
             );
+            if (connection.status !== "disconnected")
+              await queueLifecycleEvent(
+                client,
+                connection,
+                lifecycleEvent(connection, "connection.deleted", req.principal!),
+              );
             await client.query("COMMIT");
+            removed = connection;
             req.log.info(
               { source: CONNECTOR_SOURCE, connectionId: connection.id },
               "argocd connection removed",
@@ -449,6 +468,7 @@ export function createArgoCdModule(options: ArgoCdModuleOptions = {}): Connector
             throw e;
           } finally {
             client.release();
+            if (removed) await flushLifecycleEvents(ctx, removed);
           }
         },
       );

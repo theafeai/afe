@@ -1,3 +1,4 @@
+import { lifecycleEvent, queueLifecycleEvent, flushLifecycleEvents } from "../connection-events.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { Connection } from "@afe/core";
@@ -135,6 +136,11 @@ export function createTerraformModule(options: { now?: () => Date } = {}): Conne
             secret,
           });
           await attachConnectionCredential(client, tenantId, connection.id, ROLE, credential.id);
+          await queueLifecycleEvent(
+            client,
+            connection,
+            lifecycleEvent(connection, "connection.created", req.principal!),
+          );
           await client.query("COMMIT");
         } catch (error) {
           await client.query("ROLLBACK").catch(() => undefined);
@@ -142,6 +148,7 @@ export function createTerraformModule(options: { now?: () => Date } = {}): Conne
         } finally {
           client.release();
         }
+        await flushLifecycleEvents(ctx, connection);
         return reply
           .code(201)
           .header("cache-control", "no-store")
@@ -190,6 +197,7 @@ export function createTerraformModule(options: { now?: () => Date } = {}): Conne
           const found = await locked(tenantId, req.params.id);
           if (!found) return reply.code(404).send({ error: "not_found" });
           const { client, connection } = found;
+          let committed = false;
           try {
             const ids = await getConnectionCredentialIds(client, tenantId, connection.id);
             if (ids[ROLE]) await revokeCredential(client, tenantId, ids[ROLE]);
@@ -198,13 +206,21 @@ export function createTerraformModule(options: { now?: () => Date } = {}): Conne
               "DELETE FROM terraform_reports WHERE tenant_id = $1 AND connection_id = $2",
               [tenantId, connection.id],
             );
+            if (connection.status !== "disconnected")
+              await queueLifecycleEvent(
+                client,
+                connection,
+                lifecycleEvent(connection, "connection.deleted", req.principal!),
+              );
             await client.query("COMMIT");
+            committed = true;
             return { note: "Reporter access revoked. Previously ingested events are retained." };
           } catch (error) {
             await client.query("ROLLBACK").catch(() => undefined);
             throw error;
           } finally {
             client.release();
+            if (committed) await flushLifecycleEvents(ctx, connection);
           }
         },
       );

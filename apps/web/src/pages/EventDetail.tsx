@@ -1,3 +1,4 @@
+import { credentialOwnerLabel } from "../credential-owner.ts";
 import { GitHubRunControls } from "./GitHubRunControls.tsx";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
@@ -101,7 +102,15 @@ export function EventDetailPage({ id }: { id: string }) {
           <h2>Who</h2>
           <KeyValue
             items={[
-              ["Actor", actorText(e.actor)],
+              [e.data?.actorOrigin === "afe" ? "Afe actor" : "Actor", actorText(e.actor)],
+              ...(e.target.type === "connection"
+                ? [
+                    ["Credential owner", credentialOwnerLabel(e) ?? "Unavailable"] as [
+                      string,
+                      string,
+                    ],
+                  ]
+                : []),
               ["On behalf of", actorText(e.actor.onBehalfOf)],
               ["Triggered by", actorText(e.actor.triggeredBy)],
             ]}

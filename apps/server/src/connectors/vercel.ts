@@ -1,3 +1,5 @@
+import { lifecycleEvent, queueLifecycleEvent, flushLifecycleEvents } from "../connection-events.ts";
+import type { Principal } from "@afe/core";
 /**
  * Vercel connector wiring (AFE-11, ADR 0005): connection model (Vercel
  * Integration via OAuth, or an access-token fallback), project selection,
@@ -241,7 +243,38 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
   }
 
   async function markRevoked(ctx: ServerContext, conn: Connection, reason: string): Promise<void> {
-    await setConnectionStatus(ctx.pool, conn.tenantId, conn.id, "revoked", reason);
+    const db = await ctx.pool.connect();
+    let reportLoss = false;
+    try {
+      await db.query("BEGIN");
+      await db.query(
+        "SELECT id FROM connections WHERE tenant_id = $1 AND id = $2 FOR NO KEY UPDATE",
+        [conn.tenantId, conn.id],
+      );
+      const current = await getConnection(db, conn.tenantId, conn.id);
+      reportLoss = !!current && current.status !== "disconnected";
+      if (
+        current &&
+        current.status !== "disconnected" &&
+        (current.status !== "revoked" || reason.includes("integration-configuration.removed"))
+      ) {
+        await setConnectionStatus(db, conn.tenantId, conn.id, "revoked", reason);
+        const action = reason.includes("integration-configuration.removed")
+          ? "connection.deleted"
+          : "connection.revoked";
+        const event = lifecycleEvent(current, action, null);
+        event.data = { ...event.data, reason };
+        await queueLifecycleEvent(db, current, event);
+      }
+      await db.query("COMMIT");
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
+    await flushLifecycleEvents(ctx, conn);
+    if (reportLoss) await ctx.health?.reportFailure(conn.tenantId, conn.id, "revoked", reason);
     ctx.log.warn({ source: SOURCE, connectionId: conn.id, reason }, "vercel connection revoked");
   }
 
@@ -304,6 +337,8 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
     tenantId: string,
     input: {
       name: string;
+      principal: Principal;
+      credentialOwner: { id: string; login?: string };
       cfg: Omit<VercelConnectionConfig, "projectSelection">;
       token: Secret<string>;
       tokenKind: string;
@@ -326,7 +361,11 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
         externalId,
         name: input.name,
         status: "active",
-        config: { ...input.cfg, projectSelection: selection as unknown as JsonObject },
+        config: {
+          ...input.cfg,
+          credentialOwner: input.credentialOwner,
+          projectSelection: selection as unknown as JsonObject,
+        },
       });
       const cred = await storeCredential(client, ctx.keys, tenantId, {
         kind: input.tokenKind,
@@ -340,6 +379,11 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
         });
         await attachConnectionCredential(client, tenantId, conn.id, ROLE_WEBHOOK_SECRET, ws.id);
       }
+      await queueLifecycleEvent(
+        client,
+        conn,
+        lifecycleEvent(conn, "connection.created", input.principal),
+      );
       await client.query("COMMIT");
       return conn;
     } catch (err) {
@@ -780,6 +824,8 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
             message: "Start the connection from Afe (Connections > Vercel > Connect).",
           });
         }
+        if (state.tenantId !== requestTenant(req))
+          return reply.code(400).send({ error: "invalid_state" });
         reply.header(
           "set-cookie",
           `${STATE_COOKIE}=; Path=/api/connections/vercel; HttpOnly; Max-Age=0`,
@@ -809,15 +855,21 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
 
         const client = clientWith(exchanged.accessToken);
         let name: string;
+        let credentialOwner: { id: string; login?: string } = { id: exchanged.userId };
         try {
+          // Identity lookup is optional for team-scoped integration tokens.
+          const user = await client.getUser().catch(() => null);
+          if (user) credentialOwner = { id: user.id, login: user.username };
           name = exchanged.teamId
             ? await client.getTeam(exchanged.teamId).then((t) => t.name || t.slug)
-            : await client.getUser().then((u) => u.username);
+            : (credentialOwner.login ?? exchanged.userId);
         } catch (err) {
           return sendUpstreamError(reply, err);
         }
         const conn = await saveConnection(ctx, state.tenantId, {
           name,
+          principal: req.principal!,
+          credentialOwner,
           cfg: {
             mode: "integration",
             teamId: exchanged.teamId,
@@ -827,6 +879,7 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
           token: exchanged.accessToken,
           tokenKind: "vercel_oauth_token",
         });
+        await flushLifecycleEvents(ctx, conn);
         req.log.info({ source: SOURCE, connectionId: conn.id }, "vercel integration connected");
 
         // Vercel passes `next` when the install started in its own UI; only follow it to vercel.com.
@@ -895,6 +948,8 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
           }
           const conn = await saveConnection(ctx, tenantId, {
             name,
+            principal: req.principal!,
+            credentialOwner: { id: user.id, login: user.username },
             cfg: {
               mode: "token",
               teamId: typeof teamId === "string" ? teamId : null,
@@ -907,6 +962,7 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
               ? { webhookSecret: new Secret(webhookSecret) }
               : {}),
           });
+          await flushLifecycleEvents(ctx, conn);
           req.log.info(
             { source: SOURCE, connectionId: conn.id },
             "vercel token connection created",
@@ -1014,14 +1070,38 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
             integrationRemoved = false;
           }
         }
-        await revokeAllCredentials(ctx, conn);
-        const updated = await setConnectionStatus(
-          ctx.pool,
-          conn.tenantId,
-          conn.id,
-          "disconnected",
-          "disconnected by user",
-        );
+        const db = await ctx.pool.connect();
+        let updated: Connection | null;
+        try {
+          await db.query("BEGIN");
+          await db.query(
+            "SELECT id FROM connections WHERE tenant_id = $1 AND id = $2 FOR NO KEY UPDATE",
+            [conn.tenantId, conn.id],
+          );
+          const current = await getConnection(db, conn.tenantId, conn.id);
+          const ids = await getConnectionCredentialIds(db, conn.tenantId, conn.id);
+          for (const id of Object.values(ids)) await revokeCredential(db, conn.tenantId, id);
+          updated = await setConnectionStatus(
+            db,
+            conn.tenantId,
+            conn.id,
+            "disconnected",
+            "disconnected by user",
+          );
+          if (current && current.status !== "disconnected")
+            await queueLifecycleEvent(
+              db,
+              conn,
+              lifecycleEvent(conn, "connection.deleted", req.principal!),
+            );
+          await db.query("COMMIT");
+        } catch (error) {
+          await db.query("ROLLBACK");
+          throw error;
+        } finally {
+          db.release();
+        }
+        await flushLifecycleEvents(ctx, conn);
         req.log.info({ source: SOURCE, connectionId: conn.id }, "vercel connection disconnected");
         return {
           connection: publicView(updated!),

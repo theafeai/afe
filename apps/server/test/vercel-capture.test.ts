@@ -122,7 +122,7 @@ describe("vercel event capture (server wiring)", () => {
   /** Events of this test only (earlier tests' events stay in the database). */
   async function events(): Promise<CanonicalEvent[]> {
     return (await listEvents(pool, "default", { limit: 1000 })).events.filter(
-      (e) => e.seq > baseline,
+      (e) => e.seq > baseline && e.source === "vercel",
     );
   }
 

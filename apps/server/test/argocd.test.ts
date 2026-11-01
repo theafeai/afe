@@ -1,3 +1,4 @@
+import { expectLifecycle } from "./helpers/lifecycle.ts";
 import { Writable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
@@ -96,6 +97,7 @@ describe("ArgoCD connector module", () => {
     });
     expect(body.connection.caCertificates[0].subject).toContain("Afe Test ArgoCD CA");
     connectionId = body.connection.id;
+    await expectLifecycle(pool, connectionId, "connection.created", "afe");
     // A newly connected instance must be observed before the next cron tick.
     const expectedJob = {
       data: { tenantId: DEFAULT_TENANT_ID, connectionId },
@@ -194,6 +196,7 @@ describe("ArgoCD connector module", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().connection.status).toBe("disconnected");
+    await expectLifecycle(pool, connectionId, "connection.deleted", "afe");
     expect(await listCredentials(pool, DEFAULT_TENANT_ID)).toHaveLength(0);
     const conn = await getConnection(pool, DEFAULT_TENANT_ID, connectionId);
     const probe = await module.health!(ctx).probe(conn!);

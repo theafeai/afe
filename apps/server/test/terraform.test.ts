@@ -1,3 +1,4 @@
+import { expectLifecycle } from "./helpers/lifecycle.ts";
 import { randomBytes, randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
 import type pg from "pg";
@@ -98,6 +99,7 @@ describe("Terraform reporter connection", () => {
     expect(response.statusCode).toBe(201);
     const body = response.json();
     id = body.connection.id;
+    await expectLifecycle(pool, id, "connection.created", undefined, "token:owner");
     path = body.reportPath;
     secret = body.secret;
     jobs.sent.length = 0;
@@ -105,6 +107,46 @@ describe("Terraform reporter connection", () => {
   afterAll(async () => {
     await afe.app.close();
     await pool.end();
+  });
+
+  it("retries a committed creation event after the sink is temporarily unavailable", async () => {
+    const original = afe.context.sink;
+    afe.context.sink = {
+      ingest: async () => {
+        throw new Error("sink unavailable");
+      },
+    };
+    let response;
+    try {
+      response = await afe.app.inject({
+        method: "POST",
+        url: "/api/connections/terraform",
+        headers: admin,
+        payload: { workspace: "deferred", environment: "development" },
+      });
+    } finally {
+      afe.context.sink = original;
+    }
+    expect(response.statusCode).toBe(201);
+    const deferredId = response.json().connection.id;
+    expect(
+      (
+        await pool.query("SELECT count(*)::int AS n FROM health_outbox WHERE connection_id = $1", [
+          deferredId,
+        ])
+      ).rows[0].n,
+    ).toBe(1);
+    jobs.register(afe.jobDefinitions);
+    await jobs.send("health.probe", {});
+    await jobs.drain();
+    await expectLifecycle(pool, deferredId, "connection.created", undefined, "token:owner");
+    expect(
+      (
+        await pool.query("SELECT count(*)::int AS n FROM health_outbox WHERE connection_id = $1", [
+          deferredId,
+        ])
+      ).rows[0].n,
+    ).toBe(0);
   });
 
   it("encrypts the reporter key, returns it only at registration, and rejects secret-bearing config", async () => {
@@ -269,6 +311,7 @@ describe("Terraform reporter connection", () => {
         })
       ).statusCode,
     ).toBe(200);
+    await expectLifecycle(pool, id, "connection.deleted", undefined, "token:owner");
     expect((await send(report(), newKey)).statusCode).toBe(401);
     await processTerraformReports(afe.context, "default", id);
     expect(await pending()).toBe(0);
