@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   GITHUB_OPERATIONS,
+  permitsGitHubAction,
   GITHUB_OPERATION_NAMES,
   type GitHubOperation,
   type GitHubOperationParams,
@@ -23,6 +24,7 @@ import type { ServerContext } from "../context.ts";
 import { requestTenant } from "../auth/index.ts";
 import { toolAccounts } from "../auth/tool-accounts.ts";
 import { githubUserId } from "./github-identity.ts";
+import { downloadGitHubJobLog, JobLogError } from "../connectors/github-log-download.ts";
 import { registerGitHubDownloads } from "./github-downloads.ts";
 
 export const githubOperationError = (statusCode: number, message: string) =>
@@ -98,11 +100,7 @@ export class GitHubOperations {
   async identity(req: FastifyRequest) {
     const tid = requestTenant(req),
       uid = await githubUserId(this.ctx, req);
-    if (!uid)
-      throw fail(
-        403,
-        "Link a personal GitHub identity with explicit Afe repository grants to operate GitHub.",
-      );
+    if (!uid) throw fail(403, "Link your GitHub identity in Profile to use GitHub operations.");
     const policy = await getUserToolPolicy(this.ctx.pool, tid, uid, "github");
     if (policy.mode === "none") throw fail(403, "GitHub access is disabled for this account.");
     const account = (await toolAccounts(this.ctx, tid, uid)).find((a) => a.tool === "github");
@@ -189,9 +187,7 @@ export class GitHubOperations {
       path: `/repos/${repo.split("/").map(segment).join("/")}`,
       write: false,
       admin: false,
-      grants: custom
-        ? policy.custom.filter((g) => g.resource === `repository:${repo}`).map((g) => g.action)
-        : [],
+      grants: GITHUB_OPERATION_NAMES.filter((action) => permitsGitHubAction(policy, repo, action)),
     };
     const upstream = (
       await this.request<{ permissions?: { push?: boolean; maintain?: boolean; admin?: boolean } }>(
@@ -206,14 +202,15 @@ export class GitHubOperations {
   }
   require(c: GitHubOperationContext, action: GitHubOperation) {
     const d = GITHUB_OPERATIONS.find((o) => o[0] === action)!;
-    if (
-      !c.grants.includes(action) ||
-      (d[4] === "write" && !c.write) ||
-      (d[4] === "admin" && !c.admin)
-    )
+    if (!c.grants.includes(action))
       throw fail(
         403,
-        `Requires the exact ${action} Afe repository grant and current GitHub ${d[4]} permission. GitHub token scopes and reviewer rules also apply.`,
+        `Afe policy restricts ${action} on repository:${c.repository}. Ask an administrator to review your GitHub tool permissions.`,
+      );
+    if ((d[4] === "write" && !c.write) || (d[4] === "admin" && !c.admin))
+      throw fail(
+        403,
+        `GitHub repository ${d[4]} permission is required. Check the linked account and token permissions.`,
       );
   }
   async run(c: GitHubOperationContext, id: unknown, attempt?: unknown) {
@@ -228,6 +225,62 @@ export class GitHubOperations {
     if (attempt !== undefined && r.run_attempt !== attempt)
       throw fail(409, "The run attempt changed. Refresh before continuing.");
     return r;
+  }
+  private activeLogs = 0;
+  async jobLog(c: GitHubOperationContext, runId: number, attempt: number, jobId: number) {
+    // Logs use the same exact read grant as archive downloads, including PAT identities.
+    this.require(c, "github.logs_download");
+    if (this.activeLogs >= 4) throw fail(429, "Log downloads are busy. Try again shortly.");
+    this.activeLogs++;
+    try {
+      const run = (
+        await this.request<SourceObject>(c, `${c.path}/actions/runs/${runId}/attempts/${attempt}`)
+      ).data;
+      if (run.id !== runId || (run.run_attempt ?? 1) !== attempt)
+        throw fail(404, "Workflow attempt not found.");
+      if (run.status !== "completed")
+        throw fail(
+          409,
+          "Logs are available after this workflow attempt finishes. Refresh and try again.",
+        );
+      const job = (await this.request<SourceObject>(c, `${c.path}/actions/jobs/${jobId}`)).data;
+      if (job.id !== jobId || job.run_id !== runId || (job.run_attempt ?? 1) !== attempt)
+        throw fail(404, "Job not found in this workflow attempt.");
+      const response = await this.http.request<null>({
+        method: "GET",
+        path: `${c.path}/actions/jobs/${jobId}/logs`,
+        token: c.token.secret,
+        bucket: `operations:${c.tid}:${c.uid}`,
+        expectLogRedirect: true,
+      });
+      const location = response.headers.get("location");
+      if (response.status !== 302 || !location)
+        throw fail(502, "GitHub did not provide a job log. Try again or open the source run.");
+      return { jobId, attempt, text: await downloadGitHubJobLog(location) };
+    } catch (err) {
+      if (err instanceof JobLogError)
+        throw fail(
+          err.code === "logs_too_large" ? 413 : 502,
+          err.code === "logs_too_large"
+            ? "This job log exceeds Afe's 2 MiB viewing limit. Download the archive or open the source run."
+            : "The job log could not be downloaded. Try again or open the source run.",
+        );
+      if (err instanceof GitHubApiError) {
+        if ([404, 410].includes(err.status))
+          throw fail(
+            err.status,
+            "GitHub could not provide this log. It may be unavailable, deleted, expired, or inaccessible.",
+          );
+        if ([401, 403].includes(err.status))
+          throw fail(
+            403,
+            "GitHub denied log access. Check the linked token's Actions read permission and repository access.",
+          );
+      }
+      throw err;
+    } finally {
+      this.activeLogs--;
+    }
   }
   async workflowFile(c: GitHubOperationContext, path: string, ref: string, missing = false) {
     if (!isWorkflowPath(path))
@@ -903,7 +956,7 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         return {
           items: GITHUB_OPERATIONS.map(([action, label, group, destructive, level]) => {
             const reason = !c.grants.includes(action)
-              ? `Requires ${action} on repository:${c.repository}.`
+              ? `Afe policy restricts ${action} on repository:${c.repository}. Ask an administrator to review your GitHub tool permissions.`
               : level === "admin" && !c.admin
                 ? "GitHub repository admin permission is required."
                 : level === "write" && !c.write
@@ -991,6 +1044,11 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         };
       }
       if (view === "workflow_file") {
+        if (!c.write)
+          throw fail(
+            403,
+            "GitHub repository write permission is required to inspect workflow inputs or source.",
+          );
         if (
           !["github.dispatch", "github.workflow_save", "github.workflow_delete"].some((a) =>
             c.grants.includes(a),
@@ -1029,6 +1087,8 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         path = q.workflowId ? `/actions/workflows/${numeric(q.workflowId)}/runs` : "/actions/runs";
         key = "workflow_runs";
         if (q.branch) params.branch = q.branch;
+      } else if (view === "job_log") {
+        return service.jobLog(c, numeric(q.runId), numeric(q.attempt), numeric(q.jobId));
       } else if (view === "jobs") {
         const run = await service.run(c, numeric(q.runId));
         const attempt = q.attempt ? numeric(q.attempt) : Number(run.run_attempt);

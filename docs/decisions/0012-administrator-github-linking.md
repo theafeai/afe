@@ -3,6 +3,7 @@
 - Status: Accepted (authorized by AFE-62)
 - Date: 2026-11-01
 - Amends: ADR 0011, personal-identity setup only
+- Permission inheritance amended by [ADR 0014](0014-github-source-permissions.md)
 
 ## Decision
 
@@ -19,10 +20,10 @@ credentials, account replacement/disconnection, per-user permissions and action
 receipts. No generated local login credential is returned or retained. The
 associated `github-admin-…` account appears in Users for permission management.
 
-New bindings start with GitHub source access and no mutation grants. Linking
-permits discovery only within the personal token's repository access and the
-active tenant connection selection. Administrators assign exact repository/action
-grants in Users to permit operations; all current GitHub roles, token permissions,
+New bindings start in GitHub Source mode, inheriting the linked identity's
+supported permissions. Discovery stays within personal token access and active
+connection selection. Administrators may add optional action restrictions in Users;
+existing custom action allowlists remain intact. All current GitHub roles, token permissions,
 provider state checks, confirmation and receipt rules still apply. Administrator
 API authority alone never implies GitHub mutation permission. Existing policies,
 including `none`, are not replaced during relinking; disabled users stay disabled.

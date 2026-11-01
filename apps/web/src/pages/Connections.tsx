@@ -1,6 +1,5 @@
 import { DisconnectAction } from "./DisconnectAction.tsx";
 import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
-import { useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import { ToolMark, icons } from "../icons.tsx";
@@ -21,6 +20,7 @@ import {
 } from "../components.tsx";
 import { formatDateTime, formatDuration, formatRelative, humanize } from "../format.ts";
 import { Link, useLocation, useNavigate } from "../router.tsx";
+import { useToast } from "../toast.tsx";
 
 const TOOLS = [
   { id: "github", label: "GitHub", blurb: "GitHub App with read-only permissions." },
@@ -59,7 +59,7 @@ function GapCell({ c }: { c: ConnectionWithHealth }) {
 export function Connections() {
   useDocumentTitle("Connections");
   const { admin } = useAccess();
-  const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const { data, error, loading, reload } = useAsync((s) => api.connections(s), []);
   return (
     <div className="page">
@@ -74,11 +74,6 @@ export function Connections() {
           Refresh
         </button>
       </header>
-      {notice && (
-        <p className="callout callout-ok" role="status">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <Loading label="Loading connections…" />
       ) : error ? (
@@ -151,7 +146,7 @@ export function Connections() {
                           <DisconnectAction
                             connection={c}
                             onDone={(note) => {
-                              setNotice(note);
+                              toast(note);
                               reload();
                             }}
                           />
@@ -172,11 +167,11 @@ export function Connections() {
 }
 
 export function ConnectionDetail({ id }: { id: string }) {
-  const [notice, setNotice] = useState<string | null>(null);
   const { admin } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.connectionHealth(id, s), [id]);
   const location = useLocation();
   const navigate = useNavigate();
+  const toast = useToast();
   const justConnected = new URLSearchParams(location.search).get("connected");
   useDocumentTitle(data ? data.connection.name : "Connection");
   if (loading) return <Loading label="Loading connection…" />;
@@ -197,11 +192,6 @@ export function ConnectionDetail({ id }: { id: string }) {
       <p>
         <Link to="/connections">← Connections</Link>
       </p>
-      {notice && (
-        <p className="callout callout-ok" role="status">
-          {notice}
-        </p>
-      )}
       {justConnected && (
         <div className="callout callout-ok" role="status">
           <strong>{toolLabel(justConnected)} connected.</strong> Afe will start observing it; health
@@ -316,8 +306,8 @@ export function ConnectionDetail({ id }: { id: string }) {
                 <DisconnectAction
                   connection={c}
                   onDone={(note) => {
-                    setNotice(note);
-                    reload();
+                    toast(note);
+                    navigate("/connections", { replace: true });
                   }}
                 />
               </>

@@ -1,4 +1,4 @@
-import { registerGitHubOperations } from "./github-operations.ts";
+import { GitHubOperations, registerGitHubOperations } from "./github-operations.ts";
 import { githubUserId } from "./github-identity.ts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
@@ -8,9 +8,8 @@ import {
   type GitHubActionState,
 } from "@afe/core";
 import { GitHubHttp, GitHubApiError, GitHubRateLimitError } from "@afe/connector-github";
-import { getEvent, getConnection, getCredential, getUserToolPolicy } from "@afe/db";
+import { getEvent } from "@afe/db";
 import { requestTenant } from "../auth/index.ts";
-import { toolAccounts } from "../auth/tool-accounts.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,14 +37,11 @@ type Run = {
 export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) {
   // Shared transport retains rate-limit buckets; mutations never retry automatically.
   const http = new GitHubHttp({ maxRetries: 0, maxResponseBytes: 1024 * 1024 });
+  const operations = new GitHubOperations(ctx);
   async function context(req: FastifyRequest<{ Params: Params }>) {
     const tid = requestTenant(req),
       uid = await githubUserId(ctx, req);
-    if (!uid)
-      throw fail(
-        403,
-        "Run controls require a managed user with a linked GitHub account and explicit action grants.",
-      );
+    if (!uid) throw fail(403, "Run controls require a managed user with a linked GitHub account.");
     if (!uuid.test(req.params.eventId)) throw fail(404, "Event not found.");
     const event = await getEvent(ctx.pool, tid, req.params.eventId);
     const repo = event?.target.repository?.toLowerCase();
@@ -62,50 +58,19 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
     const runId = Number(/^github:(\d+)$/.exec(event.correlation.runIds?.[0] ?? "")?.[1]);
     if (!Number.isSafeInteger(runId) || runId <= 0)
       throw fail(404, "GitHub workflow run not found.");
-    const policy = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-    if (policy.mode === "none") throw fail(404, "GitHub workflow run not found.");
-    const read =
-      policy.mode === "source" ||
-      policy.mode === "source + custom" ||
-      policy.custom.some(
-        (g) =>
-          g.action === "read" &&
-          [`repository:${repo}`, `connection:${event.connectionId}`].includes(g.resource),
-      );
-    if (!read) throw fail(404, "GitHub workflow run not found.");
-    const connection = await getConnection(ctx.pool, tid, event.connectionId);
-    if (!connection || connection.source !== "github" || connection.status !== "active")
-      throw fail(409, "The GitHub connection is not active.");
-    const account = (await toolAccounts(ctx, tid, uid)).find((a) => a.tool === "github");
-    const stored = account && (await getCredential(ctx.pool, ctx.keys, tid, account.credential_id));
-    if (!stored) throw fail(403, "Link your GitHub account in Profile to use run controls.");
-    const options = { token: stored.secret, bucket: `actions:${tid}:${uid}` };
-    const path = `/repos/${repo.split("/").map(encodeURIComponent).join("/")}`;
-    const upstream = (
-      await http.request<{ permissions?: { push?: boolean; admin?: boolean; maintain?: boolean } }>(
-        { method: "GET", path, ...options },
-      )
-    ).data;
-    const custom = policy.mode === "custom" || policy.mode === "source + custom";
-    const write =
-      upstream.permissions?.push === true ||
-      upstream.permissions?.admin === true ||
-      upstream.permissions?.maintain === true;
-    const grants = GITHUB_RUN_ACTIONS.filter(
-      (action) =>
-        custom &&
-        policy.custom.some((g) => g.resource === `repository:${repo}` && g.action === action),
-    );
+    const scoped = await operations.scope(req, event.connectionId, repo);
+    const options = { token: scoped.token.secret, bucket: `actions:${tid}:${uid}` };
+    const path = scoped.path;
     return {
       tid,
       uid,
       repo,
       runId,
-      connectionId: connection.id,
+      connectionId: scoped.connectionId,
       options,
       path: `${path}/actions/runs/${runId}`,
-      write,
-      grants,
+      write: scoped.write,
+      grants: scoped.grants,
     };
   }
   async function readRun(c: Awaited<ReturnType<typeof context>>) {
@@ -164,7 +129,7 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
         conclusion: run.conclusion,
         capabilities: GITHUB_RUN_ACTIONS.map((action) => {
           const reason = !c.grants.includes(action)
-            ? "Ask your administrator for this repository action grant."
+            ? "Afe policy restricts this action. Ask an administrator to review your GitHub tool permissions."
             : !c.write
               ? "Your GitHub account needs write access to this repository."
               : prior.some(
@@ -191,10 +156,7 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
     reply.header("cache-control", "no-store");
     return guarded(async () => {
       if (!(await githubUserId(ctx, req)))
-        throw fail(
-          403,
-          "Run controls require a managed user with a linked GitHub account and explicit action grants.",
-        );
+        throw fail(403, "Run controls require a managed user with a linked GitHub account.");
       const b = req.body;
       if (
         !b ||
@@ -209,10 +171,15 @@ export function registerGitHubActions(app: FastifyInstance, ctx: ServerContext) 
       const action = b.action as GitHubRunAction,
         requestId = b.requestId;
       const c = await context(req);
-      if (!c.write || !c.grants.includes(action))
+      if (!c.grants.includes(action))
         throw fail(
           403,
-          "Both an explicit Afe repository action grant and GitHub write access are required.",
+          "Afe policy restricts this action. Ask an administrator to review your GitHub tool permissions.",
+        );
+      if (!c.write)
+        throw fail(
+          403,
+          "GitHub repository write permission is required. Check the linked account and token permissions.",
         );
       const prior = (
         await ctx.pool.query<{

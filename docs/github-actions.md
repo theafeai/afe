@@ -12,22 +12,24 @@ operates existing workflows; the GitHub Actions UI does not create workflow file
 
 ## Setup and permissions
 
-1. Open **Profile** as the administrator and link your personal GitHub token
-   directly. Afe creates a GitHub account for this administrator login; you stay
-   signed in as the administrator. Alternatively, use a managed user assigned
-   GitHub `source + custom`, or `custom` with an explicit repository/connection
-   **read** grant. Missing/none denies access for existing accounts.
+1. Open **Profile** and link your GitHub identity as an administrator or managed
+   user. Select **Source** under Users → account → github to inherit the linked
+   identity's permissions without duplicating action grants. Missing/none denies
+   tool access. Active connection/repository selection still applies.
 
-2. Add exact lowercase repository/action grants in Users, one per line:
+2. Optionally, administrators can add **GitHub action restrictions** in Users,
+   one exact repository/action per line, for example:
 
    ```text
-   repository:acme/app github.dispatch
-   repository:acme/app github.rerun
-   repository:acme/app github.review_deployment
+   repository:acme/app github.delete_run
+   repository:acme/app github.environment_delete
    ```
 
-   Users includes the complete action catalog. There are no wildcard mutation
-   grants; source/read permissions never imply permission to trigger a change.
+   These actions are blocked on top of inherited GitHub access. Leave restrictions
+   empty for no additional blocks. Restrictions take precedence in every mode.
+   Existing Custom and Source + custom policies remain explicit action allowlists;
+   switch to Source intentionally to enable inheritance. See
+   [ADR 0014](decisions/0014-github-source-permissions.md) for precedence and upgrade behavior.
 
 3. In Profile, link a personal **fine-grained token** restricted to the intended
    repositories, or sign in with GitHub OAuth. Tokens remain encrypted and are
@@ -38,7 +40,7 @@ operates existing workflows; the GitHub Actions UI does not create workflow file
    | ---------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------- |
    | Workflow/run/job controls, caches, artifact deletion | Actions: write; Metadata: read    | Repository write                                                           |
    | Artifact / archived log download                     | Actions: read; Metadata: read     | Repository read                                                            |
-   | Workflow input schema from YAML                      | Contents: read                    | Dispatch or configuration Afe grant                                        |
+   | Workflow input schema from YAML                      | Contents: read                    | Repository write; Afe policy allows dispatch/configuration                 |
    | Edit/delete existing workflow files                  | Contents: write, Workflows: write | Repository write; branch protection applies                                |
    | Deployment create/status/delete                      | Deployments: write                | Repository write; source deletion restrictions apply                       |
    | Pending deployment review                            | Deployments: write                | GitHub's `current_user_can_approve` must permit every selected environment |
@@ -51,15 +53,13 @@ operates existing workflows; the GitHub Actions UI does not create workflow file
    “Allow editing workflow files” before signing in requests the additional
    `workflow` scope. No existing App installation is elevated automatically.
 
-Administrator linking starts with source access and **no operation grants**.
-After linking, Profile identifies the `github-admin-…` account to select in
-**Users**. Set its GitHub mode to **source + custom** and assign exact
-repository/action grants. No separate Afe login or account switching is needed.
-Source access alone never permits a mutation.
+Administrator linking starts in **Source** mode. Profile identifies the
+`github-admin-…` account to manage in **Users**. No separate login or duplicate
+operation grants are needed. Optional restrictions never expand GitHub access.
 
 People using the same Afe administrator credential share its GitHub link. A static
-administrator token rotation changes the principal: link again and assign new
-operation grants. Disconnecting removes the encrypted token but retains the
+administrator token rotation changes the principal: link again and review the new identity’s
+policy. Disconnecting removes the encrypted token but retains the
 identity's explicit policy for later relinking. A failed token validation leaves
 an existing link intact. GitHub expiry, missing permissions, organization approval
 and SSO authorization failures are explained in Profile; unavailable/rate-limited
@@ -196,11 +196,38 @@ Operational receipts contain actor, resource, action, input digest and minimal
 source result metadata, not input values, YAML, deployment payloads or logs. They
 expire with the tenant retention policy; this is not long-term audit storage.
 
+### Viewing completed job logs
+
+Open **GitHub Actions → choose the connection/repository → Runs → Open details**
+for the desired run. Details expand directly beneath that run. Under **Jobs and
+steps**, select **Attempt**, then **View logs** in the desired job’s header.
+The output appears beside that job's step list, labelled with the job and attempt.
+Successful and failed runs both support viewing logs. **Download this attempt's
+archived logs** remains available for the full ZIP archive.
+
+The repository workspace uses the personal GitHub identity linked in **Profile**
+(OAuth or a fine-grained PAT), including when the selected connection is backed by
+a GitHub App. The PAT needs repository access and **Actions: read**; the Afe user
+needs resource read access and Afe policy permission for `github.logs_download`:
+Source inherits it unless restricted; Custom and Source + custom need an explicit
+allowlist entry in **Users**. A GitHub App installation alone does not replace the workspace's
+personal identity. The event-detail progress panel continues to use the App's
+read-only installation token.
+
+`GET …?connectionId=…&view=job_log&runId=…&attempt=…&jobId=…` verifies the exact
+run attempt and job membership before fetching output. Logs are read on demand,
+limited to 2 MiB and four concurrent reads per process, and never persisted or
+logged by Afe. Signed storage URLs stay server-side and receive no credentials.
+Loading, pending availability, missing grants, denied access, unavailable/expired
+logs and transfer failures are shown inline with retry controls. GitHub can take
+time to publish logs after completion; use **Try again**. For oversized output,
+download the archive or open the source run.
+
 ### Downloads
 
 `GET …/download?connectionId=…&kind=artifact&id=…` or
 `kind=logs&id=<runId>&attempt=<attempt>` proxies a ZIP attachment. Downloads enforce
-source/resource authorization and their exact read-action grant. Signed archive
+source/resource authorization and Afe policy permission for the requested read action. Signed archive
 URLs remain server-side; the destination receives no GitHub bearer token or
 cookies. Transfers validate HTTPS, an approved GitHub archive host, public DNS
 at lookup and connection, and refuse further redirects. Streaming uses backpressure,

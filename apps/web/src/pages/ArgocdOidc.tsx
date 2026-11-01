@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync } from "../components.tsx";
+import { useToast } from "../toast.tsx";
 interface Config {
   issuer: string;
   clientId: string;
@@ -25,8 +26,8 @@ export function ArgocdOidcSettings({ id }: { id: string }) {
     [method, setMethod] = useState("none"),
     [ca, setCa] = useState("");
   const [busy, setBusy] = useState(false),
-    [failure, setFailure] = useState<Error | null>(null),
-    [notice, setNotice] = useState("");
+    [failure, setFailure] = useState<Error | null>(null);
+  const toast = useToast();
   useEffect(() => {
     if (data) {
       setIssuer(data.config?.issuer ?? "");
@@ -40,7 +41,6 @@ export function ArgocdOidcSettings({ id }: { id: string }) {
     e.preventDefault();
     setBusy(true);
     setFailure(null);
-    setNotice("");
     try {
       await request("PUT", `/api/connections/argocd/${id}/oidc`, {
         issuer,
@@ -51,7 +51,7 @@ export function ArgocdOidcSettings({ id }: { id: string }) {
         ...(secret ? { clientSecret: secret } : {}),
       });
       setSecret("");
-      setNotice("SSO settings saved. Users must link their ArgoCD account again.");
+      toast("SSO settings saved. Users must link their ArgoCD account again.");
       reload();
     } catch (e) {
       setFailure(e instanceof Error ? e : new Error("Could not save SSO settings"));
@@ -141,7 +141,7 @@ export function ArgocdOidcSettings({ id }: { id: string }) {
                 void request("DELETE", `/api/connections/argocd/${id}/oidc`)
                   .then(() => {
                     setSecret("");
-                    setNotice("Browser SSO disabled. Existing SSO source grants are invalidated.");
+                    toast("Browser SSO disabled. Existing SSO source grants are invalidated.");
                     reload();
                   })
                   .catch((e) => setFailure(e as Error))
@@ -153,7 +153,7 @@ export function ArgocdOidcSettings({ id }: { id: string }) {
           )}
         </>
       )}
-      {failure && <ErrorBox error={failure} />} {notice && <p role="status">{notice}</p>}
+      {failure && <ErrorBox error={failure} />}
     </section>
   );
 }

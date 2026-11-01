@@ -337,6 +337,7 @@ details.gh-section[open] > summary {
   gap: var(--space-3);
 }
 .gh-job {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -351,12 +352,44 @@ details.gh-section[open] > summary {
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 .gh-job-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text);
 }
 .gh-job-action {
   margin-left: auto;
 }
+/* Logs are the main inspection action; re-runs stay with the job below its steps. */
+.gh-job .gh-log-toggle {
+  min-height: calc(var(--control-h) + var(--space-3));
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.gh-job .gh-log-toggle:hover,
+.gh-job .gh-log-toggle[aria-expanded="true"] {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+}
+.gh-job .gh-log-toggle:disabled {
+  opacity: 1;
+  color: var(--muted);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: none;
+}
+.gh-job-access {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+.gh-job-secondary {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
 .gh-steps {
   list-style: none;
   margin: 0;
@@ -380,6 +413,53 @@ details.gh-section[open] > summary {
 .gh-step-name {
   color: var(--text-2);
   overflow-wrap: anywhere;
+}
+
+/* Completed output stays with its job, below the step summary. */
+.gh-job-log {
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.gh-job-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+.gh-job-log-head h4 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  color: var(--text-2);
+}
+.gh-job-log-head > span {
+  font-variant-numeric: tabular-nums;
+}
+.gh-job-log-body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+.gh-job-log-body > .state,
+.gh-job-log-body > .muted,
+.gh-job-log-body > .callout {
+  margin: 0;
+}
+.gh-job-log-output {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 28rem;
+  overflow: auto;
+  white-space: pre;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh);
+  font-variant-numeric: tabular-nums;
+  tab-size: 2;
 }
 
 /* Simple lists inside panels (statuses, branch policies, protection rules). */
@@ -451,6 +531,21 @@ details.gh-section[open] > summary {
   }
   .gh-branch {
     max-width: 16ch;
+  }
+  .gh-job-action {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .gh-job .gh-log-toggle {
+    width: 100%;
+  }
+  .gh-page .btn {
+    min-height: calc(var(--control-h) + var(--space-3));
+    height: auto;
+    padding-top: var(--space-2);
+    padding-bottom: var(--space-2);
+    white-space: normal;
+    line-height: var(--lh-tight);
   }
   .gh-detail .kv > div {
     grid-template-columns: 1fr;
