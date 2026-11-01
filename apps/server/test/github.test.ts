@@ -262,7 +262,12 @@ describe("GitHub connector module", () => {
         status: "revoked",
         statusReason: "GitHub App uninstalled",
       });
-      expect(sink.events("default").at(-1)!.action).toBe("connection.revoked");
+      expect(
+        sink
+          .events("default")
+          .slice(-2)
+          .map((e) => e.action),
+      ).toEqual(["connection.revoked", "connection.deleted"]);
     });
 
     it("suspend and unsuspend", async () => {
@@ -417,6 +422,24 @@ describe("GitHub connector module", () => {
       return { state: location.searchParams.get("state")!, cookie };
     }
 
+    it("keeps the Afe administrator when the installation webhook arrives before setup", async () => {
+      const { state, cookie } = await startInstall();
+      await send("installation", installed());
+      const res = await afe.app.inject({
+        url: `/api/connections/github/setup?installation_id=4242&state=${encodeURIComponent(state)}`,
+        headers: { cookie },
+      });
+      expect(res.statusCode).toBe(200);
+      const applicationEvents = sink.events("default").filter((e) => e.data?.actorOrigin === "afe");
+      expect(applicationEvents).toHaveLength(1);
+      expect(applicationEvents[0]!.actor).toMatchObject({ type: "user", id: "test-admin" });
+      await afe.app.inject({
+        url: `/api/connections/github/setup?installation_id=4242&state=${encodeURIComponent(state)}`,
+        headers: { cookie },
+      });
+      expect(sink.events("default").filter((e) => e.data?.actorOrigin === "afe")).toHaveLength(1);
+    });
+
     it("redirects to GitHub and connects the installation on setup", async () => {
       const { state, cookie } = await startInstall();
       const res = await afe.app.inject({
@@ -436,9 +459,14 @@ describe("GitHub connector module", () => {
       const conn = await only();
       expect(conn.externalId).toBe("4242");
       expect(sink.events("default").map((e) => e.action)).toEqual(["connection.created"]);
-      // The later installation.created webhook does not create a second event.
+      expect(sink.events("default")[0]).toMatchObject({
+        actor: { type: "user", id: "test-admin" },
+        data: { actorOrigin: "afe", credentialOwner: { type: "bot", name: "GitHub App" } },
+      });
+      // Source installation and Afe connection actions retain their separate actors.
       await send("installation", installed());
-      expect(sink.events("default")).toHaveLength(1);
+      expect(sink.events("default")).toHaveLength(2);
+      expect(sink.events("default")[1]!.actor.login).toBe("octocat");
       // Token was narrowed to read permissions.
       const mint = api.requests.find((r) => r.method === "POST");
       expect(mint?.body).toEqual({

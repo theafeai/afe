@@ -1,3 +1,4 @@
+import { expectLifecycle } from "./helpers/lifecycle.ts";
 import { randomBytes } from "node:crypto";
 import { Writable } from "node:stream";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -42,6 +43,7 @@ describe("vercel connector module", () => {
   let ctx: ServerContext;
   let jobs: InlineJobQueue;
   let tenant = "default";
+  let userLookupUnavailable = false;
   const logs: string[] = [];
   const keys = new EnvKeyProvider({ keys: { k1: randomBytes(32) } });
 
@@ -57,6 +59,7 @@ describe("vercel connector module", () => {
     await pool.query("DELETE FROM connections");
     await pool.query("DELETE FROM webhook_deliveries");
     tenant = "default";
+    userLookupUnavailable = false;
     logs.length = 0;
     api = fakeApi();
     jobs = new InlineJobQueue();
@@ -88,7 +91,14 @@ describe("vercel connector module", () => {
         },
       }),
       connectors: [
-        createVercelModule({ fetch: api.fetch, now: () => NOW, resolveTenant: () => tenant }),
+        createVercelModule({
+          fetch: (url, init) =>
+            userLookupUnavailable && new URL(url).pathname === "/v2/user"
+              ? Promise.resolve(new Response("{}", { status: 403 }))
+              : api.fetch(url, init),
+          now: () => NOW,
+          resolveTenant: () => tenant,
+        }),
       ],
     });
     app = built.app;
@@ -148,13 +158,32 @@ describe("vercel connector module", () => {
       userId: USER.id,
       configurationId: "icfg_1",
       projectSelection: { mode: "none" },
+      credentialOwner: { id: USER.id, login: USER.username },
     });
+    await expectLifecycle(pool, id, "connection.created", USER.username);
     expect(JSON.stringify(conn.config)).not.toContain("SECRET");
     const creds = await getConnectionCredentialIds(pool, "default", id);
     expect((await getCredentialMetadata(pool, "default", creds.access_token!))!.kind).toBe(
       "vercel_oauth_token",
     );
     expect(logs.join("")).not.toMatch(/SECRET|client-secret-test/);
+  });
+
+  it("keeps the OAuth credential owner id when user lookup is unavailable", async () => {
+    userLookupUnavailable = true;
+    const { cb } = await installViaOAuth();
+    expect(cb.statusCode).toBe(302);
+    const id = await connectionId();
+    const { rows } = await pool.query(
+      "SELECT actor, data FROM events WHERE tenant_id = 'default' AND connection_id = $1 AND action = 'connection.created'",
+      [id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actor: { id: "test-admin" },
+      data: { credentialOwner: { id: USER.id } },
+    });
+    expect(rows[0].data.credentialOwner.login).toBeUndefined();
   });
 
   it("uses the user id as external id for personal accounts", async () => {
@@ -321,6 +350,10 @@ describe("vercel connector module", () => {
   it("handles integration-configuration.removed by revoking the connection", async () => {
     await installViaOAuth();
     const id = await connectionId();
+    await pool.query(
+      "UPDATE connections SET status = 'revoked' WHERE tenant_id = 'default' AND id = $1",
+      [id],
+    );
     const hook = webhook({
       id: "evt_rm",
       type: "integration-configuration.removed",
@@ -331,6 +364,15 @@ describe("vercel connector module", () => {
     const conn = (await getConnection(pool, "default", id))!;
     expect(conn.status).toBe("revoked");
     expect(conn.statusReason).toMatch(/integration was removed/);
+    const { rows } = await pool.query(
+      "SELECT actor, data FROM events WHERE tenant_id = 'default' AND connection_id = $1 AND action = 'connection.deleted'",
+      [id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actor: { type: "system" },
+      data: { credentialOwner: { login: USER.username } },
+    });
     const creds = await getConnectionCredentialIds(pool, "default", id);
     expect((await getCredentialMetadata(pool, "default", creds.access_token!))!.revokedAt).not.toBe(
       null,
@@ -432,6 +474,7 @@ describe("vercel connector module", () => {
       connection: { status: "disconnected" },
     });
     expect(api.deletedConfigurations).toEqual(["icfg_1"]);
+    await expectLifecycle(pool, id, "connection.deleted", USER.username);
     const creds = await getConnectionCredentialIds(pool, "default", id);
     expect((await getCredentialMetadata(pool, "default", creds.access_token!))!.revokedAt).not.toBe(
       null,

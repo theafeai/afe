@@ -104,6 +104,7 @@ export const ACTIONS = {
   // --- Afe itself (source "afe") ---
   OBSERVATION_GAP_OPENED: "observation_gap.opened",
   OBSERVATION_GAP_CLOSED: "observation_gap.closed",
+  CONNECTION_LOST: "connection.lost",
   CONNECTION_CREATED: "connection.created",
   CONNECTION_UPDATED: "connection.updated",
   CONNECTION_DELETED: "connection.deleted",

@@ -152,6 +152,7 @@ here. Never rename or remove one: stored events keep their names.
 | `argocd.sync_status.changed`                           | argocd         | Application sync status changed (Synced/OutOfSync/Unknown); new status in `data`.                                                     |
 | `configuration.changed`                                | any            | A deployment-relevant setting changed (environment protection, env vars, ...).                                                        |
 | `observation_gap.opened` / `.closed`                   | afe            | See [Observation gaps](#observation-gaps).                                                                                            |
+| `connection.lost`                                      | afe            | A newly detected connection failure; emitted once per observation gap. See [connection lifecycle](connection-lifecycle.md).           |
 | `connection.created` / `.updated` / `.deleted`         | afe            | An Afe connection was added, changed or removed.                                                                                      |
 | `connection.alert.opened` / `.resolved`                | afe            | Afe raised / resolved an alert about a connection (see connection-health.md).                                                         |
 | `connection.revoked`                                   | afe            | Access was revoked at the source (e.g. GitHub App uninstalled).                                                                       |

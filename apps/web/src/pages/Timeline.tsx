@@ -1,3 +1,4 @@
+import { credentialOwnerLabel } from "../credential-owner.ts";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import { icons } from "../icons.tsx";
@@ -118,8 +119,14 @@ export function EventRow({ item, decoration }: { item: EventItem; decoration?: R
           </span>
           <span className="row-meta">
             <span>
-              <span className="muted">by</span> {actorLabel(e)}
+              <span className="muted">{e.data?.actorOrigin === "afe" ? "Afe actor" : "by"}</span>{" "}
+              {actorLabel(e)}
             </span>
+            {credentialOwnerLabel(e) && (
+              <span>
+                <span className="muted">Credential owner</span> {credentialOwnerLabel(e)}
+              </span>
+            )}
             <span>
               <span className="muted">on</span> {targetLabel(e)}
               {e.target.environment && (

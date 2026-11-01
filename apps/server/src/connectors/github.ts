@@ -1,3 +1,4 @@
+import { lifecycleEvent, queueLifecycleEvent, flushLifecycleEvents } from "../connection-events.ts";
 /**
  * GitHub connector wiring (AFE-6): GitHub App webhooks, the install and
  * App Manifest flows, connection lifecycle and health probes.
@@ -95,7 +96,6 @@ import {
   type StatePurpose,
 } from "@afe/connector-github";
 import {
-  findConnectionByExternalId,
   getConnection,
   getCredential,
   listActiveConnections,
@@ -527,6 +527,7 @@ function connectionEvent(p: {
     data: {
       source: CONNECTOR_SOURCE,
       installationId: p.installation.id,
+      credentialOwner: { type: "bot", id: String(p.installation.app_id), name: "GitHub App" },
       account: p.installation.account?.login ?? null,
       ...p.data,
     },
@@ -702,6 +703,18 @@ async function applyLifecycle(
         conn.tenantId,
         connectionEvent({ ...common, action, connection: updated, idParts, data }),
       ]);
+      if (p.action === "deleted") {
+        events.push([
+          conn.tenantId,
+          connectionEvent({
+            ...common,
+            action: ACTIONS.CONNECTION_DELETED,
+            connection: updated,
+            idParts: ["deleted"],
+            data,
+          }),
+        ]);
+      }
     }
     return { tenantId: existing.length === 1 ? existing[0]!.tenantId : null, events };
   }
@@ -851,10 +864,6 @@ function htmlPage(title: string, body: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body>${body}</body></html>`;
 }
 
-async function ingestAll(ctx: ServerContext, events: [string, CanonicalEventInputLike][]) {
-  for (const [tenantId, input] of events) await ctx.sink.ingest(tenantId, input);
-}
-
 async function withTransaction<T>(pool: pg.Pool, fn: (client: pg.PoolClient) => Promise<T>) {
   const client = await pool.connect();
   try {
@@ -946,11 +955,17 @@ async function handleWebhook(rt: GitHubRuntime, req: FastifyRequest, reply: Fast
           rawBody: raw.toString("utf8"),
           observedAt: receivedAt,
         });
-        // Ingest before commit: if it fails, the delivery is not recorded and a
-        // redelivery is processed again (ingestion is idempotent).
-        await ingestAll(ctx, result.events);
+        // Atomically persist lifecycle events with the connection and replay guard.
+        for (const [tenantId, input] of result.events) {
+          const connection = await getConnection(client, tenantId, input.connectionId!);
+          if (connection) await queueLifecycleEvent(client, connection, input);
+        }
         return result;
       });
+      for (const [tenantId, input] of outcome.events) {
+        const connection = await getConnection(ctx.pool, tenantId, input.connectionId!);
+        if (connection) await flushLifecycleEvents(ctx, connection);
+      }
       log.info(
         { action: (payload as { action?: unknown }).action, changes: outcome.events.length },
         "github lifecycle event applied",
@@ -1136,38 +1151,25 @@ async function handleSetup(rt: GitHubRuntime, req: FastifyRequest, reply: Fastif
       .listRepositories();
   }
 
-  const observedAt = new Date(rt.clock());
   const conn = await withTransaction(ctx.pool, async (client) => {
-    const existing = await findConnectionByExternalId(
-      client,
-      tenantId,
-      CONNECTOR_SOURCE,
-      String(installation.id),
-    );
     const conn = await upsertInstallation(client, tenantId, installation, repos);
-    if (!existing || existing.status === "revoked" || existing.status === "disconnected") {
-      const config = conn.config as unknown as GitHubConnectionConfig;
-      await ctx.sink.ingest(
-        tenantId,
-        connectionEvent({
-          action: ACTIONS.CONNECTION_CREATED,
-          connection: conn,
-          idParts: ["created"],
-          installation,
-          observation: { method: "internal", detail: "GitHub App install setup callback" },
-          observedAt,
-          occurredAt: installation.created_at ?? null,
-          data: {
-            repositorySelection: config.repositorySelection,
-            repositories: toJson(config).repositories ?? null,
-            permissions: config.permissions,
-            permissionCheck: toJson(config).permissionCheck ?? null,
-          },
-        }),
-      );
-    }
+    const event = lifecycleEvent(conn, ACTIONS.CONNECTION_CREATED, req.principal!);
+    event.sourceEventId = sourceEventId(
+      "connection",
+      conn.id,
+      "connected",
+      shortHash(q.state ?? String(installation.id)),
+    );
+    event.data = {
+      ...event.data,
+      installationId: installation.id,
+      account: installation.account?.login ?? null,
+      credentialOwner: { type: "bot", id: String(installation.app_id), name: "GitHub App" },
+    };
+    await queueLifecycleEvent(client, conn, event);
     return conn;
   });
+  await flushLifecycleEvents(ctx, conn);
   warnOnPermissions(ctx, conn);
   await startInstallBackfills(rt, String(installation.id));
   const config = conn.config as unknown as GitHubConnectionConfig;
