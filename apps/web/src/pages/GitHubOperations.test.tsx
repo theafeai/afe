@@ -139,3 +139,16 @@ it("retains uncertain outcomes in Afe and asks for explicit risk acknowledgement
   fireEvent.click(screen.getByRole("checkbox", { name: /I checked the current source state/ }));
   await waitFor(() => expect(recovery.disabled).toBe(false));
 });
+it("expands details directly beneath the selected row and collapses them again", async () => {
+  fixture();
+  const open = await screen.findByRole("button", { name: "Open details" });
+  expect(open.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(open);
+  const row = open.closest("li")!;
+  const hide = within(row).getByRole("button", { name: "Hide details" });
+  expect(hide.getAttribute("aria-expanded")).toBe("true");
+  expect(await within(row).findByRole("button", { name: "Prepare dispatch" })).toBeTruthy();
+  fireEvent.click(hide);
+  expect(screen.queryByRole("button", { name: "Prepare dispatch" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Open details" })).toBeTruthy();
+});

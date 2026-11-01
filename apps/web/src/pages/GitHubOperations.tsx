@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from "react";
+import { useEffect, useState, useRef, type FormEvent } from "react";
 import type {
   GitHubOperation,
   GitHubOperationCapability,
@@ -10,7 +10,11 @@ import type {
 } from "@afe/core";
 import { ApiError, request } from "../api/client.ts";
 import { Empty, ErrorBox, Loading, KeyValue, useAsync, useDocumentTitle } from "../components.tsx";
+import { formatBytes, humanize } from "../format.ts";
 import { Link, useLocation } from "../router.tsx";
+import { TimeAgo } from "./environments-ui.tsx";
+import { ProgressState } from "./GitHubRunPanel.tsx";
+import "./GitHubOperations.css";
 type Item = {
   id: number;
   name?: string;
@@ -31,6 +35,11 @@ type Item = {
   html_url?: string;
   key?: string;
   type?: string;
+  event?: string;
+  task?: string;
+  created_at?: string;
+  updated_at?: string;
+  last_accessed_at?: string;
   steps?: { number: number; name: string; status: string; conclusion: string | null }[];
   current_user_can_approve?: boolean;
   protection_rules?: {
@@ -78,7 +87,7 @@ function OperationButton({
   const c = capabilities.find((c) => c.action === action);
   if (!c) return null;
   return (
-    <span>
+    <span className="gh-op">
       <button
         className={c.destructive ? "btn btn-danger" : "btn"}
         disabled={!c.enabled}
@@ -87,8 +96,140 @@ function OperationButton({
       >
         {label ?? c.label}
       </button>
-      {!c.enabled && <small className="muted"> {c.reason}</small>}
+      {!c.enabled && c.reason && <small className="gh-op-reason">{c.reason}</small>}
     </span>
+  );
+}
+/** GitHub run, job and step state as the app's outcome badge. */
+function RunState({ item }: { item: { status?: string | null; conclusion?: string | null } }) {
+  return <ProgressState status={item.status ?? null} conclusion={item.conclusion ?? null} />;
+}
+function When({ iso }: { iso?: string }) {
+  return iso ? <TimeAgo iso={iso} /> : null;
+}
+function ShortSha({ sha }: { sha?: string }) {
+  return sha ? <code title={sha}>{sha.slice(0, 7)}</code> : null;
+}
+const RECEIPT_OUTCOME: Record<GitHubOperationReceipt["state"], string> = {
+  accepted: "succeeded",
+  rejected: "failed",
+  unknown: "pending",
+  requested: "pending",
+  released: "none",
+};
+function ReceiptState({ state }: { state: GitHubOperationReceipt["state"] }) {
+  return <span className={`badge outcome outcome-${RECEIPT_OUTCOME[state]}`}>{state}</span>;
+}
+type Row = {
+  title: React.ReactNode;
+  meta: React.ReactNode[];
+  status?: React.ReactNode;
+  time?: string;
+};
+/** What each list shows for one GitHub object: a title, a short meta line, a state and a time. */
+function describe(tab: string, item: Item): Row {
+  const env = typeof item.environment === "string" ? item.environment : item.environment?.name;
+  switch (tab) {
+    case "workflows":
+      return {
+        title: item.name ?? `Workflow ${item.id}`,
+        meta: [<code key="path">{item.path}</code>],
+        status: item.state && (
+          <span className={`badge${item.state === "active" ? "" : " gh-badge-off"}`}>
+            {humanize(item.state)}
+          </span>
+        ),
+        time: item.updated_at,
+      };
+    case "runs":
+      return {
+        title: item.name ?? `Run ${item.id}`,
+        meta: [
+          <span key="id">Run {item.id}</span>,
+          item.event && <span key="event">{humanize(item.event)}</span>,
+          item.head_branch && (
+            <span key="branch" className="gh-branch" title={item.head_branch}>
+              {item.head_branch}
+            </span>
+          ),
+          <ShortSha key="sha" sha={item.head_sha} />,
+          (item.run_attempt ?? 1) > 1 && <span key="attempt">Attempt {item.run_attempt}</span>,
+        ],
+        status: <RunState item={item} />,
+        time: item.created_at,
+      };
+    case "deployments":
+      return {
+        title: env ?? `Deployment ${item.id}`,
+        meta: [
+          <span key="id">Deployment {item.id}</span>,
+          item.task && <span key="task">{item.task}</span>,
+          item.ref && (
+            <span key="ref" className="gh-branch" title={item.ref}>
+              {item.ref}
+            </span>
+          ),
+          <ShortSha key="sha" sha={item.sha} />,
+        ],
+        time: item.created_at,
+      };
+    case "environments":
+      return { title: item.name ?? String(item.id), meta: [], time: item.updated_at };
+    case "artifacts":
+      return {
+        title: item.name ?? `Artifact ${item.id}`,
+        meta: [
+          <span key="size">{formatBytes(item.size_in_bytes)}</span>,
+          item.run_id && <span key="run">Run {item.run_id}</span>,
+        ],
+        status: (
+          <span className={item.expired ? "badge gh-badge-off" : "badge"}>
+            {item.expired ? "expired" : "available"}
+          </span>
+        ),
+        time: item.created_at,
+      };
+    case "caches":
+      return {
+        title: <code>{item.key ?? item.id}</code>,
+        meta: [
+          item.ref && (
+            <span key="ref" className="gh-branch" title={item.ref}>
+              {item.ref}
+            </span>
+          ),
+          <span key="size">{formatBytes(item.size_in_bytes)}</span>,
+        ],
+        time: item.last_accessed_at,
+      };
+    default:
+      return { title: item.name ?? String(item.id), meta: [] };
+  }
+}
+function Pager({
+  page,
+  hasMore,
+  onPage,
+  noun,
+}: {
+  page: number;
+  hasMore: boolean;
+  onPage: (page: number) => void;
+  noun: string;
+}) {
+  if (page === 1 && !hasMore) return null;
+  return (
+    <nav className="gh-pager" aria-label={`${noun} pages`}>
+      <span className="small muted">Page {page}</span>
+      <div className="toolbar">
+        <button className="btn" disabled={page === 1} onClick={() => onPage(page - 1)}>
+          Previous page
+        </button>
+        <button className="btn" disabled={!hasMore} onClick={() => onPage(page + 1)}>
+          Next page
+        </button>
+      </div>
+    </nav>
   );
 }
 export function GitHubOperationsPage() {
@@ -115,8 +256,12 @@ export function GitHubOperationsPage() {
         }
       : null,
   );
+  const known = resources.data?.items.find(
+    (r) => r.connectionId === selected?.connectionId && r.repository === selected?.repository,
+  );
+  const scope = selected && known ? known : selected;
   return (
-    <div className="page">
+    <div className="page gh-page">
       <header className="page-header">
         <div>
           <h1>GitHub Actions</h1>
@@ -124,54 +269,57 @@ export function GitHubOperationsPage() {
             Inspect workflows, jobs and deployments, and operate them from Afe.
           </p>
         </div>
-        <Link to="/profile">Link or update your GitHub account</Link>
+        <div className="toolbar">
+          <Link className="btn btn-ghost" to="/profile">
+            Link or update your GitHub account
+          </Link>
+        </div>
       </header>
       {resources.loading && <Loading label="Loading GitHub repositories…" />}
       {resources.error && <ErrorBox error={resources.error} onRetry={resources.reload} />}
       {resources.data && (
-        <section className="card">
-          <Field label="Connected repository">
-            <select
-              value={selected ? `${selected.connectionId}|${selected.repository}` : ""}
-              onChange={(e) => {
-                const item = resources.data!.items.find(
-                  (x) => `${x.connectionId}|${x.repository}` === e.target.value,
-                );
-                setSelected(item ?? null);
-              }}
-            >
-              <option value="">Select a repository</option>
-              {selected &&
-                !resources.data.items.some(
-                  (r) =>
-                    r.connectionId === selected.connectionId &&
-                    r.repository === selected.repository,
-                ) && (
+        <section className="card gh-picker" aria-label="Repository">
+          <div className="gh-picker-row">
+            <Field label="Connected repository">
+              <select
+                value={selected ? `${selected.connectionId}|${selected.repository}` : ""}
+                onChange={(e) => {
+                  const item = resources.data!.items.find(
+                    (x) => `${x.connectionId}|${x.repository}` === e.target.value,
+                  );
+                  setSelected(item ?? null);
+                }}
+              >
+                <option value="">Select a repository</option>
+                {selected && !known && (
                   <option value={`${selected.connectionId}|${selected.repository}`}>
                     {selected.repository}
                   </option>
                 )}
-              {resources.data.items.map((r) => (
-                <option
-                  key={`${r.connectionId}|${r.repository}`}
-                  value={`${r.connectionId}|${r.repository}`}
+                {resources.data.items.map((r) => (
+                  <option
+                    key={`${r.connectionId}|${r.repository}`}
+                    value={`${r.connectionId}|${r.repository}`}
+                  >
+                    {r.repository} · {r.connectionName}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {(page > 1 || resources.data.hasMore) && (
+              <div className="toolbar">
+                <button className="btn" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+                  Previous repositories
+                </button>
+                <button
+                  className="btn"
+                  disabled={!resources.data.hasMore}
+                  onClick={() => setPage((p) => p + 1)}
                 >
-                  {r.repository} · {r.connectionName}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="actions">
-            <button className="btn" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-              Previous repositories
-            </button>
-            <button
-              className="btn"
-              disabled={!resources.data.hasMore}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              More repositories
-            </button>
+                  More repositories
+                </button>
+              </div>
+            )}
           </div>
           {!resources.data.items.length && (
             <Empty title="No repositories on this page">
@@ -181,11 +329,14 @@ export function GitHubOperationsPage() {
               </p>
             </Empty>
           )}
+          {resources.data.items.length > 0 && !selected && (
+            <p className="small muted gh-picker-hint">
+              Choose a repository to see its workflows, runs and deployments.
+            </p>
+          )}
         </section>
       )}
-      {selected && (
-        <GitHubWorkspace key={`${selected.connectionId}|${selected.repository}`} scope={selected} />
-      )}
+      {scope && <GitHubWorkspace key={`${scope.connectionId}|${scope.repository}`} scope={scope} />}
     </div>
   );
 }
@@ -206,6 +357,11 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     [recovery, setRecovery] = useState<GitHubOperationReceipt | null>(null),
     [risk, setRisk] = useState(false);
   const sending = useRef(false);
+  const notice = useRef<HTMLDivElement>(null);
+  // A prepared operation or its outcome is shown above the list; bring it into view.
+  useEffect(() => {
+    if (pending || receipt || recovery) notice.current?.scrollIntoView?.({ block: "nearest" });
+  }, [pending, receipt, recovery]);
   const read: Reader = (view, query = {}) =>
     request(
       "GET",
@@ -226,7 +382,14 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
   const list = useAsync(() => read<Page>(tab, { page: String(page) }), [root, tab, page, revision]);
   const can = (action: GitHubOperation) =>
     caps.data?.items.find((c) => c.action === action)?.enabled ?? false;
+  const label = (action: string) =>
+    caps.data?.items.find((c) => c.action === action)?.label ?? humanize(action);
   const refresh = () => setRevision((r) => r + 1);
+  const show = (next: string) => {
+    setTab(next);
+    setPage(1);
+    setSelected(null);
+  };
   async function prepare(action: GitHubOperation, params: GitHubOperationParams) {
     if (sending.current) return;
     sending.current = true;
@@ -307,287 +470,358 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       prepare={prepare}
     />
   );
+  const tabLabel = tabs.find((t) => t[0] === tab)?.[1] ?? "";
+  const details = (item: Item) => {
+    switch (tab) {
+      case "workflows":
+        return (
+          <WorkflowPanel
+            key={item.id}
+            item={item}
+            read={read}
+            prepare={prepare}
+            button={button}
+            can={can}
+          />
+        );
+      case "runs":
+        return (
+          <RunPanel
+            key={`${item.id}:${revision}`}
+            item={item}
+            read={read}
+            button={button}
+            can={can}
+            download={(kind, id, attempt) =>
+              `${root}/download?${new URLSearchParams({ connectionId: scope.connectionId, kind, id: String(id), ...(attempt ? { attempt: String(attempt) } : {}) })}`
+            }
+          />
+        );
+      case "deployments":
+        return (
+          <DeploymentPanel
+            key={`${item.id}:${revision}`}
+            item={item}
+            read={read}
+            prepare={prepare}
+            button={button}
+            can={can}
+          />
+        );
+      case "environments":
+        return (
+          <EnvironmentPanel
+            key={`${item.id}:${revision}`}
+            item={item}
+            read={read}
+            prepare={prepare}
+            button={button}
+            can={can}
+          />
+        );
+      case "artifacts":
+        return (
+          <div className="gh-detail">
+            <KeyValue
+              items={[
+                ["Source ID", String(item.id)],
+                ["Size", formatBytes(item.size_in_bytes)],
+                ["Expired", item.expired ? "Yes" : "No"],
+                ["Workflow run", String(item.run_id ?? "Unknown")],
+              ]}
+            />
+            <div className="toolbar">
+              {can("github.artifact_download") && !item.expired && (
+                <a
+                  className="btn"
+                  href={`${root}/download?${new URLSearchParams({ connectionId: scope.connectionId, kind: "artifact", id: String(item.id) })}`}
+                >
+                  Download artifact
+                </a>
+              )}
+              {button("github.artifact_delete", { artifactId: item.id })}
+            </div>
+          </div>
+        );
+      case "caches":
+        return (
+          <div className="gh-detail">
+            <KeyValue
+              items={[
+                ["Key", <code key="k">{item.key}</code>],
+                ["Ref", item.ref],
+                ["Size", formatBytes(item.size_in_bytes)],
+                ["Last used", item.last_accessed_at && <TimeAgo iso={item.last_accessed_at} />],
+              ]}
+            />
+            <div className="toolbar">
+              {button("github.cache_delete", { cacheId: item.id, key: item.key, ref: item.ref })}
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
   return (
     <div aria-busy={busy}>
-      <section className="card">
-        <div className="toolbar">
-          <strong>{scope.repository}</strong>
-          <button className="btn" disabled={busy} onClick={refresh}>
-            Refresh GitHub state
-          </button>
+      <section className="card gh-repo">
+        <div className="gh-repo-head">
+          <div className="gh-repo-title">
+            <h2 className="mono-title">{scope.repository}</h2>
+            <p className="small muted">
+              {scope.connectionName ? (
+                <>
+                  Through <strong>{scope.connectionName}</strong> ·{" "}
+                </>
+              ) : null}
+              Afe action grants and your current GitHub permissions both apply. Source events show
+              completion after a request is accepted.
+            </p>
+          </div>
+          <div className="toolbar">
+            <a
+              className="btn btn-ghost"
+              href={`https://github.com/${scope.repository}/actions`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open on GitHub
+            </a>
+            <button className="btn" disabled={busy} onClick={refresh}>
+              Refresh GitHub state
+            </button>
+          </div>
         </div>
-        <p className="muted">
-          Afe action grants and your current GitHub permissions both apply. Source events show
-          completion after a request is accepted.
-        </p>
-        <div className="actions" role="group" aria-label="GitHub views">
+        <div className="gh-tabs" role="group" aria-label="GitHub views">
           {tabs.map(([value, label]) => (
             <button
-              className="btn"
+              className="gh-tab"
               key={value}
               aria-pressed={tab === value}
-              onClick={() => {
-                setTab(value);
-                setPage(1);
-                setSelected(null);
-              }}
+              onClick={() => show(value)}
             >
               {label}
             </button>
           ))}
         </div>
       </section>
-      {(error || caps.error) && <ErrorBox error={(error ?? caps.error)!} />}
-      {receipt && (
-        <section className="callout" role="status">
-          <strong>{receipt.state}</strong>
-          <p>{receipt.message}</p>
-          <p>
-            Request <code>{receipt.requestId}</code>
-            {receipt.result?.id ? ` · Source ID ${receipt.result.id}` : ""}
-          </p>
-          <button
-            className="btn"
-            onClick={() => {
-              setTab("history");
-              setSelected(null);
-            }}
+      <div ref={notice}>
+        {(error || caps.error) && <ErrorBox error={(error ?? caps.error)!} />}
+        {receipt && (
+          <section
+            className={`callout ${receipt.state === "accepted" ? "callout-ok" : receipt.state === "rejected" ? "callout-error" : receipt.state === "released" ? "" : "callout-gap"} gh-receipt`}
+            role="status"
           >
-            Inspect request history
-          </button>
-        </section>
-      )}
-      {pending && (
-        <section className="card" role="group" aria-label="Confirm GitHub operation">
-          <h2>Confirm operation</h2>
-          <p>{pending.preview.summary}</p>
-          <p>
-            This may trigger a deployment or change source configuration. If another tool changes
-            this resource, Afe will ask you to refresh.
-          </p>
-          <button
-            className={
-              caps.data?.items.find((c) => c.action === pending.preview.action)?.destructive
-                ? "btn btn-danger"
-                : "btn btn-primary"
-            }
-            disabled={busy}
-            onClick={() => void execute()}
-          >
-            Confirm operation
-          </button>{" "}
-          <button className="btn" disabled={busy} onClick={() => setPending(null)}>
-            Go back
-          </button>
-        </section>
-      )}
-      {recovery && (
-        <section className="card">
-          <h2>Recover uncertain request</h2>
-          <p>
-            Inspect the source state in the Runs, Workflows or Deployments tabs first. The original
-            request might have succeeded; another submission could create a duplicate deployment.
-          </p>
-          <label className="check">
-            <input type="checkbox" checked={risk} onChange={(e) => setRisk(e.target.checked)} />I
-            checked the current source state and accept the risk of a duplicate operation.
-          </label>
-          <button
-            className="btn btn-danger"
-            disabled={!risk || busy}
-            onClick={() => void release()}
-          >
-            Allow a new deliberate request
-          </button>{" "}
-          <button className="btn" onClick={() => setRecovery(null)}>
-            Go back
-          </button>
-        </section>
-      )}
-      {list.loading && <Loading label="Loading GitHub state…" />}
-      {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
-      {list.data && (
-        <section className="card">
-          <h2>{tabs.find((t) => t[0] === tab)?.[1]}</h2>
-          {!list.data.items.length && (
-            <Empty title="No items on this page">
-              <p>Refresh after source changes, select another repository, or check another page.</p>
-            </Empty>
+            <div className="gh-receipt-body">
+              <p>
+                <ReceiptState state={receipt.state} /> <strong>{label(receipt.action)}</strong>
+              </p>
+              <p>{receipt.message}</p>
+              <p className="small muted">
+                Request <code>{receipt.requestId}</code>
+                {receipt.result?.id ? ` · Source ID ${receipt.result.id}` : ""}
+              </p>
+            </div>
+            <div className="toolbar">
+              <button className="btn" onClick={() => show("history")}>
+                Inspect request history
+              </button>
+              <button className="btn btn-ghost" onClick={() => setReceipt(null)}>
+                Dismiss
+              </button>
+            </div>
+          </section>
+        )}
+        {pending && (
+          <section className="card gh-confirm" role="group" aria-label="Confirm GitHub operation">
+            <h2>Confirm operation</h2>
+            <p className="gh-confirm-summary">{pending.preview.summary}</p>
+            <p className="small muted">
+              This may trigger a deployment or change source configuration. If another tool changes
+              this resource, Afe will ask you to refresh.
+            </p>
+            <div className="toolbar">
+              <button
+                className={
+                  caps.data?.items.find((c) => c.action === pending.preview.action)?.destructive
+                    ? "btn btn-danger"
+                    : "btn btn-primary"
+                }
+                disabled={busy}
+                onClick={() => void execute()}
+              >
+                Confirm operation
+              </button>
+              <button className="btn" disabled={busy} onClick={() => setPending(null)}>
+                Go back
+              </button>
+            </div>
+          </section>
+        )}
+        {recovery && (
+          <section className="card gh-confirm">
+            <h2>Recover uncertain request</h2>
+            <p>
+              Inspect the source state in the Runs, Workflows or Deployments tabs first. The
+              original request might have succeeded; another submission could create a duplicate
+              deployment.
+            </p>
+            <label className="check">
+              <input type="checkbox" checked={risk} onChange={(e) => setRisk(e.target.checked)} />I
+              checked the current source state and accept the risk of a duplicate operation.
+            </label>
+            <div className="toolbar">
+              <button
+                className="btn btn-danger"
+                disabled={!risk || busy}
+                onClick={() => void release()}
+              >
+                Allow a new deliberate request
+              </button>
+              <button className="btn" onClick={() => setRecovery(null)}>
+                Go back
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
+      <section className="gh-list-section" aria-label={tabLabel}>
+        <div className="gh-list-head">
+          <h2>{tabLabel}</h2>
+          {list.data && list.data.items.length > 0 && (
+            <span className="small muted">
+              {list.data.items.length} on page {page}
+              {list.data.hasMore ? ", more available" : ""}
+            </span>
           )}
-          {tab === "history" ? (
-            <ul className="plain">
-              {(list.data.items as unknown as GitHubOperationReceipt[]).map((r) => (
-                <li key={r.requestId}>
-                  <p>
-                    <strong>
-                      {r.action} · {r.state}
-                    </strong>{" "}
-                    · <code>{r.requestId}</code>
-                  </p>
-                  <p>{r.message}</p>
-                  {["unknown", "requested"].includes(r.state) && (
-                    <button
-                      className="btn"
-                      onClick={() => {
-                        setRecovery(r);
-                        setRisk(false);
-                      }}
-                    >
-                      Review recovery
-                    </button>
+        </div>
+        {list.loading && <Loading label="Loading GitHub state…" />}
+        {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
+        {list.data && !list.data.items.length && (
+          <Empty title={`No ${tabLabel.toLowerCase()} on this page`}>
+            <p>Refresh after source changes, select another repository, or check another page.</p>
+          </Empty>
+        )}
+        {list.data && list.data.items.length > 0 && tab === "history" && (
+          <ul className="gh-list">
+            {(list.data.items as unknown as GitHubOperationReceipt[]).map((r) => (
+              <li className="gh-row" key={r.requestId}>
+                <div className="gh-row-main">
+                  <div className="gh-row-text">
+                    <span className="gh-row-title">{label(r.action)}</span>
+                    <p className="gh-row-message">{r.message}</p>
+                    <span className="gh-row-meta">
+                      <code title={r.requestId}>{r.requestId}</code>
+                    </span>
+                  </div>
+                  <div className="gh-row-state">
+                    <ReceiptState state={r.state} />
+                  </div>
+                  <div className="gh-row-time">
+                    <When iso={r.createdAt} />
+                  </div>
+                  <div className="gh-row-action">
+                    {["unknown", "requested"].includes(r.state) && (
+                      <button
+                        className="btn"
+                        onClick={() => {
+                          setRecovery(r);
+                          setRisk(false);
+                        }}
+                      >
+                        Review recovery
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {list.data && list.data.items.length > 0 && tab !== "history" && (
+          <ul className="gh-list">
+            {list.data.items.map((item) => {
+              const row = describe(tab, item);
+              const open = selected?.id === item.id;
+              const detailId = `gh-detail-${tab}-${item.id}`;
+              return (
+                <li className={open ? "gh-row is-open" : "gh-row"} key={item.id}>
+                  <div className="gh-row-main">
+                    <div className="gh-row-text">
+                      <span className="gh-row-title">{row.title}</span>
+                      {row.meta.some(Boolean) && (
+                        <span className="gh-row-meta">{row.meta.filter(Boolean)}</span>
+                      )}
+                    </div>
+                    <div className="gh-row-state">{row.status}</div>
+                    <div className="gh-row-time">
+                      <When iso={row.time} />
+                    </div>
+                    <div className="gh-row-action">
+                      <button
+                        className="btn btn-ghost"
+                        aria-expanded={open}
+                        aria-controls={open ? detailId : undefined}
+                        onClick={() => setSelected(open ? null : item)}
+                      >
+                        {open ? "Hide details" : "Open details"}
+                      </button>
+                    </div>
+                  </div>
+                  {open && (
+                    <div className="gh-row-detail" id={detailId}>
+                      {details(item)}
+                    </div>
                   )}
                 </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Name / ID</th>
-                    <th>State</th>
-                    <th>Context</th>
-                    <th>Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.data.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        {item.name ?? item.key ?? item.id}
-                        <div className="muted">{item.id}</div>
-                      </td>
-                      <td>
-                        {item.status ?? item.state ?? (item.expired ? "Expired" : "Available")}
-                        {item.conclusion ? ` · ${item.conclusion}` : ""}
-                      </td>
-                      <td>
-                        {typeof item.environment === "string"
-                          ? item.environment
-                          : (item.ref ??
-                            item.head_branch ??
-                            item.path ??
-                            (item.run_id ? `Run ${item.run_id}` : ""))}
-                      </td>
-                      <td>
-                        <button className="btn btn-ghost" onClick={() => setSelected(item)}>
-                          Open details
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <div className="actions">
-            <button
-              className="btn"
-              disabled={page === 1}
-              onClick={() => {
-                setPage((p) => p - 1);
-                setSelected(null);
-              }}
-            >
-              Previous page
-            </button>
-            <button
-              className="btn"
-              disabled={!list.data.hasMore}
-              onClick={() => {
-                setPage((p) => p + 1);
-                setSelected(null);
-              }}
-            >
-              Next page
-            </button>
-          </div>
-        </section>
-      )}
-      {tab === "workflows" && selected && (
-        <WorkflowPanel
-          key={selected.id}
-          item={selected}
-          read={read}
-          prepare={prepare}
-          button={button}
-          can={can}
-        />
-      )}
+              );
+            })}
+          </ul>
+        )}
+        {list.data && (
+          <Pager
+            page={page}
+            hasMore={list.data.hasMore}
+            noun={tabLabel}
+            onPage={(p) => {
+              setPage(p);
+              setSelected(null);
+            }}
+          />
+        )}
+      </section>
       {tab === "workflows" && can("github.workflow_save") && (
-        <details className="card">
+        <details className="card gh-create">
           <summary>Create workflow</summary>
           <WorkflowEditor key="new-workflow" prepare={prepare} canSave={true} canDelete={false} />
         </details>
       )}
-      {tab === "runs" && selected && (
-        <RunPanel
-          key={`${selected.id}:${revision}`}
-          item={selected}
-          read={read}
-          button={button}
-          can={can}
-          download={(kind, id, attempt) =>
-            `${root}/download?${new URLSearchParams({ connectionId: scope.connectionId, kind, id: String(id), ...(attempt ? { attempt: String(attempt) } : {}) })}`
-          }
-        />
-      )}
-      {tab === "deployments" && (
-        <DeploymentPanel
-          key={`${selected?.id ?? "new"}:${revision}`}
-          item={selected}
-          read={read}
-          prepare={prepare}
-          button={button}
-          can={can}
-        />
-      )}
-      {tab === "environments" && (
-        <EnvironmentPanel
-          key={`${selected?.id ?? "new"}:${revision}`}
-          item={selected}
-          read={read}
-          prepare={prepare}
-          button={button}
-          can={can}
-        />
-      )}
-      {tab === "artifacts" && selected && (
-        <section className="card">
-          <h2>{selected.name ?? "Artifact"}</h2>
-          <KeyValue
-            items={[
-              ["Source ID", String(selected.id)],
-              ["Size", `${selected.size_in_bytes ?? 0} bytes`],
-              ["Expired", selected.expired ? "Yes" : "No"],
-              ["Workflow run", String(selected.run_id ?? "Unknown")],
-            ]}
+      {tab === "deployments" && !selected && (
+        <details className="card gh-create">
+          <summary>Create deployment</summary>
+          <DeploymentPanel
+            key={`new:${revision}`}
+            item={null}
+            read={read}
+            prepare={prepare}
+            button={button}
+            can={can}
           />
-          <div className="actions">
-            {can("github.artifact_download") && !selected.expired && (
-              <a
-                className="btn"
-                href={`${root}/download?${new URLSearchParams({ connectionId: scope.connectionId, kind: "artifact", id: String(selected.id) })}`}
-              >
-                Download artifact
-              </a>
-            )}
-            {button("github.artifact_delete", { artifactId: selected.id })}
-          </div>
-        </section>
+        </details>
       )}
-      {tab === "caches" && selected && (
-        <section className="card">
-          <h2>{selected.key ?? "Cache"}</h2>
-          <p>
-            {selected.ref} · {selected.size_in_bytes ?? 0} bytes
-          </p>
-          {button("github.cache_delete", {
-            cacheId: selected.id,
-            key: selected.key,
-            ref: selected.ref,
-          })}
-        </section>
+      {tab === "environments" && !selected && (
+        <details className="card gh-create">
+          <summary>Create environment</summary>
+          <EnvironmentPanel
+            key={`new:${revision}`}
+            item={null}
+            read={read}
+            prepare={prepare}
+            button={button}
+            can={can}
+          />
+        </details>
       )}
     </div>
   );
@@ -624,58 +858,67 @@ function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
   );
   const environments = useAsync(() => read<Page>("environments"), [item.id]);
   return (
-    <section className="card">
-      <h2>{item.name ?? "Workflow"}</h2>
-      <p>
-        {item.path} · {item.state}
-      </p>
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setLoadedRef(ref);
-          setInputs({});
-          file.reload();
-        }}
-      >
-        <Field label="Workflow branch, tag or SHA">
-          <input
-            value={ref}
-            required
-            list={`workflow-refs-${item.id}`}
-            onChange={(e) => setRef(e.target.value)}
-          />
-          <datalist id={`workflow-refs-${item.id}`}>
-            {refs.data?.items.map((r, i) => (
-              <option key={`${r.name}:${i}`} value={r.name} />
-            ))}
-          </datalist>
-        </Field>
-        {refs.error && <ErrorBox error={refs.error} />}
-        <div className="actions">
-          <button
-            type="button"
-            className="btn"
-            disabled={refPage === 1}
-            onClick={() => setRefPage((p) => p - 1)}
-          >
-            Previous refs
-          </button>
-          <button
-            type="button"
-            className="btn"
-            disabled={!refs.data?.hasMore}
-            onClick={() => setRefPage((p) => p + 1)}
-          >
-            More refs
-          </button>
+    <div className="gh-detail" role="region" aria-label={item.name ?? "Workflow"}>
+      <div className="gh-detail-head">
+        <KeyValue
+          items={[
+            ["File", <code key="p">{item.path}</code>],
+            ["State", item.state && humanize(item.state)],
+          ]}
+        />
+        <div className="toolbar gh-ops">
+          {button("github.enable", { workflowId: item.id })}
+          {button("github.disable", { workflowId: item.id })}
         </div>
-        <button className="btn">Load ref and inputs</button>
-      </form>
-      {file.loading && <Loading />}
-      {file.error && <ErrorBox error={file.error} onRetry={file.reload} />}
-      {file.data && (
-        <>
+      </div>
+      <section className="gh-section">
+        <h3>Dispatch workflow</h3>
+        <form
+          className="gh-ref-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setLoadedRef(ref);
+            setInputs({});
+            file.reload();
+          }}
+        >
+          <Field label="Workflow branch, tag or SHA">
+            <input
+              value={ref}
+              required
+              list={`workflow-refs-${item.id}`}
+              onChange={(e) => setRef(e.target.value)}
+            />
+            <datalist id={`workflow-refs-${item.id}`}>
+              {refs.data?.items.map((r, i) => (
+                <option key={`${r.name}:${i}`} value={r.name} />
+              ))}
+            </datalist>
+          </Field>
+          <div className="toolbar">
+            <button className="btn">Load ref and inputs</button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={refPage === 1}
+              onClick={() => setRefPage((p) => p - 1)}
+            >
+              Previous refs
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={!refs.data?.hasMore}
+              onClick={() => setRefPage((p) => p + 1)}
+            >
+              More refs
+            </button>
+          </div>
+        </form>
+        {refs.error && <ErrorBox error={refs.error} />}
+        {file.loading && <Loading />}
+        {file.error && <ErrorBox error={file.error} onRetry={file.reload} />}
+        {file.data && (
           <form
             className="form"
             onSubmit={(e) => {
@@ -694,7 +937,6 @@ function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
               });
             }}
           >
-            <h3>Dispatch workflow</h3>
             {file.data.inputs.map((input) =>
               input.type === "boolean" ? (
                 <label className="check" key={input.name}>
@@ -754,33 +996,36 @@ function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
                 </Field>
               ),
             )}
-            <button
-              className="btn btn-primary"
-              disabled={!can("github.dispatch") || !file.data.dispatchable}
-            >
-              Prepare dispatch
-            </button>
-            {!file.data.dispatchable && <p>This ref does not declare workflow_dispatch.</p>}
+            <div className="toolbar">
+              <button
+                className="btn btn-primary"
+                disabled={!can("github.dispatch") || !file.data.dispatchable}
+              >
+                Prepare dispatch
+              </button>
+              <span className="small muted">
+                From <code>{loadedRef}</code>
+              </span>
+            </div>
+            {!file.data.dispatchable && (
+              <p className="small muted">This ref does not declare workflow_dispatch.</p>
+            )}
           </form>
-          {file.data.content !== undefined && (
-            <details>
-              <summary>Edit workflow YAML</summary>
-              <WorkflowEditor
-                key={`${file.data.sha}:${loadedRef}`}
-                prepare={prepare}
-                canSave={can("github.workflow_save")}
-                canDelete={can("github.workflow_delete")}
-                file={{ ...file.data, content: file.data.content, branch: loadedRef }}
-              />
-            </details>
-          )}
-        </>
+        )}
+      </section>
+      {file.data?.content !== undefined && (
+        <details className="gh-section">
+          <summary>Edit workflow YAML</summary>
+          <WorkflowEditor
+            key={`${file.data.sha}:${loadedRef}`}
+            prepare={prepare}
+            canSave={can("github.workflow_save")}
+            canDelete={can("github.workflow_delete")}
+            file={{ ...file.data, content: file.data.content, branch: loadedRef }}
+          />
+        </details>
       )}
-      <div className="actions">
-        {button("github.enable", { workflowId: item.id })}
-        {button("github.disable", { workflowId: item.id })}
-      </div>
-    </section>
+    </div>
   );
 }
 function WorkflowEditor({
@@ -908,133 +1153,191 @@ function RunPanel({
   );
   const params = { runId: item.id, attempt: current.run_attempt ?? 1 };
   return (
-    <section className="card">
-      <h2>Run {item.id}</h2>
+    <div className="gh-detail" aria-label={`Run ${item.id}`} role="region">
       {run.error && <ErrorBox error={run.error} />}
-      <p>
-        Current attempt {current.run_attempt} · {current.status} · {current.conclusion}
-      </p>
-      {current.html_url && (
-        <a href={current.html_url} target="_blank" rel="noreferrer">
-          Open source run
-        </a>
-      )}
-      <label className="check">
-        <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
-        Enable debug logging for the next re-run
-      </label>
-      <div className="actions">
-        {button("github.cancel", params)}
-        {button("github.force_cancel", params)}
-        {button("github.rerun", { ...params, enableDebugLogging: debug })}
-        {button("github.rerun_failed", { ...params, enableDebugLogging: debug })}
-        {button("github.approve_run", params)}
-      </div>
-      <Field label="Inspect log/job attempt">
-        <input
-          type="number"
-          min={1}
-          max={current.run_attempt ?? 1}
-          value={attempt}
-          onChange={(e) => {
-            setAttempt(Number(e.target.value));
-            setJobPage(1);
-          }}
+      <div className="gh-detail-head">
+        <KeyValue
+          items={[
+            ["Status", <RunState key="s" item={current} />],
+            ["Current attempt", String(current.run_attempt ?? 1)],
+            ["Branch", current.head_branch],
+            ["Commit", <ShortSha key="c" sha={current.head_sha} />],
+            ["Trigger", current.event && humanize(current.event)],
+          ]}
         />
-      </Field>
-      <p className="muted">
-        Attempts remain separate. These archives are completed output; full live source capture is
-        being developed separately.
-      </p>
-      {archives.data?.items.find((c) => c.action === "github.logs_download")?.enabled && (
-        <a className="btn" href={download("logs", item.id, attempt)}>
-          Download this attempt's archived logs
-        </a>
-      )}
-      <h3>Jobs and steps</h3>
-      {jobs.loading && <Loading />}
-      {jobs.error && <ErrorBox error={jobs.error} onRetry={jobs.reload} />}
-      {jobs.data && !jobs.data.items.length && <Empty title="No jobs available" />}
-      {jobs.data?.items.map((job) => (
-        <section className="card" key={job.id}>
-          <h4>
-            {job.name} · {job.status} · {job.conclusion}
-          </h4>
-          <ol>
-            {job.steps?.map((step) => (
-              <li key={step.number}>
-                {step.name} · {step.status} · {step.conclusion}
-              </li>
-            ))}
-          </ol>
-          {button("github.rerun_job", { ...params, jobId: job.id, enableDebugLogging: debug })}
-        </section>
-      ))}
-      <div className="actions">
-        <button className="btn" disabled={jobPage === 1} onClick={() => setJobPage((p) => p - 1)}>
-          Previous jobs
-        </button>
-        <button
-          className="btn"
-          disabled={!jobs.data?.hasMore}
-          onClick={() => setJobPage((p) => p + 1)}
-        >
-          More jobs
-        </button>
-      </div>
-      <h3>Pending deployment reviews</h3>
-      {pending.loading && <Loading />}
-      {pending.error && <ErrorBox error={pending.error} />}
-      {pending.data && !pending.data.items.length && <p>No environments are awaiting review.</p>}
-      {pending.data?.items.map((p) => {
-        const env =
-          typeof p.environment === "object"
-            ? p.environment
-            : { id: p.id, name: p.name ?? String(p.id) };
-        return (
-          <label className="check" key={env.id}>
-            <input
-              type="checkbox"
-              disabled={!p.current_user_can_approve}
-              checked={envIds.includes(env.id)}
-              onChange={(e) =>
-                setEnvIds(
-                  e.target.checked ? [...envIds, env.id] : envIds.filter((x) => x !== env.id),
-                )
-              }
-            />
-            {env.name}
-            {!p.current_user_can_approve
-              ? " — Your GitHub identity cannot approve this environment."
-              : ""}
-          </label>
-        );
-      })}
-      <Field label="Deployment review comment">
-        <input value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} />
-      </Field>
-      <div className="actions">
-        {envIds.length > 0 && comment.trim() && (
-          <>
-            {button(
-              "github.review_deployment",
-              { ...params, environmentIds: envIds, state: "approved", comment },
-              "Approve selected deployments",
-            )}
-            {button(
-              "github.review_deployment",
-              { ...params, environmentIds: envIds, state: "rejected", comment },
-              "Reject selected deployments",
-            )}
-          </>
+        {current.html_url && (
+          <a className="btn btn-ghost" href={current.html_url} target="_blank" rel="noreferrer">
+            Open source run
+          </a>
         )}
       </div>
-      <h3>Cleanup</h3>
-      <div className="actions">
-        {button("github.delete_logs", params)}
-        {button("github.delete_run", params)}
-      </div>
-    </section>
+      <section className="gh-section" aria-labelledby={`run-${item.id}-actions`}>
+        <h3 id={`run-${item.id}-actions`}>Run actions</h3>
+        <div className="toolbar gh-ops">
+          {button("github.cancel", params)}
+          {button("github.force_cancel", params)}
+          {button("github.rerun", { ...params, enableDebugLogging: debug })}
+          {button("github.rerun_failed", { ...params, enableDebugLogging: debug })}
+          {button("github.approve_run", params)}
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
+          Enable debug logging for the next re-run
+        </label>
+      </section>
+      <section className="gh-section" aria-labelledby={`run-${item.id}-jobs`}>
+        <div className="gh-section-head">
+          <h3 id={`run-${item.id}-jobs`}>Jobs and steps</h3>
+          <div className="toolbar">
+            <label className="gh-inline-field">
+              <span>Inspect log/job attempt</span>
+              <input
+                type="number"
+                min={1}
+                max={current.run_attempt ?? 1}
+                value={attempt}
+                onChange={(e) => {
+                  setAttempt(Number(e.target.value));
+                  setJobPage(1);
+                }}
+              />
+            </label>
+            {archives.data?.items.find((c) => c.action === "github.logs_download")?.enabled && (
+              <a className="btn" href={download("logs", item.id, attempt)}>
+                Download this attempt's archived logs
+              </a>
+            )}
+          </div>
+        </div>
+        <p className="small muted">
+          Attempts remain separate. These archives are completed output; full live source capture is
+          being developed separately.
+        </p>
+        {jobs.loading && <Loading />}
+        {jobs.error && <ErrorBox error={jobs.error} onRetry={jobs.reload} />}
+        {jobs.data && !jobs.data.items.length && <Empty title="No jobs available" />}
+        {jobs.data && jobs.data.items.length > 0 && (
+          <ul className="gh-jobs">
+            {jobs.data.items.map((job) => (
+              <li className="gh-job" key={job.id}>
+                <div className="gh-job-head">
+                  <span className="gh-job-name">{job.name}</span>
+                  <RunState item={job} />
+                  <span className="gh-job-action">
+                    {button("github.rerun_job", {
+                      ...params,
+                      jobId: job.id,
+                      enableDebugLogging: debug,
+                    })}
+                  </span>
+                </div>
+                {!!job.steps?.length && (
+                  <ol className="gh-steps">
+                    {job.steps.map((step) => (
+                      <li key={step.number}>
+                        <span className="gh-step-number">{step.number}</span>
+                        <span className="gh-step-name">{step.name}</span>
+                        <RunState item={step} />
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {jobs.data && (jobPage > 1 || jobs.data.hasMore) && (
+          <div className="toolbar">
+            <button
+              className="btn"
+              disabled={jobPage === 1}
+              onClick={() => setJobPage((p) => p - 1)}
+            >
+              Previous jobs
+            </button>
+            <button
+              className="btn"
+              disabled={!jobs.data.hasMore}
+              onClick={() => setJobPage((p) => p + 1)}
+            >
+              More jobs
+            </button>
+          </div>
+        )}
+      </section>
+      <section className="gh-section" aria-labelledby={`run-${item.id}-reviews`}>
+        <h3 id={`run-${item.id}-reviews`}>Pending deployment reviews</h3>
+        {pending.loading && <Loading />}
+        {pending.error && <ErrorBox error={pending.error} />}
+        {pending.data && !pending.data.items.length && (
+          <p className="small muted">No environments are awaiting review.</p>
+        )}
+        {pending.data && pending.data.items.length > 0 && (
+          <div className="form">
+            <fieldset>
+              <legend>Environments</legend>
+              {pending.data.items.map((p) => {
+                const env =
+                  typeof p.environment === "object"
+                    ? p.environment
+                    : { id: p.id, name: p.name ?? String(p.id) };
+                return (
+                  <label className="check" key={env.id}>
+                    <input
+                      type="checkbox"
+                      disabled={!p.current_user_can_approve}
+                      checked={envIds.includes(env.id)}
+                      onChange={(e) =>
+                        setEnvIds(
+                          e.target.checked
+                            ? [...envIds, env.id]
+                            : envIds.filter((x) => x !== env.id),
+                        )
+                      }
+                    />
+                    {env.name}
+                    {!p.current_user_can_approve
+                      ? " — Your GitHub identity cannot approve this environment."
+                      : ""}
+                  </label>
+                );
+              })}
+            </fieldset>
+            <Field label="Deployment review comment">
+              <input
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                maxLength={2000}
+              />
+            </Field>
+            {envIds.length > 0 && comment.trim() ? (
+              <div className="toolbar">
+                {button(
+                  "github.review_deployment",
+                  { ...params, environmentIds: envIds, state: "approved", comment },
+                  "Approve selected deployments",
+                )}
+                {button(
+                  "github.review_deployment",
+                  { ...params, environmentIds: envIds, state: "rejected", comment },
+                  "Reject selected deployments",
+                )}
+              </div>
+            ) : (
+              <p className="small muted">Select environments and add a comment to review them.</p>
+            )}
+          </div>
+        )}
+      </section>
+      <section className="gh-section gh-danger" aria-labelledby={`run-${item.id}-cleanup`}>
+        <h3 id={`run-${item.id}-cleanup`}>Cleanup</h3>
+        <p className="small muted">These permanently remove the run or its logs on GitHub.</p>
+        <div className="toolbar gh-ops">
+          {button("github.delete_logs", params)}
+          {button("github.delete_run", params)}
+        </div>
+      </section>
+    </div>
   );
 }
 function DeploymentPanel({
@@ -1097,25 +1400,36 @@ function DeploymentPanel({
     }
   }
   return (
-    <section className="card">
-      <h2>{item ? `Deployment ${item.id}` : "Create deployment"}</h2>
+    <div className="gh-detail">
       {item ? (
         <>
           <KeyValue
             items={[
               ["Ref", item.ref],
               ["Environment", typeof item.environment === "string" ? item.environment : null],
-              ["SHA", item.sha],
+              ["SHA", item.sha && <code key="sha">{item.sha}</code>],
             ]}
           />
-          {statuses.error && <ErrorBox error={statuses.error} />}
-          <ul>
-            {statuses.data?.items.map((s) => (
-              <li key={s.id}>
-                {s.state} · {s.description}
-              </li>
-            ))}
-          </ul>
+          <section className="gh-section">
+            <h3>Status history</h3>
+            {statuses.loading && <Loading />}
+            {statuses.error && <ErrorBox error={statuses.error} />}
+            {statuses.data && !statuses.data.items.length && (
+              <p className="small muted">GitHub has no statuses for this deployment yet.</p>
+            )}
+            {statuses.data && statuses.data.items.length > 0 && (
+              <ul className="gh-plain-list">
+                {statuses.data.items.map((s) => (
+                  <li key={s.id}>
+                    <span className="badge">{humanize(s.state)}</span>
+                    <span>{s.description}</span>
+                    <When iso={s.created_at} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <h3>Update status</h3>
           <form
             className="form"
             onSubmit={(e) => {
@@ -1178,7 +1492,12 @@ function DeploymentPanel({
               Prepare status update
             </button>
           </form>
-          {button("github.deployment_delete", { deploymentId: item.id })}
+          <section className="gh-section gh-danger">
+            <h3>Delete deployment</h3>
+            <div className="toolbar gh-ops">
+              {button("github.deployment_delete", { deploymentId: item.id })}
+            </div>
+          </section>
         </>
       ) : (
         <form className="form" onSubmit={create}>
@@ -1242,7 +1561,7 @@ function DeploymentPanel({
           </button>
         </form>
       )}
-    </section>
+    </div>
   );
 }
 function EnvironmentPanel({
@@ -1351,8 +1670,7 @@ function EnvironmentEditor({
     });
   }
   return (
-    <section className="card">
-      <h2>{item ? `Environment ${item.name}` : "Create environment"}</h2>
+    <div className="gh-detail">
       <form className="form" onSubmit={save}>
         <Field label="Environment name">
           <input
@@ -1430,7 +1748,7 @@ function EnvironmentEditor({
         <>
           <h3>Deployment branch policies</h3>
           {policies.error && <ErrorBox error={policies.error} />}
-          <ul>
+          <ul className="gh-plain-list">
             {policies.data?.items.map((p) => (
               <li key={p.id}>
                 {p.name} · {p.type}{" "}
@@ -1490,7 +1808,7 @@ function EnvironmentEditor({
           </form>
           <h3>Custom deployment protection integrations</h3>
           {customRules.error && <ErrorBox error={customRules.error} />}
-          <ul>
+          <ul className="gh-plain-list">
             {customRules.data?.items.map((rule) => (
               <li key={rule.id}>
                 {rule.name}
@@ -1499,7 +1817,7 @@ function EnvironmentEditor({
             ))}
           </ul>
           {ruleApps.error && <ErrorBox error={ruleApps.error} />}
-          <ul>
+          <ul className="gh-plain-list">
             {ruleApps.data?.items.map((app) => (
               <li key={app.id}>
                 {app.name}
@@ -1511,9 +1829,14 @@ function EnvironmentEditor({
             Custom rule decisions are supplied by the registered GitHub App. A user cannot
             impersonate that integration to approve its callback.
           </p>
-          {button("github.environment_delete", { environment: name })}
+          <section className="gh-section gh-danger">
+            <h3>Delete environment</h3>
+            <div className="toolbar gh-ops">
+              {button("github.environment_delete", { environment: name })}
+            </div>
+          </section>
         </>
       )}
-    </section>
+    </div>
   );
 }
