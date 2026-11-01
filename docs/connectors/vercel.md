@@ -106,6 +106,73 @@ Afe uses only two non-GET calls, both to manage its own access:
 Afe never stores environment-variable values. `env` and `build.env` fields are
 stripped from every API response and webhook payload.
 
+## Acceptance checklist (AFE-11, real Vercel team)
+
+The automated tests use recorded fixtures. This checklist covers the AFE-11
+"done when" criteria against a real Vercel team. Run it once per auth path, and
+tick off the matching items in ADR 0005 "To verify against the docs" as you go.
+Use a throwaway team with at least three projects (`A`, `B`, `C`). Every
+`/api/*` call needs `-H "Authorization: Bearer $AFE_ADMIN_TOKEN"` (shortened
+here to `afe`).
+
+```sh
+afe() { curl -sS -H "Authorization: Bearer $AFE_ADMIN_TOKEN" -H 'Content-Type: application/json' "$AFE_PUBLIC_URL$@"; }
+```
+
+### Integration path
+
+1. **Permissions.** In the Integrations Console, confirm that Read exists and is
+   the only level granted for User, Team, Projects and Deployments, and that
+   nothing else is granted (ADR items 1 and 2). Note the exact console names.
+2. **Connect.** Open `$AFE_PUBLIC_URL/api/connections/vercel/install` in a
+   browser that is logged in to Afe. In Vercel, choose the test team and grant
+   only projects `A` and `B`. You land back in Afe, on the project picker
+   (ADR items 6 and 7).
+   - `afe /api/connections` lists a `vercel` connection. Note its `id` (used
+     as `<id>` below). Its external id is the team id, and its config has
+     `mode: "integration"` and no project selected.
+   - The server log has no token, client secret or `code` value in it.
+3. **Marketplace refusal.** Start an installation from the integration's
+   Vercel marketplace page instead. Afe must refuse it and say to start from
+   Afe.
+4. **Selection.** `afe /api/connections/vercel/<id>/projects` lists `A` and
+   `B` only (not `C`), none selected.
+   - `afe /api/connections/vercel/<id>/projects -X PUT -d '{"projectIds":["<A>"]}'`
+     succeeds. The same call with `C`'s id, or a made-up id, returns 400
+     `unknown_projects`.
+   - Deploy `A` and `B`. Within a poll cycle (3 minutes), `afe /api/events`
+     shows `A`'s deployment and nothing from `B`. With webhooks on, `A` arrives
+     within seconds (ADR item 4: signature accepted).
+   - Switch to `{"projects":"all"}`. `B`'s deployment then appears.
+5. **Uninstall in Vercel.** Remove the integration in Team Settings >
+   Integrations. Afe receives `integration-configuration.removed` and the
+   connection becomes `revoked` (ADR item 3). If the webhook never arrives, the
+   next poll gets 401/403 and revokes it.
+6. **Disconnect from Afe.** Reconnect, then
+   `afe /api/connections/vercel/<id> -X DELETE`. The response reports whether
+   Afe removed its installation (ADR item 8). Check in Vercel that the
+   integration is gone. If it is still there, record that and the error.
+   `afe /api/connections` no longer lists the connection.
+
+### Token path
+
+1. Create a token scoped to the test team, with a 1-day expiry, as a member with
+   the least-privileged role.
+2. `afe /api/connections/vercel -X POST -d '{"token":"…","teamId":"team_…"}'`.
+   The connection has `mode: "token"` and no project selected. Repeat step 4
+   above.
+3. Optional (Pro or Enterprise): add a team webhook pointing at
+   `/webhooks/vercel/<team id>`, reconnect with `webhookSecret`, and check
+   that a deployment of a selected project arrives by webhook.
+4. **Revocation.** Delete the token in Vercel. Within one poll cycle the
+   connection becomes `revoked` with an auth reason. Reconnecting with a new
+   token makes it `active` again.
+5. **Disconnect.** `DELETE` the connection. Afe's credential is destroyed and
+   the response tells the user to delete the token in Vercel.
+
+Record the results, including any differences from ADR 0005, in the AFE-11
+issue. Fix any mismatch in code and in ADR 0005 before marking the issue done.
+
 ## Event capture
 
 Afe records every way a Vercel deployment can happen, and who caused it, as
