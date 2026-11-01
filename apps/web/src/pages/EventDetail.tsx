@@ -13,7 +13,13 @@ import {
   useAsync,
   useDocumentTitle,
 } from "../components.tsx";
-import { formatBytes, formatDateTime, formatDuration, humanize } from "../format.ts";
+import {
+  formatBytes,
+  formatDateTime,
+  formatDuration,
+  humanize,
+  qualifiedAction,
+} from "../format.ts";
 import { Link } from "../router.tsx";
 import { ContainmentPanel, containmentSubject } from "./ContainmentPanel.tsx";
 import { JourneyLinks } from "./JourneyLinks.tsx";
@@ -52,7 +58,7 @@ const CORRELATION_PARAMS: Partial<Record<keyof Correlation, string>> = {
 export function EventDetailPage({ id }: { id: string }) {
   const { managed } = useAccess();
   const { data, error, loading, reload } = useAsync((s) => api.event(id, s), [id]);
-  useDocumentTitle(data ? data.event.action : "Event");
+  useDocumentTitle(data ? qualifiedAction(data.event) : "Event");
   if (loading) return <Loading label="Loading event…" />;
   if (error)
     return (
@@ -78,7 +84,7 @@ export function EventDetailPage({ id }: { id: string }) {
       </p>
       <header className="page-header">
         <div>
-          <h1 className="mono-title">{e.action}</h1>
+          <h1 className="mono-title">{qualifiedAction(e)}</h1>
           <p className="lede">
             <ToolBadge source={e.source} /> <OutcomeBadge outcome={e.outcome} />{" "}
             <MethodBadge method={p.method} /> occurred{" "}
