@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   GITHUB_OPERATIONS,
+  permitsGitHubAction,
   GITHUB_OPERATION_NAMES,
   type GitHubOperation,
   type GitHubOperationParams,
@@ -99,11 +100,7 @@ export class GitHubOperations {
   async identity(req: FastifyRequest) {
     const tid = requestTenant(req),
       uid = await githubUserId(this.ctx, req);
-    if (!uid)
-      throw fail(
-        403,
-        "Link a personal GitHub identity with explicit Afe repository grants to operate GitHub.",
-      );
+    if (!uid) throw fail(403, "Link your GitHub identity in Profile to use GitHub operations.");
     const policy = await getUserToolPolicy(this.ctx.pool, tid, uid, "github");
     if (policy.mode === "none") throw fail(403, "GitHub access is disabled for this account.");
     const account = (await toolAccounts(this.ctx, tid, uid)).find((a) => a.tool === "github");
@@ -190,9 +187,7 @@ export class GitHubOperations {
       path: `/repos/${repo.split("/").map(segment).join("/")}`,
       write: false,
       admin: false,
-      grants: custom
-        ? policy.custom.filter((g) => g.resource === `repository:${repo}`).map((g) => g.action)
-        : [],
+      grants: GITHUB_OPERATION_NAMES.filter((action) => permitsGitHubAction(policy, repo, action)),
     };
     const upstream = (
       await this.request<{ permissions?: { push?: boolean; maintain?: boolean; admin?: boolean } }>(
@@ -207,14 +202,15 @@ export class GitHubOperations {
   }
   require(c: GitHubOperationContext, action: GitHubOperation) {
     const d = GITHUB_OPERATIONS.find((o) => o[0] === action)!;
-    if (
-      !c.grants.includes(action) ||
-      (d[4] === "write" && !c.write) ||
-      (d[4] === "admin" && !c.admin)
-    )
+    if (!c.grants.includes(action))
       throw fail(
         403,
-        `Requires the exact ${action} Afe repository grant and current GitHub ${d[4]} permission. GitHub token scopes and reviewer rules also apply.`,
+        `Afe policy restricts ${action} on repository:${c.repository}. Ask an administrator to review your GitHub tool permissions.`,
+      );
+    if ((d[4] === "write" && !c.write) || (d[4] === "admin" && !c.admin))
+      throw fail(
+        403,
+        `GitHub repository ${d[4]} permission is required. Check the linked account and token permissions.`,
       );
   }
   async run(c: GitHubOperationContext, id: unknown, attempt?: unknown) {
@@ -960,7 +956,7 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         return {
           items: GITHUB_OPERATIONS.map(([action, label, group, destructive, level]) => {
             const reason = !c.grants.includes(action)
-              ? `Requires ${action} on repository:${c.repository}.`
+              ? `Afe policy restricts ${action} on repository:${c.repository}. Ask an administrator to review your GitHub tool permissions.`
               : level === "admin" && !c.admin
                 ? "GitHub repository admin permission is required."
                 : level === "write" && !c.write
@@ -1048,6 +1044,11 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         };
       }
       if (view === "workflow_file") {
+        if (!c.write)
+          throw fail(
+            403,
+            "GitHub repository write permission is required to inspect workflow inputs or source.",
+          );
         if (
           !["github.dispatch", "github.workflow_save", "github.workflow_delete"].some((a) =>
             c.grants.includes(a),

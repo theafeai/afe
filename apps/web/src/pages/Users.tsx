@@ -39,7 +39,11 @@ const EXAMPLES: Record<string, string> = {
   argocd: "application:app-name",
   terraform: "connection:connection-id",
 };
-type Policy = { mode: string; custom: { resource: string; action: string }[] };
+type Policy = {
+  mode: string;
+  custom: { resource: string; action: string }[];
+  denied?: { resource: string; action: string }[];
+};
 export function UsersPage() {
   useDocumentTitle("Users");
   const { admin } = useAccess();
@@ -378,6 +382,9 @@ function ToolPermissionEditor({
       .map((g) => (g.action === "read" ? g.resource : `${g.resource} ${g.action}`))
       .join("\n"),
   );
+  const [restrictions, setRestrictions] = useState(
+    (policy.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -390,6 +397,18 @@ function ToolPermissionEditor({
     try {
       await request("PUT", `/api/admin/users/${userId}/permissions/${tool}`, {
         mode,
+        ...(tool === "github"
+          ? {
+              denied: restrictions
+                .split("\n")
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .map((line) => {
+                  const [resource, action = ""] = line.split(/\s+/);
+                  return { resource, action };
+                }),
+            }
+          : {}),
         custom: grants
           .split("\n")
           .map((s) => s.trim())
@@ -435,7 +454,9 @@ function ToolPermissionEditor({
             ))}
           </select>
           <p className="small muted" id={`mode-help-${tool}`}>
-            {MODES[mode]?.help}
+            {tool === "github" && mode === "source"
+              ? "Read access and supported GitHub operations follow the user’s linked account, except restricted actions. Custom grants are kept but do not apply."
+              : MODES[mode]?.help}
           </p>
         </div>
         {custom && (
@@ -466,26 +487,49 @@ function ToolPermissionEditor({
                 <p>Add a resource above to grant access. An empty list adds no custom access.</p>
               </Empty>
             )}
-            {tool === "github" && (
-              <>
-                <div className="callout small">
-                  GitHub operations need an exact lowercase repository and action on each line, for
-                  example <code>repository:theafeai/afe github.logs_download</code>. Each action
-                  needs its own grant; wildcards are not supported. The user also needs the GitHub
-                  access required by the operation. A PAT alone does not assign Afe action grants.
-                </div>
-                <details>
-                  <summary>Supported GitHub operation grants</summary>
-                  <ul className="users-permission-catalog">
-                    {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
-                      <li key={action}>
-                        <code>{action}</code> — {label} (GitHub {level})
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </>
-            )}
+          </>
+        )}
+        {tool === "github" && (
+          <>
+            <div className="callout small">
+              Source inherits supported operations from the linked GitHub account. Custom and Source
+              + custom require an exact lowercase repository and action on each line, for example{" "}
+              <code>repository:theafeai/afe github.logs_download</code>. Each action needs its own
+              grant; wildcards are not supported. GitHub permissions still apply in every mode.
+            </div>
+            <div className="field">
+              <label htmlFor="github-restrictions">GitHub action restrictions (optional)</label>
+              <textarea
+                id="github-restrictions"
+                aria-label="GitHub action restrictions"
+                rows={4}
+                value={restrictions}
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-describedby="github-restrictions-help"
+                placeholder="repository:owner/name github.delete_run"
+                onChange={(e) => {
+                  setRestrictions(e.target.value);
+                  setSaved(false);
+                }}
+              />
+              <p className="small muted" id="github-restrictions-help">
+                Block one repository/action per line, for example{" "}
+                <code>repository:owner/name github.delete_run</code>. Leave empty to apply no
+                additional action restrictions. Restrictions override inherited access and
+                allowlists in every mode.
+              </p>
+            </div>
+            <details>
+              <summary>Supported GitHub operation grants</summary>
+              <ul className="users-permission-catalog">
+                {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
+                  <li key={action}>
+                    <code>{action}</code> — {label} (GitHub {level})
+                  </li>
+                ))}
+              </ul>
+            </details>
           </>
         )}
         <div className="button-row">

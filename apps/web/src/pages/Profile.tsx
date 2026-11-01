@@ -261,13 +261,14 @@ export function ProfilePage() {
           <p>
             Link GitHub below using this administrator login. Anyone sharing the same Afe
             administrator credential shares this GitHub link. Linking enables repository discovery;
-            operations also require explicit repository/action grants.
+            Source mode inherits GitHub permissions; administrators can add optional Afe
+            restrictions.
           </p>
           {data.administratorGitHub.username && (
             <p>
-              To assign grants, select <code>{data.administratorGitHub.username}</code> in{" "}
-              <Link to="/users">Users</Link>. Use source + custom to keep repository discovery and
-              add operation grants.
+              To manage permissions, select <code>{data.administratorGitHub.username}</code> in{" "}
+              <Link to="/users">Users</Link>. Choose Source to inherit GitHub permissions and add
+              optional action restrictions if needed.
             </p>
           )}
         </section>

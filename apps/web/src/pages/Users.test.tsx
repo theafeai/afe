@@ -144,6 +144,10 @@ const initialTools = () =>
       tool,
       {
         mode: tool === "github" ? "source + custom" : "none",
+        denied:
+          tool === "github"
+            ? [{ resource: "repository:theafeai/afe", action: "github.delete_run" }]
+            : [],
         custom:
           tool === "github"
             ? [
@@ -184,7 +188,13 @@ it("preserves hidden grants when changing mode and clears saved feedback on edit
   expect(screen.queryByLabelText("Resource grants", { selector: "#grants-github" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
   await screen.findByText("Saved GitHub permissions.");
-  expect(writes).toEqual([{ mode: "source", custom: initialTools().github!.custom }]);
+  expect(writes).toEqual([
+    {
+      mode: "source",
+      custom: initialTools().github!.custom,
+      denied: initialTools().github!.denied,
+    },
+  ]);
   fireEvent.change(mode, { target: { value: "custom" } });
   expect(screen.queryByText("Saved GitHub permissions.")).toBeNull();
   expect(
@@ -236,4 +246,50 @@ it("shows permission loading and retry, keeps failed drafts, and disables contro
   expect(grants.closest("fieldset")!.disabled).toBe(false);
   fireEvent.change(grants, { target: { value: "" } });
   expect(screen.getByText("No custom grants")).toBeTruthy();
+});
+
+it("lets administrators layer optional GitHub restrictions on Source without duplicate grants", async () => {
+  let saved: unknown;
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email")
+      return json({ enabled: false, configured: false, deliveries: [] });
+    if (url === "/api/admin/users")
+      return json({ users: [{ id: "u1", username: "alice", disabled: false }] });
+    if (url === "/api/admin/users/u1/permissions")
+      return json({
+        tools: Object.fromEntries(
+          ["github", "vercel", "argocd", "terraform"].map((tool) => [
+            tool,
+            {
+              mode: tool === "github" ? "source" : "none",
+              custom: [],
+              denied:
+                tool === "github"
+                  ? [{ resource: "repository:acme/app", action: "github.delete_run" }]
+                  : [],
+            },
+          ]),
+        ),
+      });
+    if (url === "/api/admin/users/u1/permissions/github" && init?.method === "PUT") {
+      saved = JSON.parse(String(init.body));
+      return json({ ok: true });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+  const field = await screen.findByLabelText("GitHub action restrictions");
+  expect((field as HTMLTextAreaElement).value).toBe("repository:acme/app github.delete_run");
+  fireEvent.change(field, { target: { value: "repository:acme/app github.environment_delete" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
+  await screen.findByText("Saved GitHub permissions.");
+  expect(saved).toEqual({
+    mode: "source",
+    custom: [],
+    denied: [{ resource: "repository:acme/app", action: "github.environment_delete" }],
+  });
 });
