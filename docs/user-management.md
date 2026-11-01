@@ -72,6 +72,19 @@ network errors or rate limits fail closed for source access, while independent
 custom grants still work. Large GitHub accounts are bounded to 5,000 repositories
 per authorization check; exceeding this fails closed.
 
+### Administrator GitHub linking
+
+Administrators can link a personal GitHub account directly in **Profile** without
+creating or signing in as a separate user. The first link creates a
+`github-admin-…` account for encrypted token storage and permissions. Profile
+identifies that account in **Users**. It starts with GitHub source access; select
+**source + custom** and add exact repository/action grants to enable operations.
+Administrator authority does not replace GitHub operation grants or source roles.
+See [GitHub operations](github-actions.md) for token permissions and grants.
+
+Apply migration `0034_github_admin_identities.sql` before using administrator
+linking. Managed-user linking and hosted `githubUserId` mappings are preserved.
+
 ### GitHub OAuth
 
 Configure a dedicated GitHub OAuth application (or a GitHub App with appropriate
