@@ -1,13 +1,45 @@
 import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
-import { ErrorBox, Loading, useAsync, useDocumentTitle } from "../components.tsx";
+import {
+  Empty,
+  ErrorBox,
+  Loading,
+  ToolBadge,
+  toolLabel,
+  useAsync,
+  useDocumentTitle,
+} from "../components.tsx";
+import "./Users.css";
 import { useAccess } from "../access.tsx";
 import { useToast } from "../toast.tsx";
 
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
-const MODES = ["none", "source", "custom", "source + custom"];
+const MODES: Record<string, { label: string; help: string }> = {
+  none: {
+    label: "No access",
+    help: "This tool is unavailable to the user. Custom grants are kept but do not apply.",
+  },
+  source: {
+    label: "Linked tool account",
+    help: "Read access follows the user’s linked tool account. Custom grants are kept but do not apply.",
+  },
+  custom: {
+    label: "Custom grants",
+    help: "Only the resource grants below apply. Source access is not included.",
+  },
+  "source + custom": {
+    label: "Linked tool account + custom grants",
+    help: "Combines read access from the linked tool account with the resource grants below.",
+  },
+};
+const EXAMPLES: Record<string, string> = {
+  github: "repository:theafeai/afe",
+  vercel: "project:project-id",
+  argocd: "application:app-name",
+  terraform: "connection:connection-id",
+};
 type Policy = {
   mode: string;
   custom: { resource: string; action: string }[];
@@ -40,9 +72,6 @@ export function UsersPage() {
   const [failure, setFailure] = useState<Error | null>(null);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [policies, setPolicies] = useState<Record<string, Policy> | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [restrictions, setRestrictions] = useState("");
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setFailure(null);
@@ -73,31 +102,11 @@ export function UsersPage() {
       reload();
     });
   }
-  async function select(u: User) {
+  function select(u: User) {
     setSelected(u);
     setUserEmail(u.email ?? "");
-    setPolicies(null);
     setToken(null);
-    await run(async () => {
-      const r = await request<{ tools: Record<string, Policy> }>(
-        "GET",
-        `/api/admin/users/${u.id}/permissions`,
-      );
-      setPolicies(r.tools);
-      setRestrictions(
-        (r.tools.github?.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
-      );
-      setDrafts(
-        Object.fromEntries(
-          TOOLS.map((t) => [
-            t,
-            r.tools[t]!.custom.map((g) =>
-              g.action === "read" ? g.resource : `${g.resource} ${g.action}`,
-            ).join("\n"),
-          ]),
-        ),
-      );
-    });
+    setFailure(null);
   }
   if (!admin)
     return (
@@ -307,125 +316,223 @@ export function UsersPage() {
               )}
             </form>
           )}
-          <h3>Tool permissions</h3>
-          <p>
-            Source uses the user's linked tool account. Custom grants add read access to specific
-            resources. For GitHub, Source inherits your linked account’s permissions without
-            separate action grants. Custom and Source + custom keep explicit action allowlists.
-            Optional GitHub restrictions below apply in every mode; GitHub permissions still apply.
-          </p>
-          <p>
-            Enter one resource per line: <code>repository:owner/name</code>,{" "}
-            <code>project:project-id</code>, <code>application:app-name</code>, or{" "}
-            <code>connection:connection-id</code>. A connection grant includes all events from that
-            connection.
-          </p>
-          <p>
-            For GitHub action allowlists or restrictions, append <code>github.cancel</code>,{" "}
-            <code>github.rerun</code>, or <code>github.rerun_failed</code> after a lowercase
-            repository resource, for example <code>repository:owner/name github.cancel</code>. Each
-            grant goes on its own line. The catalog below lists all supported operations.
-          </p>
-          <details>
-            <summary>GitHub operation grants</summary>
-            <ul>
-              {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
-                <li key={action}>
-                  <code>{action}</code> — {label} (GitHub {level})
-                </li>
-              ))}
-            </ul>
-            <p>
-              Source mode inherits these actions. Allowlists and restrictions name an exact
-              repository and action; wildcard grants are not supported.
-            </p>
-          </details>
-          {policies &&
-            TOOLS.map((tool) => (
-              <form
-                className="form card"
-                key={tool}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void run(async () => {
-                    await request("PUT", `/api/admin/users/${selected.id}/permissions/${tool}`, {
-                      mode: policies[tool]!.mode,
-                      ...(tool === "github"
-                        ? {
-                            denied: restrictions
-                              .split("\n")
-                              .map((s) => s.trim())
-                              .filter(Boolean)
-                              .map((line) => {
-                                const [resource, action = ""] = line.split(/\s+/);
-                                return { resource, action };
-                              }),
-                          }
-                        : {}),
-                      custom: (drafts[tool] ?? "")
-                        .split("\n")
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                        .map((line) => {
-                          const [resource, action = "read"] = line.split(/\s+/);
-                          return { resource, action };
-                        }),
-                    });
-                    toast(`Saved ${tool} permissions.`);
-                  });
-                }}
-              >
-                <h4>{tool}</h4>
-                <label htmlFor={`mode-${tool}`}>Permission mode</label>
-                <select
-                  id={`mode-${tool}`}
-                  value={policies[tool]!.mode}
-                  onChange={(e) =>
-                    setPolicies({
-                      ...policies,
-                      [tool]: { ...policies[tool]!, mode: e.target.value },
-                    })
-                  }
-                >
-                  {MODES.map((m) => (
-                    <option key={m}>{m}</option>
-                  ))}
-                </select>
-                {["custom", "source + custom"].includes(policies[tool]!.mode) && (
-                  <>
-                    <label htmlFor={`grants-${tool}`}>Resource grants</label>
-                    <textarea
-                      id={`grants-${tool}`}
-                      rows={4}
-                      value={drafts[tool] ?? ""}
-                      onChange={(e) => setDrafts({ ...drafts, [tool]: e.target.value })}
-                    />
-                  </>
-                )}
-                {tool === "github" && (
-                  <label className="field">
-                    <span>GitHub action restrictions (optional)</span>
-                    <textarea
-                      rows={4}
-                      aria-label="GitHub action restrictions"
-                      value={restrictions}
-                      onChange={(e) => setRestrictions(e.target.value)}
-                      aria-describedby="github-restrictions-help"
-                    />
-                    <span className="small muted" id="github-restrictions-help">
-                      Block one repository/action per line, for example repository:owner/name
-                      github.delete_run. Leave empty to apply no additional action restrictions.
-                      Restrictions override inherited access and allowlists.
-                    </span>
-                  </label>
-                )}
-                <button className="btn" disabled={busy}>
-                  Save {tool} permissions
-                </button>
-              </form>
-            ))}
+          <ToolPermissions key={selected.id} userId={selected.id} disabled={busy} />
         </section>
       )}
     </div>
+  );
+}
+
+function ToolPermissions({ userId, disabled }: { userId: string; disabled: boolean }) {
+  const { data, error, loading, reload } = useAsync(
+    (signal) =>
+      request<{ tools: Record<string, Policy> }>(
+        "GET",
+        `/api/admin/users/${userId}/permissions`,
+        undefined,
+        signal,
+      ),
+    [userId],
+  );
+  return (
+    <section className="users-permissions" aria-labelledby="tool-permissions-title">
+      <div>
+        <h3 id="tool-permissions-title">Tool permissions</h3>
+        <p className="muted">
+          Choose how this account can access each tool. Save changes separately for each tool.
+        </p>
+      </div>
+      {loading ? (
+        <Loading label="Loading tool permissions…" />
+      ) : error ? (
+        <ErrorBox title="Tool permissions could not be loaded" error={error} onRetry={reload} />
+      ) : (
+        data &&
+        TOOLS.map((tool) => (
+          <ToolPermissionEditor
+            key={tool}
+            userId={userId}
+            tool={tool}
+            policy={data.tools[tool]!}
+            disabled={disabled}
+          />
+        ))
+      )}
+    </section>
+  );
+}
+
+function ToolPermissionEditor({
+  userId,
+  tool,
+  policy,
+  disabled,
+}: {
+  userId: string;
+  tool: string;
+  policy: Policy;
+  disabled: boolean;
+}) {
+  const name = toolLabel(tool);
+  const [mode, setMode] = useState(policy.mode);
+  const [grants, setGrants] = useState(
+    policy.custom
+      .map((g) => (g.action === "read" ? g.resource : `${g.resource} ${g.action}`))
+      .join("\n"),
+  );
+  const [restrictions, setRestrictions] = useState(
+    (policy.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
+  );
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+  const [error, setError] = useState<Error | null>(null);
+  const custom = ["custom", "source + custom"].includes(mode);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await request("PUT", `/api/admin/users/${userId}/permissions/${tool}`, {
+        mode,
+        ...(tool === "github"
+          ? {
+              denied: restrictions
+                .split("\n")
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .map((line) => {
+                  const [resource, action = ""] = line.split(/\s+/);
+                  return { resource, action };
+                }),
+            }
+          : {}),
+        custom: grants
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const [resource, action = "read"] = line.split(/\s+/);
+            return { resource, action };
+          }),
+      });
+      toast(`Saved ${name} permissions.`);
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error("Request failed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <form
+      className="users-permission"
+      onSubmit={(e) => void save(e)}
+      aria-label={`${name} permissions`}
+    >
+      <h4>
+        <ToolBadge source={tool} />
+      </h4>
+      <fieldset className="form users-permission-fields" disabled={disabled || saving}>
+        <legend className="sr-only">{name} permissions</legend>
+        <div className="field">
+          <label htmlFor={`mode-${tool}`}>Permission mode</label>
+          <select
+            id={`mode-${tool}`}
+            value={mode}
+            aria-describedby={`mode-help-${tool}`}
+            onChange={(e) => {
+              setMode(e.target.value);
+            }}
+          >
+            {Object.entries(MODES).map(([value, { label }]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <p className="small muted" id={`mode-help-${tool}`}>
+            {tool === "github" && mode === "source"
+              ? "Read access and supported GitHub operations follow the user’s linked account, except restricted actions. Custom grants are kept but do not apply."
+              : MODES[mode]?.help}
+          </p>
+        </div>
+        {custom && (
+          <>
+            <div className="field">
+              <label htmlFor={`grants-${tool}`}>Resource grants</label>
+              <textarea
+                id={`grants-${tool}`}
+                rows={4}
+                value={grants}
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-describedby={`grants-help-${tool}`}
+                placeholder={EXAMPLES[tool]}
+                onChange={(e) => {
+                  setGrants(e.target.value);
+                }}
+              />
+              <p className="small muted" id={`grants-help-${tool}`}>
+                One grant per line. A resource alone grants read access, for example{" "}
+                <code>{EXAMPLES[tool]}</code>. A <code>connection:connection-id</code> grant
+                includes all events from that connection.
+              </p>
+            </div>
+            {!grants.trim() && (
+              <Empty title="No custom grants">
+                <p>Add a resource above to grant access. An empty list adds no custom access.</p>
+              </Empty>
+            )}
+          </>
+        )}
+        {tool === "github" && (
+          <>
+            <div className="callout small">
+              Source inherits supported operations from the linked GitHub account. Custom and Source
+              + custom require an exact lowercase repository and action on each line, for example{" "}
+              <code>repository:theafeai/afe github.logs_download</code>. Each action needs its own
+              grant; wildcards are not supported. GitHub permissions still apply in every mode.
+            </div>
+            <div className="field">
+              <label htmlFor="github-restrictions">GitHub action restrictions (optional)</label>
+              <textarea
+                id="github-restrictions"
+                aria-label="GitHub action restrictions"
+                rows={4}
+                value={restrictions}
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-describedby="github-restrictions-help"
+                placeholder="repository:owner/name github.delete_run"
+                onChange={(e) => {
+                  setRestrictions(e.target.value);
+                }}
+              />
+              <p className="small muted" id="github-restrictions-help">
+                Block one repository/action per line, for example{" "}
+                <code>repository:owner/name github.delete_run</code>. Leave empty to apply no
+                additional action restrictions. Restrictions override inherited access and
+                allowlists in every mode.
+              </p>
+            </div>
+            <details>
+              <summary>Supported GitHub operation grants</summary>
+              <ul className="users-permission-catalog">
+                {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
+                  <li key={action}>
+                    <code>{action}</code> — {label} (GitHub {level})
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </>
+        )}
+        <div className="button-row">
+          <button className="btn">
+            {saving ? `Saving ${name} permissions…` : `Save ${name} permissions`}
+          </button>
+        </div>
+      </fieldset>
+      {error && <ErrorBox title={`${name} permissions were not saved`} error={error} />}
+    </form>
   );
 }
