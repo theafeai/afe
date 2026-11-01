@@ -137,3 +137,103 @@ it("managed environment landing page shows an access empty state without hidden-
   expect(screen.queryByRole("link", { name: "ArgoCD" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Vercel" })).toBeNull();
 });
+
+const initialTools = () =>
+  Object.fromEntries(
+    ["github", "vercel", "argocd", "terraform"].map((tool) => [
+      tool,
+      {
+        mode: tool === "github" ? "source + custom" : "none",
+        custom:
+          tool === "github"
+            ? [
+                { resource: "repository:theafeai/afe", action: "read" },
+                { resource: "repository:theafeai/afe", action: "github.logs_download" },
+              ]
+            : [],
+      },
+    ]),
+  );
+
+it("preserves hidden grants when changing mode and clears saved feedback on edits", async () => {
+  const writes: unknown[] = [];
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/users")
+      return json({ users: [{ id: "u1", username: "alice", disabled: false }] });
+    if (url === "/api/admin/email") return json({ enabled: false, configured: false });
+    if (init?.method === "PUT") {
+      writes.push(JSON.parse(init.body as string));
+      return json({ ok: true });
+    }
+    if (url.endsWith("/permissions")) return json({ tools: initialTools() });
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+  const mode = await screen.findByLabelText("Permission mode", { selector: "#mode-github" });
+  const grants = screen.getByLabelText("Resource grants", {
+    selector: "#grants-github",
+  }) as HTMLTextAreaElement;
+  expect(grants.value).toBe(
+    "repository:theafeai/afe\nrepository:theafeai/afe github.logs_download",
+  );
+  fireEvent.change(mode, { target: { value: "source" } });
+  expect(screen.queryByLabelText("Resource grants", { selector: "#grants-github" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
+  await screen.findByText("Saved GitHub permissions.");
+  expect(writes).toEqual([{ mode: "source", custom: initialTools().github!.custom }]);
+  fireEvent.change(mode, { target: { value: "custom" } });
+  expect(screen.queryByText("Saved GitHub permissions.")).toBeNull();
+  expect(
+    (
+      screen.getByLabelText("Resource grants", {
+        selector: "#grants-github",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe(grants.value);
+});
+
+it("shows permission loading and retry, keeps failed drafts, and disables controls while saving", async () => {
+  let failLoad = true;
+  let finishSave: ((r: Response) => void) | undefined;
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/users")
+      return json({ users: [{ id: "u1", username: "alice", disabled: false }] });
+    if (url === "/api/admin/email") return json({ enabled: false, configured: false });
+    if (init?.method === "PUT")
+      return new Promise<Response>((resolve) => {
+        finishSave = resolve;
+      });
+    if (url.endsWith("/permissions")) {
+      if (failLoad) {
+        failLoad = false;
+        return new Response(JSON.stringify({ message: "Try loading again" }), { status: 500 });
+      }
+      return json({ tools: initialTools() });
+    }
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+  expect(screen.getByText("Loading tool permissions…")).toBeTruthy();
+  await screen.findByText("Tool permissions could not be loaded (HTTP 500)");
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  const grants = (await screen.findByLabelText("Resource grants", {
+    selector: "#grants-github",
+  })) as HTMLTextAreaElement;
+  fireEvent.change(grants, { target: { value: "repository:theafeai/afe github.cancel" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
+  expect(grants.closest("fieldset")!.disabled).toBe(true);
+  finishSave!(new Response(JSON.stringify({ message: "Grant rejected" }), { status: 400 }));
+  await screen.findByText("GitHub permissions were not saved (HTTP 400)");
+  expect(grants.value).toBe("repository:theafeai/afe github.cancel");
+  expect(grants.closest("fieldset")!.disabled).toBe(false);
+  fireEvent.change(grants, { target: { value: "" } });
+  expect(screen.getByText("No custom grants")).toBeTruthy();
+});
