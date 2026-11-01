@@ -337,6 +337,7 @@ details.gh-section[open] > summary {
   gap: var(--space-3);
 }
 .gh-job {
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -351,6 +352,9 @@ details.gh-section[open] > summary {
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 .gh-job-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text);
 }
@@ -380,6 +384,53 @@ details.gh-section[open] > summary {
 .gh-step-name {
   color: var(--text-2);
   overflow-wrap: anywhere;
+}
+
+/* Completed output stays with its job, below the step summary. */
+.gh-job-log {
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.gh-job-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+.gh-job-log-head h4 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  color: var(--text-2);
+}
+.gh-job-log-head > span {
+  font-variant-numeric: tabular-nums;
+}
+.gh-job-log-body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+.gh-job-log-body > .state,
+.gh-job-log-body > .muted,
+.gh-job-log-body > .callout {
+  margin: 0;
+}
+.gh-job-log-output {
+  margin: 0;
+  padding: var(--space-3);
+  max-height: 28rem;
+  overflow: auto;
+  white-space: pre;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh);
+  font-variant-numeric: tabular-nums;
+  tab-size: 2;
 }
 
 /* Simple lists inside panels (statuses, branch policies, protection rules). */

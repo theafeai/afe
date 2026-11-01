@@ -7,7 +7,14 @@ import { Router } from "../router.tsx";
 import { GitHubOperationsPage } from "./GitHubOperations.tsx";
 afterEach(cleanup);
 const root = "/api/actions/github/repositories/acme/app";
-function fixture({ uncertain = false, workflowGrant = true, runError = false } = {}) {
+function fixture({
+  uncertain = false,
+  workflowGrant = true,
+  runError = false,
+  logStatus = 200,
+  logGrant = true,
+  conclusion = "success",
+} = {}) {
   const mutations: Record<string, unknown>[] = [];
   setFetch(async (url, init) => {
     if (url.startsWith("/api/actions/github/resources"))
@@ -46,8 +53,15 @@ function fixture({ uncertain = false, workflowGrant = true, runError = false } =
           label,
           group,
           destructive,
-          enabled: workflowGrant || action !== "github.dispatch",
-          reason: workflowGrant ? null : "Requires explicit dispatch permission.",
+          enabled:
+            (workflowGrant || action !== "github.dispatch") &&
+            (logGrant || action !== "github.logs_download"),
+          reason:
+            !logGrant && action === "github.logs_download"
+              ? "Requires explicit log permission."
+              : workflowGrant
+                ? null
+                : "Requires explicit dispatch permission.",
         })),
       });
     if (view === "runs")
@@ -59,7 +73,7 @@ function fixture({ uncertain = false, workflowGrant = true, runError = false } =
                 id,
                 name: `Deploy ${id}`,
                 status: "completed",
-                conclusion: "success",
+                conclusion,
                 run_attempt: 2,
                 head_branch: "main",
               })),
@@ -74,10 +88,24 @@ function fixture({ uncertain = false, workflowGrant = true, runError = false } =
               id: Number(q.get("id")),
               run_attempt: 2,
               status: "completed",
-              conclusion: "success",
+              conclusion,
               html_url: `https://github.com/acme/app/actions/runs/${q.get("id")}`,
             },
           });
+    if (view === "job_log")
+      return logStatus === 200
+        ? Response.json({ text: `Attempt ${q.get("attempt")} output <script>inert</script>` })
+        : Response.json(
+            {
+              message:
+                logStatus === 409
+                  ? "Logs are still becoming available. Try again shortly."
+                  : logStatus === 403
+                    ? "Check Actions read permission."
+                    : "Logs may be unavailable or expired.",
+            },
+            { status: logStatus },
+          );
     if (view === "jobs")
       return Response.json({
         items: [
@@ -85,7 +113,7 @@ function fixture({ uncertain = false, workflowGrant = true, runError = false } =
             id: 201,
             name: "Build and deploy",
             status: "completed",
-            conclusion: "success",
+            conclusion,
             steps: [{ number: 1, name: "Build", status: "completed", conclusion: "success" }],
           },
         ],
@@ -200,7 +228,7 @@ it("expands run details directly after the selected row and moves or closes them
     const close = within(row).getByRole("button", { name: "Hide details" });
     expect(close.getAttribute("aria-expanded")).toBe("true");
     expect(close.getAttribute("aria-controls")).toBe(details.parentElement?.id);
-    await within(details).findByText(/Build and deploy/);
+    await within(details).findByText("Build and deploy");
     expect(
       within(details).getByRole("link", { name: "Open source run" }).getAttribute("href"),
     ).toBe(`https://github.com/acme/app/actions/runs/${id}`);
@@ -247,7 +275,7 @@ it("keeps detail errors and job content beside the selected run", async () => {
   );
   const details = await screen.findByRole("region", { name: "Run 102" });
   await within(details).findByText(/Run details unavailable/);
-  await within(details).findByText(/Build and deploy/);
+  await within(details).findByText("Build and deploy");
   expect(screen.getByText("Deploy 102").closest("li")?.contains(details)).toBe(true);
 });
 
@@ -263,4 +291,73 @@ it("expands details directly beneath the selected row and collapses them again",
   fireEvent.click(hide);
   expect(screen.queryByRole("button", { name: "Prepare dispatch" })).toBeNull();
   expect(screen.getByRole("button", { name: "Open details" })).toBeTruthy();
+});
+
+async function openRunLogs() {
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  fireEvent.click(
+    within((await screen.findByText("Deploy 102")).closest("li")!).getByRole("button", {
+      name: "Open details",
+    }),
+  );
+  const details = await screen.findByRole("region", { name: "Run 102" });
+  const view = await within(details).findByRole("button", {
+    name: "View logs for Build and deploy",
+  });
+  await waitFor(() => expect((view as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(view);
+  return details;
+}
+it.each(["success", "failure"])(
+  "opens %s logs beside job/steps and clears output when changing attempts",
+  async (conclusion) => {
+    fixture({ conclusion });
+    const details = await openRunLogs();
+    const output = await within(details).findByLabelText("Job log for Build and deploy");
+    expect(output.textContent).toContain("Attempt 2 output <script>inert</script>");
+    expect(document.querySelector("script")).toBeNull();
+    expect(output.closest("li")?.textContent).toContain("Build");
+    fireEvent.change(screen.getByLabelText("Inspect log/job attempt"), { target: { value: "1" } });
+    await waitFor(() => expect(screen.queryByLabelText("Job log for Build and deploy")).toBeNull());
+    const view = await within(details).findByRole("button", {
+      name: "View logs for Build and deploy",
+    });
+    fireEvent.click(view);
+    expect((await screen.findByLabelText("Job log for Build and deploy")).textContent).toContain(
+      "Attempt 1 output",
+    );
+  },
+);
+it.each([409, 403, 404, 410, 502])(
+  "shows explicit log error %s with retry inside the selected run",
+  async (logStatus) => {
+    fixture({ logStatus });
+    const details = await openRunLogs();
+    await within(details).findByRole("alert");
+    expect(within(details).getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(
+      within(details).getByText(
+        logStatus === 409
+          ? "Logs not ready yet"
+          : logStatus === 403
+            ? "Log access denied"
+            : "Job logs unavailable",
+        { exact: false },
+      ),
+    ).toBeTruthy();
+  },
+);
+it("explains missing log grants instead of silently omitting log access", async () => {
+  fixture({ logGrant: false });
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  fireEvent.click(
+    within((await screen.findByText("Deploy 101")).closest("li")!).getByRole("button", {
+      name: "Open details",
+    }),
+  );
+  await screen.findByText("Logs unavailable: Requires explicit log permission.");
+  expect(
+    (screen.getByRole("button", { name: "View logs for Build and deploy" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
 });
