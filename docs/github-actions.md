@@ -197,7 +197,7 @@ expire with the tenant retention policy; this is not long-term audit storage.
 
 Open **GitHub Actions → choose the connection/repository → Runs → Open details**
 for the desired run. Details expand directly beneath that run. Under **Jobs and
-steps**, select **Inspect log/job attempt**, then **View logs for <job name>**.
+steps**, select **Attempt**, then **View logs** in the desired job’s header.
 The output appears beside that job's step list, labelled with the job and attempt.
 Successful and failed runs both support viewing logs. **Download this attempt's
 archived logs** remains available for the full ZIP archive.

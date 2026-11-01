@@ -1191,9 +1191,10 @@ function RunPanel({
           <h3 id={`run-${item.id}-jobs`}>Jobs and steps</h3>
           <div className="toolbar">
             <label className="gh-inline-field">
-              <span>Inspect log/job attempt</span>
+              <span>Attempt</span>
               <input
                 type="number"
+                aria-label="Inspect log/job attempt"
                 min={1}
                 max={current.run_attempt ?? 1}
                 value={attempt}
@@ -1211,8 +1212,8 @@ function RunPanel({
           </div>
         </div>
         <p className="small muted">
-          Select View logs for a job below to read its completed output alongside its steps.
-          Attempts remain separate. Logs may take a short time to become available after completion.
+          Open a job’s logs to inspect its completed output. Logs may take a moment to become
+          available after completion.
         </p>
         {archives.loading && <Loading label="Checking log access…" />}
         {archives.error && <ErrorBox error={archives.error} onRetry={archives.reload} />}
@@ -1227,37 +1228,19 @@ function RunPanel({
         {!jobs.loading && jobs.data && jobs.data.items.length > 0 && (
           <ul className="gh-jobs">
             {jobs.data.items.map((job) => (
-              <li className="gh-job" key={`${attempt}:${job.id}`}>
-                <div className="gh-job-head">
-                  <span className="gh-job-name">{job.name}</span>
-                  <RunState item={job} />
-                  <span className="gh-job-action">
-                    {button("github.rerun_job", {
-                      ...params,
-                      jobId: job.id,
-                      enableDebugLogging: debug,
-                    })}
-                  </span>
-                </div>
-                <RunJobLog
-                  job={job}
-                  runId={item.id}
-                  attempt={attempt}
-                  read={read}
-                  enabled={logCapability?.enabled === true}
-                />
-                {!!job.steps?.length && (
-                  <ol className="gh-steps">
-                    {job.steps.map((step) => (
-                      <li key={step.number}>
-                        <span className="gh-step-number">{step.number}</span>
-                        <span className="gh-step-name">{step.name}</span>
-                        <RunState item={step} />
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </li>
+              <RunJob
+                key={`${attempt}:${job.id}`}
+                job={job}
+                runId={item.id}
+                attempt={attempt}
+                read={read}
+                enabled={logCapability?.enabled === true}
+                action={button("github.rerun_job", {
+                  ...params,
+                  jobId: job.id,
+                  enableDebugLogging: debug,
+                })}
+              />
             ))}
           </ul>
         )}
@@ -1856,40 +1839,68 @@ function EnvironmentEditor({
   );
 }
 
-function RunJobLog({
+function RunJob({
   job,
   runId,
   attempt,
   read,
   enabled,
+  action,
 }: {
   job: Item;
   runId: number;
   attempt: number;
   read: Reader;
   enabled: boolean;
+  action: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const outputId = `gh-log-${runId}-${attempt}-${job.id}`;
   return (
-    <div>
-      <button
-        className="btn"
-        disabled={!enabled}
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? `Hide logs for ${job.name}` : `View logs for ${job.name}`}
-      </button>
-      {open && <RunJobLogOutput runId={runId} attempt={attempt} job={job} read={read} />}
-    </div>
+    <li className="gh-job">
+      <div className="gh-job-head">
+        <span className="gh-job-name">{job.name}</span>
+        <RunState item={job} />
+        <div className="toolbar gh-job-action">
+          <button
+            className="btn btn-ghost"
+            disabled={!enabled}
+            aria-label={`${open ? "Hide" : "View"} logs for ${job.name}`}
+            aria-expanded={open}
+            aria-controls={open ? outputId : undefined}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "Hide logs" : "View logs"}
+          </button>
+          {action}
+        </div>
+      </div>
+      {!!job.steps?.length && (
+        <ol className="gh-steps">
+          {job.steps.map((step) => (
+            <li key={step.number}>
+              <span className="gh-step-number">{step.number}</span>
+              <span className="gh-step-name">{step.name}</span>
+              <RunState item={step} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {open && enabled && (
+        <RunJobLogOutput id={outputId} runId={runId} attempt={attempt} job={job} read={read} />
+      )}
+    </li>
   );
 }
+
 function RunJobLogOutput({
+  id,
   runId,
   attempt,
   job,
   read,
 }: {
+  id: string;
   runId: number;
   attempt: number;
   job: Item;
@@ -1905,32 +1916,37 @@ function RunJobLogOutput({
     [runId, attempt, job.id],
   );
   return (
-    <section aria-label={`Logs for ${job.name}, attempt ${attempt}`}>
-      <h4>
-        {job.name} · Attempt {attempt} · Job log
-      </h4>
-      {log.loading && <Loading label="Fetching job logs…" />}
-      {log.error && (
-        <ErrorBox
-          error={log.error}
-          title={
-            log.error instanceof ApiError && log.error.status === 409
-              ? "Logs not ready yet"
-              : log.error instanceof ApiError && log.error.status === 403
-                ? "Log access denied"
-                : "Job logs unavailable"
-          }
-          onRetry={log.reload}
-        />
-      )}
-      {log.data &&
-        (log.data.text ? (
-          <pre className="json github-run-log" aria-label={`Job log for ${job.name}`} tabIndex={0}>
-            {log.data.text}
-          </pre>
-        ) : (
-          <p className="muted">This job has no log output.</p>
-        ))}
+    <section className="gh-job-log" id={id} aria-label={`Logs for ${job.name}, attempt ${attempt}`}>
+      <div className="gh-job-log-head">
+        <h4>Job output</h4>
+        <span className="small muted">
+          Attempt {attempt} · Job {job.id}
+        </span>
+      </div>
+      <div className="gh-job-log-body">
+        {log.loading && <Loading label="Fetching job logs…" />}
+        {log.error && (
+          <ErrorBox
+            error={log.error}
+            title={
+              log.error instanceof ApiError && log.error.status === 409
+                ? "Logs not ready yet"
+                : log.error instanceof ApiError && log.error.status === 403
+                  ? "Log access denied"
+                  : "Job logs unavailable"
+            }
+            onRetry={log.reload}
+          />
+        )}
+        {log.data &&
+          (log.data.text ? (
+            <pre className="gh-job-log-output" aria-label={`Job log for ${job.name}`} tabIndex={0}>
+              {log.data.text}
+            </pre>
+          ) : (
+            <p className="muted">This job has no log output.</p>
+          ))}
+      </div>
     </section>
   );
 }
