@@ -32,7 +32,7 @@ it("offers only configured ArgoCD SSO connections and keeps personal-token fallb
   render(<App />);
   expect(await screen.findByRole("button", { name: "Sign in with ArgoCD" })).toBeTruthy();
   expect(screen.getByRole("option", { name: "Production ArgoCD" })).toBeTruthy();
-  expect(screen.getByLabelText("Your tool access token")).toBeTruthy();
+  expect(screen.getByLabelText("Access token")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Sign in with Vercel" })).toBeNull();
 });
 it("saves OIDC settings without reading back a client secret", async () => {
