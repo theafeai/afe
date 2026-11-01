@@ -45,6 +45,15 @@ export function targetLabel(e: CanonicalEvent): string {
   return name;
 }
 
+/**
+ * The event name qualified by its source tool (`github.workflow_run.completed`), so the tool
+ * is readable from the name itself. Actions that already carry the prefix (ArgoCD's
+ * `argocd.sync.succeeded`) are left as they are.
+ */
+export function qualifiedAction(e: Pick<CanonicalEvent, "source" | "action">): string {
+  return e.action.startsWith(`${e.source}.`) ? e.action : `${e.source}.${e.action}`;
+}
+
 function gapOf(e: CanonicalEvent): Partial<ObservationGap> | null {
   const g = e.data?.gap;
   return g && typeof g === "object" && !Array.isArray(g) ? (g as Partial<ObservationGap>) : null;
@@ -102,7 +111,8 @@ export function EventRow({ item, decoration }: { item: EventItem; decoration?: R
         </time>
         <span className="row-main">
           <span className="row-title">
-            <span className="action">{e.action}</span> <OutcomeBadge outcome={e.outcome} />
+            <span className="action">{qualifiedAction(e)}</span>{" "}
+            <OutcomeBadge outcome={e.outcome} />
             {hl === "on" && <span className="hl-tag"> · on the journey</span>}
             {hl === "excluded" && <span className="hl-tag"> · ruled out of the journey</span>}
           </span>

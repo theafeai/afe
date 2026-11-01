@@ -5,6 +5,7 @@ import type { CanonicalEvent } from "@afe/core/types";
 import { setFetch } from "../api/client.ts";
 import type { ConnectionWithHealth, EventItem } from "../api/types.ts";
 import { App } from "../App.tsx";
+import { qualifiedAction } from "./Timeline.tsx";
 
 function ev(seq: number, patch: Partial<CanonicalEvent>): EventItem {
   const event: CanonicalEvent = {
@@ -141,22 +142,39 @@ describe("Timeline", () => {
     expect(gapRow.className).toContain("row-gap-opened");
     expect(within(gapRow).getByText(/may be missing/)).toBeTruthy();
 
-    const reconciled = screen.getByText("deployment.status_updated").closest("li")!;
+    const reconciled = screen.getByText("github.deployment.status_updated").closest("li")!;
     expect(reconciled.className).toContain("row-reconciliation");
     expect(within(reconciled).getByText("reconciled")).toBeTruthy();
     expect(within(reconciled).getByText(/Found by reconciliation/)).toBeTruthy();
 
-    const plain = screen.getByText("deployment.created").closest("li")!;
+    const plain = screen.getByText("github.deployment.created").closest("li")!;
     expect(plain.className).not.toContain("row-reconciliation");
     // Grouped by day: two day headings for the first page.
     expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(2);
   });
 
+  it("qualifies event names with their source tool and keeps the right-side badges", async () => {
+    render(<App />);
+    const row = (await screen.findByText("github.deployment.created")).closest("li")!;
+    const badges = row.querySelector(".row-badges")!;
+    expect(within(badges as HTMLElement).getByText("GitHub")).toBeTruthy();
+    expect(within(badges as HTMLElement).getByText("webhook")).toBeTruthy();
+  });
+
+  it("does not double-prefix actions that already carry their source", () => {
+    expect(qualifiedAction({ source: "vercel", action: "deployment.created" })).toBe(
+      "vercel.deployment.created",
+    );
+    expect(qualifiedAction({ source: "argocd", action: "argocd.sync.succeeded" })).toBe(
+      "argocd.sync.succeeded",
+    );
+  });
+
   it("loads more with the cursor and the same resolved time range", async () => {
     render(<App />);
-    await screen.findByText("deployment.created");
+    await screen.findByText("github.deployment.created");
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-    expect(await screen.findByText("workflow_run.completed")).toBeTruthy();
+    expect(await screen.findByText("github.workflow_run.completed")).toBeTruthy();
     const ev = requests.filter((r) => r.startsWith("/api/events"));
     const first = new URL(ev[0]!, "http://x").searchParams;
     const second = new URL(ev[1]!, "http://x").searchParams;
@@ -168,7 +186,7 @@ describe("Timeline", () => {
 
   it("syncs filter changes to the URL and refetches", async () => {
     render(<App />);
-    await screen.findByText("deployment.created");
+    await screen.findByText("github.deployment.created");
     await act(async () => {
       fireEvent.change(screen.getByLabelText("Trigger"), { target: { value: "manual" } });
     });
