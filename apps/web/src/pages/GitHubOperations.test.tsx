@@ -7,7 +7,7 @@ import { Router } from "../router.tsx";
 import { GitHubOperationsPage } from "./GitHubOperations.tsx";
 afterEach(cleanup);
 const root = "/api/actions/github/repositories/acme/app";
-function fixture({ uncertain = false, workflowGrant = true } = {}) {
+function fixture({ uncertain = false, workflowGrant = true, runError = false } = {}) {
   const mutations: Record<string, unknown>[] = [];
   setFetch(async (url, init) => {
     if (url.startsWith("/api/actions/github/resources"))
@@ -50,6 +50,49 @@ function fixture({ uncertain = false, workflowGrant = true } = {}) {
           reason: workflowGrant ? null : "Requires explicit dispatch permission.",
         })),
       });
+    if (view === "runs")
+      return Response.json({
+        items:
+          q.get("page") === "2"
+            ? []
+            : [101, 102, 103].map((id) => ({
+                id,
+                name: `Deploy ${id}`,
+                status: "completed",
+                conclusion: "success",
+                run_attempt: 2,
+                head_branch: "main",
+              })),
+        page: Number(q.get("page") ?? 1),
+        hasMore: q.get("page") !== "2",
+      });
+    if (view === "run")
+      return runError
+        ? Response.json({ message: "Run details unavailable" }, { status: 503 })
+        : Response.json({
+            item: {
+              id: Number(q.get("id")),
+              run_attempt: 2,
+              status: "completed",
+              conclusion: "success",
+              html_url: `https://github.com/acme/app/actions/runs/${q.get("id")}`,
+            },
+          });
+    if (view === "jobs")
+      return Response.json({
+        items: [
+          {
+            id: 201,
+            name: "Build and deploy",
+            status: "completed",
+            conclusion: "success",
+            steps: [{ number: 1, name: "Build", status: "completed", conclusion: "success" }],
+          },
+        ],
+        page: 1,
+        hasMore: false,
+      });
+    if (view === "pending") return Response.json({ items: [], page: 1, hasMore: false });
     if (view === "workflows")
       return Response.json({
         items: [{ id: 42, name: "Deploy", path: ".github/workflows/deploy.yml", state: "active" }],
@@ -138,4 +181,76 @@ it("retains uncertain outcomes in Afe and asks for explicit risk acknowledgement
   expect(recovery.disabled).toBe(true);
   fireEvent.click(screen.getByRole("checkbox", { name: /I checked the current source state/ }));
   await waitFor(() => expect(recovery.disabled).toBe(false));
+});
+
+it("expands run details directly after the selected row and moves or closes them in place", async () => {
+  fixture();
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  await screen.findByText("Deploy 101");
+  for (const id of [101, 102, 103]) {
+    const row = screen.getByText(`Deploy ${id}`).closest("tr")!;
+    const open = within(row).getByRole("button", { name: "Open details" });
+    expect(open.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(open);
+    const details = await screen.findByRole("region", { name: `Run ${id} details` });
+    expect(screen.getAllByRole("region")).toHaveLength(1);
+    expect(row.nextElementSibling).toBe(details.closest("tr"));
+    expect(details.closest("td")?.colSpan).toBe(4);
+    if (id < 103)
+      expect(row.nextElementSibling?.nextElementSibling?.textContent).toContain(`Deploy ${id + 1}`);
+    else expect(row.nextElementSibling?.nextElementSibling).toBeNull();
+    const close = within(row).getByRole("button", { name: "Close details" });
+    expect(close.getAttribute("aria-expanded")).toBe("true");
+    expect(close.getAttribute("aria-controls")).toBe(details.id);
+    await within(details).findByText(/Build and deploy/);
+    expect(
+      within(details).getByRole("link", { name: "Open source run" }).getAttribute("href"),
+    ).toBe(`https://github.com/acme/app/actions/runs/${id}`);
+    expect(within(details).getByRole("button", { name: "Re-run all jobs" })).toBeTruthy();
+    expect(
+      within(details)
+        .getByRole("link", { name: /Download this attempt/ })
+        .getAttribute("href"),
+    ).toContain(`id=${id}&attempt=2`);
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Close details" }));
+  expect(screen.queryByRole("region")).toBeNull();
+});
+it("clears inline run details when changing pages or views", async () => {
+  fixture();
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  fireEvent.click(
+    within((await screen.findByText("Deploy 101")).closest("tr")!).getByRole("button", {
+      name: "Open details",
+    }),
+  );
+  await screen.findByRole("region", { name: "Run 101 details" });
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  await screen.findByText("No items on this page");
+  expect(screen.queryByRole("region")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Previous page" }));
+  fireEvent.click(
+    within((await screen.findByText("Deploy 101")).closest("tr")!).getByRole("button", {
+      name: "Open details",
+    }),
+  );
+  await screen.findByRole("region", { name: "Run 101 details" });
+  fireEvent.click(screen.getByRole("button", { name: "Workflows" }));
+  await screen.findByText("Deploy");
+  expect(screen.queryByRole("region")).toBeNull();
+});
+it("keeps detail errors and job content beside the selected run", async () => {
+  fixture({ runError: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  fireEvent.click(
+    within((await screen.findByText("Deploy 102")).closest("tr")!).getByRole("button", {
+      name: "Open details",
+    }),
+  );
+  const details = await screen.findByRole("region", { name: "Run 102 details" });
+  await within(details).findByText(/Run details unavailable/);
+  await within(details).findByText(/Build and deploy/);
+  expect(screen.getByText("Deploy 102").closest("tr")?.nextElementSibling).toBe(
+    details.closest("tr"),
+  );
 });

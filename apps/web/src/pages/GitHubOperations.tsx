@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from "react";
+import { Fragment, useState, useRef, type FormEvent } from "react";
 import type {
   GitHubOperation,
   GitHubOperationCapability,
@@ -11,6 +11,7 @@ import type {
 import { ApiError, request } from "../api/client.ts";
 import { Empty, ErrorBox, Loading, KeyValue, useAsync, useDocumentTitle } from "../components.tsx";
 import { Link, useLocation } from "../router.tsx";
+import "./GitHubOperations.css";
 type Item = {
   id: number;
   name?: string;
@@ -206,6 +207,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     [recovery, setRecovery] = useState<GitHubOperationReceipt | null>(null),
     [risk, setRisk] = useState(false);
   const sending = useRef(false);
+  const isRuns = tab === "runs";
   const read: Reader = (view, query = {}) =>
     request(
       "GET",
@@ -441,7 +443,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             </ul>
           ) : (
             <div className="table-wrap">
-              <table className="table">
+              <table className={isRuns ? "table github-runs-table" : "table"}>
                 <thead>
                   <tr>
                     <th>Name / ID</th>
@@ -452,29 +454,70 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
                 </thead>
                 <tbody>
                   {list.data.items.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        {item.name ?? item.key ?? item.id}
-                        <div className="muted">{item.id}</div>
-                      </td>
-                      <td>
-                        {item.status ?? item.state ?? (item.expired ? "Expired" : "Available")}
-                        {item.conclusion ? ` · ${item.conclusion}` : ""}
-                      </td>
-                      <td>
-                        {typeof item.environment === "string"
-                          ? item.environment
-                          : (item.ref ??
-                            item.head_branch ??
-                            item.path ??
-                            (item.run_id ? `Run ${item.run_id}` : ""))}
-                      </td>
-                      <td>
-                        <button className="btn btn-ghost" onClick={() => setSelected(item)}>
-                          Open details
-                        </button>
-                      </td>
-                    </tr>
+                    <Fragment key={item.id}>
+                      <tr
+                        data-expanded={
+                          tab === "runs" && selected?.id === item.id ? true : undefined
+                        }
+                      >
+                        <td>
+                          {item.name ?? item.key ?? item.id}
+                          <div className="muted">{item.id}</div>
+                        </td>
+                        <td>
+                          {item.status ?? item.state ?? (item.expired ? "Expired" : "Available")}
+                          {item.conclusion ? ` · ${item.conclusion}` : ""}
+                        </td>
+                        <td>
+                          {typeof item.environment === "string"
+                            ? item.environment
+                            : (item.ref ??
+                              item.head_branch ??
+                              item.path ??
+                              (item.run_id ? `Run ${item.run_id}` : ""))}
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-ghost"
+                            aria-expanded={tab === "runs" ? selected?.id === item.id : undefined}
+                            aria-controls={
+                              tab === "runs" && selected?.id === item.id
+                                ? `run-details-${item.id}`
+                                : undefined
+                            }
+                            onClick={() =>
+                              setSelected(tab === "runs" && selected?.id === item.id ? null : item)
+                            }
+                          >
+                            {tab === "runs" && selected?.id === item.id
+                              ? "Close details"
+                              : "Open details"}
+                          </button>
+                        </td>
+                      </tr>
+                      {tab === "runs" && selected?.id === item.id && (
+                        <tr className="github-run-details">
+                          <td colSpan={4}>
+                            <div
+                              id={`run-details-${item.id}`}
+                              role="region"
+                              aria-label={`Run ${item.id} details`}
+                            >
+                              <RunPanel
+                                key={`${item.id}:${revision}`}
+                                item={item}
+                                read={read}
+                                button={button}
+                                can={can}
+                                download={(kind, id, attempt) =>
+                                  `${root}/download?${new URLSearchParams({ connectionId: scope.connectionId, kind, id: String(id), ...(attempt ? { attempt: String(attempt) } : {}) })}`
+                                }
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -519,18 +562,6 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
           <summary>Create workflow</summary>
           <WorkflowEditor key="new-workflow" prepare={prepare} canSave={true} canDelete={false} />
         </details>
-      )}
-      {tab === "runs" && selected && (
-        <RunPanel
-          key={`${selected.id}:${revision}`}
-          item={selected}
-          read={read}
-          button={button}
-          can={can}
-          download={(kind, id, attempt) =>
-            `${root}/download?${new URLSearchParams({ connectionId: scope.connectionId, kind, id: String(id), ...(attempt ? { attempt: String(attempt) } : {}) })}`
-          }
-        />
       )}
       {tab === "deployments" && (
         <DeploymentPanel

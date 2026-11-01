@@ -1,0 +1,28 @@
+.github-runs-table {
+  table-layout: fixed;
+  overflow-wrap: anywhere;
+}
+.github-runs-table th {
+  white-space: normal;
+}
+.github-runs-table .btn {
+  white-space: normal;
+  overflow-wrap: normal;
+  max-width: 100%;
+  height: auto;
+  min-height: var(--control-h);
+  padding: var(--space-1) var(--space-2);
+}
+.github-runs-table tr[data-expanded] > td,
+.github-runs-table tr.github-run-details > td {
+  background: var(--accent-soft);
+}
+.github-run-details > td > div > .card {
+  margin-bottom: 0;
+}
+@media (max-width: 600px) {
+  .github-runs-table th,
+  .github-runs-table td {
+    padding: var(--space-2) var(--space-1);
+  }
+}
