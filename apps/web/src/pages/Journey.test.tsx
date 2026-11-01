@@ -182,6 +182,10 @@ describe("journey diagram", () => {
     const weak = cards.find((c) => c.getAttribute("href") === `/events/${id(5)}`)!;
     expect(weak.tagName).toBe("A");
     expect(weak.getAttribute("aria-label")).toContain("weak link");
+    // Event names carry their source tool, without doubling ArgoCD's own prefix.
+    expect(within(cards[0]!).getByText("github.ref.pushed")).toBeTruthy();
+    expect(within(weak).getByText("argocd.sync.succeeded")).toBeTruthy();
+    expect(weak.getAttribute("aria-label")).toContain("Deploy: argocd.sync.succeeded on");
     fireEvent.focus(weak);
     const inspector = screen.getByTestId("journey-inspector");
     expect(within(inspector).getByText(/close in time/)).toBeTruthy();
@@ -206,6 +210,8 @@ describe("journey diagram", () => {
     const list = document.querySelector(".step-list")!;
     expect(within(list as HTMLElement).getByRole("heading", { name: "Artifact" })).toBeTruthy();
     expect(within(list as HTMLElement).getAllByText(/reached from/)).toHaveLength(2);
+    // The artifact step itself and the deploy step it was reached from.
+    expect(within(list as HTMLElement).getAllByText("github.artifact.published")).toHaveLength(2);
   });
 });
 

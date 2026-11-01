@@ -24,7 +24,14 @@ import {
   parseFilters,
   type Filters,
 } from "../filters.ts";
-import { dayKey, formatDateTime, formatDay, formatTime, humanize } from "../format.ts";
+import {
+  dayKey,
+  formatDateTime,
+  formatDay,
+  formatTime,
+  humanize,
+  qualifiedAction,
+} from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import { usePaged } from "../usePaged.ts";
 import { useJourneyHighlight, type RowDecoration } from "./JourneyHighlight.tsx";
@@ -44,15 +51,6 @@ export function targetLabel(e: CanonicalEvent): string {
   const t = e.target;
   const name = t.application ?? t.project ?? t.name ?? t.repository ?? t.id;
   return name;
-}
-
-/**
- * The event name qualified by its source tool (`github.workflow_run.completed`), so the tool
- * is readable from the name itself. Actions that already carry the prefix (ArgoCD's
- * `argocd.sync.succeeded`) are left as they are.
- */
-export function qualifiedAction(e: Pick<CanonicalEvent, "source" | "action">): string {
-  return e.action.startsWith(`${e.source}.`) ? e.action : `${e.source}.${e.action}`;
 }
 
 function gapOf(e: CanonicalEvent): Partial<ObservationGap> | null {

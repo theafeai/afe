@@ -5,7 +5,7 @@ import type { CanonicalEvent } from "@afe/core/types";
 import { setFetch } from "../api/client.ts";
 import type { ConnectionWithHealth, EventItem } from "../api/types.ts";
 import { App } from "../App.tsx";
-import { qualifiedAction } from "./Timeline.tsx";
+import { qualifiedAction } from "../format.ts";
 
 function ev(seq: number, patch: Partial<CanonicalEvent>): EventItem {
   const event: CanonicalEvent = {
