@@ -35,9 +35,8 @@ it("creates a metadata-only connection and shows the scoped secret once", async 
     { url: "/api/connections/terraform", body: { workspace: "demo", environment: "development" } },
   ]);
   expect((screen.getByLabelText("Reporter secret") as HTMLInputElement).type).toBe("password");
-  expect(screen.getByRole("link", { name: /I saved the secret/ }).getAttribute("href")).toBe(
-    "/connections/connection",
-  );
+  fireEvent.click(screen.getByRole("button", { name: /I saved the secret/ }));
+  expect(window.location.pathname).toBe("/connections");
   view.unmount();
   render(
     <Router>

@@ -148,7 +148,9 @@ describe("vercel connector module", () => {
     expect(String(install.headers["set-cookie"])).toMatch(/HttpOnly.*SameSite=Lax.*Secure/);
     expect(cb.statusCode).toBe(302);
     const id = await connectionId();
-    expect(cb.headers.location).toBe(`${PUBLIC_URL}/connections/vercel/${id}/projects`);
+    expect(cb.headers.location).toBe(
+      `${PUBLIC_URL}/connections/vercel/${id}/projects?new=integration`,
+    );
 
     const conn = (await getConnection(pool, "default", id))!;
     expect(conn).toMatchObject({ externalId: TEAM.id, name: "Acme", status: "active" });

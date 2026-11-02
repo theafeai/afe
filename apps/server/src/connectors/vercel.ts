@@ -895,7 +895,7 @@ export function createVercelModule(options: VercelModuleOptions = {}): Connector
           }
         }
         return reply.redirect(
-          `${ctx.config.publicUrl}/connections/vercel/${conn.id}/projects`,
+          `${ctx.config.publicUrl}/connections/vercel/${conn.id}/projects?new=integration`,
           302,
         );
       });

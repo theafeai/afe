@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { DisconnectAction } from "./DisconnectAction.tsx";
 import { ArgocdOidcSettings } from "./ArgocdOidc.tsx";
 import { useAccess } from "../access.tsx";
@@ -174,6 +175,11 @@ export function ConnectionDetail({ id }: { id: string }) {
   const toast = useToast();
   const justConnected = new URLSearchParams(location.search).get("connected");
   useDocumentTitle(data ? data.connection.name : "Connection");
+  useEffect(() => {
+    if (justConnected !== "github" || !data || data.connection.source !== "github") return;
+    toast(`GitHub connection “${data.connection.name}” added.`);
+    navigate("/connections", { replace: true });
+  }, [justConnected, data, toast, navigate]);
   if (loading) return <Loading label="Loading connection…" />;
   if (error)
     return (

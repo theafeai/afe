@@ -201,3 +201,23 @@ it.each(["github", "argocd", "vercel", "terraform"])(
     expect(screen.queryByText(/production.*disconnected/)).toBeNull();
   },
 );
+
+it("redirects a completed GitHub install to the fresh list with a success toast", async () => {
+  window.history.replaceState(null, "", "/connections/c1?connected=github");
+  setFetch(async (url) =>
+    url.endsWith("/health")
+      ? json(200, { connection: connection(), gaps: [], alerts: [] })
+      : json(200, { connections: [connection()] }),
+  );
+  render(
+    <Router>
+      <ToastProvider>
+        <ConnectionRoutes />
+      </ToastProvider>
+    </Router>,
+  );
+  expect(await screen.findByRole("heading", { name: "Connections" })).toBeTruthy();
+  expect(await screen.findByRole("link", { name: "production" })).toBeTruthy();
+  expect(screen.getByText("GitHub connection “production” added.")).toBeTruthy();
+  expect(window.location.search).toBe("");
+});
