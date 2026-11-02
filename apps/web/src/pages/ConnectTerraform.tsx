@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { api } from "../api/client.ts";
 import { ErrorBox, useDocumentTitle } from "../components.tsx";
-import { Link } from "../router.tsx";
+import { useNavigate } from "../router.tsx";
+import { useToast } from "../toast.tsx";
 
 export function ConnectTerraform() {
   useDocumentTitle("Connect Terraform");
+  const navigate = useNavigate();
+  const toast = useToast();
   const [form, setForm] = useState({ workspace: "", environment: "", repository: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -46,9 +49,16 @@ export function ConnectTerraform() {
             Connection health stays unknown until a report is processed. Idle time does not
             establish that a runner is reachable.
           </p>
-          <Link to={`/connections/${result.connection.id}`}>
-            I saved the secret — open connection
-          </Link>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              toast("Terraform reporter connection added.");
+              navigate("/connections", { replace: true });
+            }}
+          >
+            I saved the secret — finish setup
+          </button>
         </section>
       ) : (
         <form

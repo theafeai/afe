@@ -1,12 +1,7 @@
 import { DisconnectAction } from "./DisconnectAction.tsx";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { ApiError, api } from "../api/client.ts";
-import type {
-  ArgoCdConnectResult,
-  ArgoCdTestResult,
-  ConnectionWithHealth,
-  ProjectSelection,
-} from "../api/types.ts";
+import type { ArgoCdTestResult, ConnectionWithHealth, ProjectSelection } from "../api/types.ts";
 import {
   Empty,
   ErrorBox,
@@ -217,11 +212,11 @@ export function argocdErrorMessage(err: Error): string {
 
 export function ConnectArgoCD() {
   const toast = useToast();
+  const navigate = useNavigate();
   useDocumentTitle("Connect ArgoCD");
   const id = useId();
   const [form, setForm] = useState({ url: "", token: "", caPem: "", name: "" });
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ArgoCdConnectResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const list = useAsync((s) => api.argocdConnections(s), []);
   const [tests, setTests] = useState<
@@ -232,7 +227,6 @@ export function ConnectArgoCD() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    setResult(null);
     try {
       const r = await api.argocdConnect({
         url: form.url.trim(),
@@ -240,9 +234,8 @@ export function ConnectArgoCD() {
         ...(form.caPem.trim() ? { caPem: form.caPem } : {}),
         ...(form.name.trim() ? { name: form.name.trim() } : {}),
       });
-      setResult(r);
-      setForm({ url: "", token: "", caPem: "", name: "" });
-      list.reload();
+      toast(`ArgoCD connection “${r.connection.name}” added. ${r.warnings.join(" ")}`.trim());
+      navigate("/connections", { replace: true });
     } catch (err) {
       setError(err as Error);
       setForm((f) => ({ ...f, token: "" }));
@@ -330,15 +323,6 @@ export function ConnectArgoCD() {
           <div className="callout callout-error" role="alert">
             <strong>Not connected.</strong> {argocdErrorMessage(error)}
           </div>
-        )}
-        {result && (
-          <>
-            <ReadOnlyResult r={result} />
-            <p>
-              Connected{" "}
-              <Link to={`/connections/${result.connection.id}`}>{result.connection.name}</Link>.
-            </p>
-          </>
         )}
       </section>
       <section className="card">
@@ -536,6 +520,7 @@ export function VercelProjectsPage({ id }: { id: string }) {
   useDocumentTitle("Vercel projects");
   const location = useLocation();
   const isNew = new URLSearchParams(location.search).get("new");
+  const navigate = useNavigate();
   const { data, error, loading, reload } = useAsync((s) => api.vercelProjects(id, s), [id]);
   const [mode, setMode] = useState<"none" | "all" | "selected">("none");
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -566,10 +551,15 @@ export function VercelProjectsPage({ id }: { id: string }) {
         mode === "all" ? { projects: "all" } : { projectIds: mode === "none" ? [] : [...chosen] },
       );
       setSave({ busy: false, error: null });
-      toast({
-        message: `Saved: Afe now observes ${selectionSummary(r.selection)}.`,
-        action: { label: "Back to the connection", to: `/connections/${id}` },
-      });
+      if (isNew !== null) {
+        toast(`Vercel connection added. Afe now observes ${selectionSummary(r.selection)}.`);
+        navigate("/connections", { replace: true });
+      } else {
+        toast({
+          message: `Saved: Afe now observes ${selectionSummary(r.selection)}.`,
+          action: { label: "Back to the connection", to: `/connections/${id}` },
+        });
+      }
     } catch (err) {
       setSave({ busy: false, error: err as Error });
     }
