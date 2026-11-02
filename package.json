@@ -18,14 +18,14 @@
     "dev": "pnpm --filter @afe/server dev"
   },
   "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@types/node": "^22.10.0",
-    "eslint": "^9.17.0",
-    "jsdom": "^25.0.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.14.0",
+    "jsdom": "^30.1.3",
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.0",
-    "vitest": "^4.1.12"
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
   }
 }
