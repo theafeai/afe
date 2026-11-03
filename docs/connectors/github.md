@@ -773,7 +773,7 @@ The existing `actions: read` App permission covers these reads.
 
 Metadata snapshots are shared for five seconds, keyed by tenant, connection,
 repository, run and attempt, with at most 200 entries. Each request rechecks the
-event's current per-user source/custom permissions and active selected connection
+event's current inherited source permissions and active selected connection
 before using the cache. Per server, at most eight progress fetches and four log
 downloads run concurrently. Progress reads stop after five pages (500 jobs), with
 an explicit partial-list notice. GitHub rate limits and retry deadlines are

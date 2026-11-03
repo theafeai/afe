@@ -130,7 +130,11 @@ try {
     mode: "custom",
     custom: [{ resource: `connection:${connection.connection.id}`, action: "read" }],
   };
-  await json("PUT", `/api/admin/users/${alice.user.id}/permissions/terraform`, admin, grant);
+  assert.equal(
+    (await call("PUT", `/api/admin/users/${alice.user.id}/permissions/terraform`, admin, grant))
+      .status,
+    400,
+  );
   const report = {
     version: 1,
     runId: randomUUID(),
@@ -149,34 +153,34 @@ try {
   });
   assert.equal(accepted.status, 202);
   const visible = await until(async () =>
-    (await json("GET", "/api/events", alice.token)).items.find(
+    (await json("GET", "/api/events", admin)).items.find(
       (i) => i.event.connectionId === connection.connection.id,
     ),
   );
-  check("signed source report travels through the real queue into the permitted user's timeline");
-  assert.equal((await json("GET", "/api/events", bob.token)).items.length, 0);
-  assert.equal((await call("GET", `/api/events/${visible.event.id}`, bob.token)).status, 404);
-  assert.equal((await call("GET", `/api/events/${visible.event.id}`, alice.token)).status, 200);
+  check("signed source reports reach the administrator timeline through the real queue");
+  for (const mode of ["none", "source"]) {
+    await json("PUT", `/api/admin/users/${alice.user.id}/permissions/terraform`, admin, {
+      mode,
+      custom: [],
+    });
+    assert.deepEqual((await json("GET", "/api/events", alice.token)).items, []);
+    assert.equal((await call("GET", `/api/events/${visible.event.id}`, alice.token)).status, 404);
+  }
+  assert.equal(
+    (
+      await call("PUT", `/api/admin/users/${alice.user.id}/permissions/terraform`, admin, {
+        ...grant,
+        mode: "source + custom",
+      })
+    ).status,
+    400,
+  );
+  assert.deepEqual((await json("GET", "/api/events", bob.token)).items, []);
   assert.equal((await call("GET", `/api/events/${visible.event.id}/raw`, alice.token)).status, 403);
   assert.equal((await call("GET", "/api/admin/users", alice.token)).status, 403);
   check(
-    "ungranted users cannot list or guess source records; evidence and admin routes stay protected",
+    "custom policies are rejected; Terraform without personal source identity grants no user access",
   );
-  await json("PUT", `/api/admin/users/${alice.user.id}/permissions/terraform`, admin, {
-    mode: "none",
-    custom: grant.custom,
-  });
-  assert.deepEqual((await json("GET", "/api/events", alice.token)).items, []);
-  await json("PUT", `/api/admin/users/${alice.user.id}/permissions/terraform`, admin, {
-    ...grant,
-    mode: "source + custom",
-  });
-  assert(
-    (await json("GET", "/api/events", alice.token)).items.some(
-      (i) => i.event.id === visible.event.id,
-    ),
-  );
-  check("none revokes access immediately; combined mode retains independent custom grants");
   const reset = await json("POST", `/api/admin/users/${alice.user.id}/credentials`, admin);
   assert.equal((await call("GET", "/api/session", alice.token)).status, 401);
   assert.equal(

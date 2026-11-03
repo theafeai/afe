@@ -3,14 +3,8 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import type pg from "pg";
 import * as ArgoCd from "@afe/connector-argocd";
 import { EnvKeyProvider } from "@afe/core/security";
-import {
-  createLocalUser,
-  getCredentialMetadata,
-  ingestEvent,
-  setUserToolPolicy,
-  upsertConnection,
-} from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createLocalUser, getCredentialMetadata, ingestEvent, upsertConnection } from "@afe/db";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { buildAfe, defaultModules, loadConfig, type AfeApp } from "../src/index.ts";
 
 const admin = "a".repeat(40);
@@ -75,7 +69,7 @@ async function policy(
   mode: "none" | "source" | "custom" | "source + custom",
   resources = ["repository:acme/allowed"],
 ) {
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode,
     custom: resources.map((resource) => ({ resource, action: "read" })),
   });
@@ -116,34 +110,25 @@ it("dashboard login alone grants no data or tool visibility", async () => {
   ])
     expect((await read(url)).statusCode).toBe(403);
 });
-it("custom grants constrain lists, filters, detail, and pagination", async () => {
-  await policy("custom");
-  const result = (await read("/api/events?limit=1")).json();
-  expect(result.items).toHaveLength(1);
-  expect(result.items[0].event.target.repository).toBe("acme/allowed");
-  expect(result.nextCursor).toBeNull();
-  expect((await read("/api/events?repository=acme/hidden")).json().items).toEqual([]);
-  expect((await read(`/api/events/${eventIds[0]}`)).statusCode).toBe(200);
-  expect((await read(`/api/events/${eventIds[0]}`)).json().rawPayload).toBeNull();
-  expect((await read(`/api/events/${eventIds[1]}`)).statusCode).toBe(404);
-  await policy("none");
-  expect((await read(`/api/events/${eventIds[0]}`)).statusCode).toBe(404);
-});
-it("only explicit connection grants expose connection health", async () => {
-  const c = await upsertConnection(pool, "default", {
-    source: "github",
-    externalId: randomBytes(8).toString("hex"),
-    name: "private installation",
-    config: {},
-  });
-  expect((await read("/api/connections")).json().connections).toEqual([]);
-  expect((await read(`/api/connections/${c.id}/health`)).statusCode).toBe(404);
-  await policy("custom", [`connection:${c.id}`]);
-  expect(
-    (await read("/api/connections")).json().connections.map((v: { id: string }) => v.id),
-  ).toContain(c.id);
-  expect((await read(`/api/connections/${c.id}/health`)).statusCode).toBe(200);
-});
+it.each(["custom", "source + custom"] as const)(
+  "blocks legacy %s policies across reads and profile",
+  async (mode) => {
+    await policy(mode);
+    expect((await read("/api/events?limit=1")).json().items).toEqual([]);
+    expect((await read("/api/deployments")).json().items).toEqual([]);
+    expect((await read(`/api/events/${eventIds[0]}`)).statusCode).toBe(404);
+    expect((await read("/api/profile")).json().tools).toEqual([]);
+    const c = await upsertConnection(pool, "default", {
+      source: "github",
+      externalId: "legacy",
+      name: "Private",
+      config: {},
+    });
+    await policy(mode, [`connection:${c.id}`]);
+    expect((await read("/api/connections")).json().connections).toEqual([]);
+    expect((await read(`/api/connections/${c.id}/health`)).statusCode).toBe(404);
+  },
+);
 it("reset and disable invalidate cookie sessions immediately", async () => {
   const reset = await afe.app.inject({
     method: "POST",
@@ -180,8 +165,8 @@ it("profile mutation requires CSRF and source-only never uses custom grants", as
     ).statusCode,
   ).toBe(403);
 });
-it("OAuth state is session-bound and single use; upstream revocation removes only source access", async () => {
-  await policy("source + custom");
+it("OAuth state is session-bound and single use; upstream revocation removes access", async () => {
+  await policy("source");
   let revoked = false;
   vi.stubGlobal(
     "fetch",
@@ -212,7 +197,7 @@ it("OAuth state is session-bound and single use; upstream revocation removes onl
   );
   expect((await afe.app.inject({ url: callback, headers: { cookie } })).statusCode).toBe(303);
   expect((await afe.app.inject({ url: callback, headers: { cookie } })).statusCode).toBe(400);
-  expect((await read("/api/events")).json().items.length).toBeGreaterThanOrEqual(2);
+  expect((await read("/api/events")).json().items).toHaveLength(1);
   const account = (
     await pool.query<{ credential_id: string }>(
       "SELECT credential_id FROM user_tool_accounts WHERE tenant_id=$1 AND user_id=$2",
@@ -224,12 +209,7 @@ it("OAuth state is session-bound and single use; upstream revocation removes onl
   expect(profile.json().tools[0].accountName).toBe("alice");
   revoked = true;
   const remaining = (await read("/api/events")).json().items;
-  expect(
-    remaining.every(
-      (i: { event: { target: { repository: string } } }) =>
-        i.event.target.repository === "acme/allowed",
-    ),
-  ).toBe(true);
+  expect(remaining).toEqual([]);
   const unlink = await afe.app.inject({
     method: "DELETE",
     url: "/api/profile/tools/github",
@@ -242,7 +222,10 @@ it("OAuth state is session-bound and single use; upstream revocation removes onl
 });
 
 it("Vercel uses the user's own token and refreshes source project access", async () => {
-  await setUserToolPolicy(pool, "default", user.user.id, "vercel", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "vercel", {
+    mode: "source",
+    custom: [],
+  });
   let visible = true;
   const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
     expect((init.headers as Record<string, string>).authorization).toBe(
@@ -286,7 +269,10 @@ it("Vercel uses the user's own token and refreshes source project access", async
   expect((await read("/api/events")).json().items).toEqual([]);
 });
 it("ArgoCD source grants are limited to the linked connection", async () => {
-  await setUserToolPolicy(pool, "default", user.user.id, "argocd", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "argocd", {
+    mode: "source",
+    custom: [],
+  });
   const connection = await upsertConnection(pool, "default", {
     source: "argocd",
     externalId: "https://argo-a.example",
@@ -363,7 +349,10 @@ it("Vercel OAuth is bound to its provider and never installs a mismatched identi
   vi.stubEnv("AFE_USER_VERCEL_CLIENT_ID", "vercel-client");
   vi.stubEnv("AFE_USER_VERCEL_CLIENT_SECRET", "vercel-client-secret");
   vi.stubEnv("AFE_USER_VERCEL_INTEGRATION_SLUG", "afe-personal");
-  await setUserToolPolicy(pool, "default", user.user.id, "vercel", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "vercel", {
+    mode: "source",
+    custom: [],
+  });
   let mismatched = false;
   vi.stubGlobal(
     "fetch",
@@ -432,7 +421,7 @@ it("Vercel OAuth is bound to its provider and never installs a mismatched identi
   ).toBe(502);
   expect((await read("/api/profile")).body).not.toContain("vercel-oauth-token");
 });
-it("Terraform has its own default-deny policy and custom workspace grants", async () => {
+it("Terraform denies access without a verifiable personal source identity", async () => {
   await ingestEvent(pool, "default", {
     source: "terraform",
     sourceEventId: "tf-custom",
@@ -448,16 +437,16 @@ it("Terraform has its own default-deny policy and custom workspace grants", asyn
     data: {},
   });
   expect((await read("/api/events?source=terraform")).json().items).toEqual([]);
-  await setUserToolPolicy(pool, "default", user.user.id, "terraform", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "terraform", {
     mode: "source",
     custom: [{ resource: "project:production", action: "read" }],
   });
   expect((await read("/api/events?source=terraform")).json().items).toEqual([]);
-  await setUserToolPolicy(pool, "default", user.user.id, "terraform", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "terraform", {
     mode: "source + custom",
     custom: [{ resource: "project:production", action: "read" }],
   });
-  expect((await read("/api/events?source=terraform")).json().items).toHaveLength(1);
+  expect((await read("/api/events?source=terraform")).json().items).toEqual([]);
 });
 it("keeps mapping changes, drift settings and tenant-wide containment protected", async () => {
   await policy("custom");
@@ -474,3 +463,54 @@ it("keeps mapping changes, drift settings and tenant-wide containment protected"
     ).statusCode,
   ).toBe(403);
 });
+
+it.each(["github", "vercel", "argocd", "terraform"])(
+  "rejects custom configuration for %s and requires explicit transition",
+  async (tool) => {
+    const denied =
+      tool === "github" ? [{ resource: "repository:acme/allowed", action: "github.rerun" }] : [];
+    const legacy = {
+      mode: "source + custom" as const,
+      custom: [{ resource: "repository:acme/allowed", action: "read" }],
+      ...(denied.length ? { denied } : {}),
+    };
+    await seedLegacyToolPolicy(pool, "default", user.user.id, tool, legacy);
+    const url = `/api/admin/users/${user.user.id}/permissions/${tool}`;
+    const put = (payload: unknown) =>
+      afe.app.inject({
+        method: "PUT",
+        url,
+        payload: JSON.stringify(payload),
+        headers: { ...headers(), "content-type": "application/json" },
+      });
+    for (const payload of [
+      legacy,
+      { mode: "custom", custom: [] },
+      { mode: "source + custom", custom: [] },
+      { mode: "source", custom: legacy.custom },
+      { mode: "none", custom: legacy.custom },
+    ]) {
+      const response = await put(payload);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toBe("invalid_policy");
+    }
+    expect(
+      (
+        await afe.app.inject({
+          url: `/api/admin/users/${user.user.id}/permissions`,
+          headers: headers(),
+        })
+      ).json().tools[tool],
+    ).toEqual(legacy);
+    expect((await put({ mode: "none", custom: [] })).statusCode).toBe(200);
+    expect((await put({ mode: "source", custom: [] })).statusCode).toBe(200);
+    expect(
+      (
+        await afe.app.inject({
+          url: `/api/admin/users/${user.user.id}/permissions`,
+          headers: headers(),
+        })
+      ).json().tools[tool],
+    ).toEqual({ mode: "source", custom: [], ...(denied.length ? { denied } : {}) });
+  },
+);

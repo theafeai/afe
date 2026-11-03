@@ -1,8 +1,7 @@
 # Personal ArgoCD browser SSO
 
 Afe's local dashboard login and ArgoCD identity are separate. Administrators
-configure an OIDC client for each ArgoCD connection. Users assigned `source` or
-`source + custom` permissions can then choose a configured connection in
+configure an OIDC client for each ArgoCD connection. Users assigned `source` permissions can then choose a configured connection in
 **Profile → ArgoCD** and authenticate in their browser. ArgoCD's own RBAC decides
 which applications the linked identity can read. Personal-token linking remains
 available.
@@ -63,7 +62,7 @@ Manual personal-token links are independent of the OIDC configuration.
 Saving publishes this connection's **name and ID** as a sign-in choice to users
 assigned ArgoCD source permissions in that tenant. It does not expose connection
 URLs, client secrets, health, other connection settings or application names.
-No choices are shown for `none` or `custom` mode. Only active configured
+No choices are shown for `none` or blocked legacy custom modes. Only active configured
 connections can be selected. A user currently links one ArgoCD account to one
 connection; signing in again replaces that link.
 
@@ -77,20 +76,20 @@ response sizes. The public Afe callback origin still requires HTTPS.
 
 ## Verify the user flow
 
-1. Give a test user ArgoCD `source` permission (or `source + custom`). Sign in to
+1. Give a test user ArgoCD `source` permission. Sign in to
    Afe with that user's local dashboard credential.
 2. In **Profile**, choose the ArgoCD connection and select **Sign in with
    ArgoCD**. Complete consent at the configured identity provider and return to
    Profile. The displayed account name comes from ArgoCD's authenticated
    user-info endpoint.
 3. Confirm that only applications the identity can read appear in Afe. Confirm
-   another ArgoCD connection's events remain hidden. Test `none`, `custom` and
-   combined mode separately. Authentication alone does not add custom grants.
+   another ArgoCD connection's events remain hidden. Test `none` and blocked legacy custom modes separately. Authentication alone
+   does not grant resource access.
 4. Revoke access upstream and verify Afe's next read no longer receives source
    grants. Revocation follows ArgoCD's token acceptance/RBAC semantics: an IdP
    logout alone may leave an already issued JWT usable until it expires.
 5. Disconnect the profile account. Source grants disappear; the local Afe login
-   and any independent custom grants continue to work.
+   continues to work, but grants no source access.
 
 ## Security and lifecycle
 

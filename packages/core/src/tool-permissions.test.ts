@@ -11,19 +11,18 @@ describe("tool permissions", () => {
   it("denies missing policy even for a linked account", () => {
     expect(permitsToolAction(null, read, { verified: true, grants: [read] })).toBe(false);
   });
-  it.each(TOOL_PERMISSION_MODES)("evaluates %s independently for source and custom", (mode) => {
-    const policy = { mode, custom: [other] };
-    const source = { verified: true, grants: [read] };
-    expect(permitsToolAction(policy, read, source)).toBe(
-      mode === "source" || mode === "source + custom",
-    );
-    expect(permitsToolAction(policy, other, source)).toBe(
-      mode === "custom" || mode === "source + custom",
-    );
-    expect(permitsToolAction(policy, read, { ...source, verified: false })).toBe(false);
-    expect(permitsToolAction(policy, { ...read, action: "write" }, source)).toBe(false);
-    expect(permitsToolAction(policy, { resource: "org", action: "read" }, source)).toBe(false);
-  });
+  it.each([...TOOL_PERMISSION_MODES, "custom", "source + custom"] as const)(
+    "allows only verified inherited access for %s",
+    (mode) => {
+      const policy = { mode, custom: [other] };
+      const source = { verified: true, grants: [read] };
+      expect(permitsToolAction(policy, read, source)).toBe(mode === "source");
+      expect(permitsToolAction(policy, other, source)).toBe(false);
+      expect(permitsToolAction(policy, read, { ...source, verified: false })).toBe(false);
+      expect(permitsToolAction(policy, { ...read, action: "write" }, source)).toBe(false);
+      expect(permitsToolAction(policy, { resource: "org", action: "read" }, source)).toBe(false);
+    },
+  );
 });
 
 it("inherits GitHub actions only in Source mode and applies exact restrictions first", () => {
@@ -32,7 +31,7 @@ it("inherits GitHub actions only in Source mode and applies exact restrictions f
   expect(permitsGitHubAction({ mode: "source", custom: [] }, "acme/app", action)).toBe(true);
   for (const mode of ["custom", "source + custom"] as const) {
     expect(permitsGitHubAction({ mode, custom: [] }, "acme/app", action)).toBe(false);
-    expect(permitsGitHubAction({ mode, custom: [grant] }, "acme/app", action)).toBe(true);
+    expect(permitsGitHubAction({ mode, custom: [grant] }, "acme/app", action)).toBe(false);
     expect(
       permitsGitHubAction({ mode, custom: [grant], denied: [grant] }, "acme/app", action),
     ).toBe(false);

@@ -204,12 +204,10 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       if (adminUser?.disabled) continue;
       if (!req.principal?.localUserId && tool !== "github") continue;
       const policy = uid ? await getUserToolPolicy(ctx.pool, tid, uid, tool) : { mode: "source" };
-      if (policy.mode === "none") continue;
+      if (policy.mode !== "source") continue;
       const account = accounts.find((a) => a.tool === tool);
       const oidcConnections =
-        tool === "argocd" && ["source", "source + custom"].includes(policy.mode)
-          ? await argocdOidcChoices(ctx, tid)
-          : [];
+        tool === "argocd" && policy.mode === "source" ? await argocdOidcChoices(ctx, tid) : [];
       tools.push({
         ...(tool === "argocd" ? { oidcConnections } : {}),
         tool,
@@ -225,8 +223,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
               : oidcConnections.length),
         ),
         sourceAvailable: tool !== "terraform",
-        sourceEnabled:
-          tool === "github" || policy.mode === "source" || policy.mode === "source + custom",
+        sourceEnabled: policy.mode === "source",
       });
     }
     return {
@@ -253,7 +250,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           message:
             "Personal GitHub linking requires an administrator or a managed Afe user with GitHub access.",
         });
-      if (uid && (await getUserToolPolicy(ctx.pool, tid, uid, "github")).mode === "none")
+      if (uid && (await getUserToolPolicy(ctx.pool, tid, uid, "github")).mode !== "source")
         return reply.code(403).send({ error: "forbidden" });
       const value = req.body?.token;
       if (typeof value !== "string" || value.length < 10 || value.length > 4096 || /\s/.test(value))
@@ -322,7 +319,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       const uid = await githubUserId(ctx, req, true);
       if (!uid) return reply.code(409).send({ error: "local_account_required" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-      if (p.mode === "none") return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       const state = randomBytes(32).toString("base64url");
       await ctx.pool.query(
         "DELETE FROM user_oauth_states WHERE tenant_id=$1 AND expires_at<now()",
@@ -364,7 +361,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       )
         return reply.code(400).send({ error: "invalid_callback" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "github");
-      if (p.mode === "none") return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       const used = await ctx.pool.query(
         "DELETE FROM user_oauth_states WHERE tenant_id=$1 AND user_id=$2 AND tool='github' AND digest=$3 AND session_binding=$4 AND expires_at>now() RETURNING digest",
         [tid, uid, hash(state), binding(req)],
@@ -402,8 +399,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           .code(409)
           .send({ error: "oauth_unavailable", message: "Vercel sign-in is not configured." });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "vercel");
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       if (!parseCookies(req.headers.cookie)[SESSION_COOKIE])
         return reply.code(400).send({ error: "session_required" });
       const state = randomBytes(32).toString("base64url");
@@ -438,8 +434,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       )
         return reply.code(400).send({ error: "invalid_callback" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "vercel");
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       const used = await ctx.pool.query(
         "DELETE FROM user_oauth_states WHERE tenant_id=$1 AND user_id=$2 AND tool='vercel' AND digest=$3 AND session_binding=$4 AND expires_at>now() RETURNING digest",
         [tid, uid, hash(state), binding(req)],
@@ -494,8 +489,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       )
         return reply.code(400).send({ error: "bad_request" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, tool);
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       const context: ToolAccount["context"] = {};
       if (tool === "vercel" && b.teamId !== undefined) {
         if (typeof b.teamId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(b.teamId))

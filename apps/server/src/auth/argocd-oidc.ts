@@ -290,8 +290,7 @@ export function registerArgocdOidcRoutes(
       if (!uid || req.principal?.kind !== "session")
         return reply.code(400).send({ error: "session_required" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "argocd");
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       const c =
         typeof id === "string" && uuid.test(id) ? await getConnection(ctx.pool, tid, id) : null;
       if (!c || c.source !== "argocd" || c.status !== "active")
@@ -369,8 +368,7 @@ export function registerArgocdOidcRoutes(
       )
         return reply.code(400).send({ error: "invalid_callback" });
       const p = await getUserToolPolicy(ctx.pool, tid, uid, "argocd");
-      if (p.mode !== "source" && p.mode !== "source + custom")
-        return reply.code(403).send({ error: "forbidden" });
+      if (p.mode !== "source") return reply.code(403).send({ error: "forbidden" });
       const db = await ctx.pool.connect();
       let flow: { verifier: string; nonce: string; revision: string; redirectUri: string },
         connectionId: string;
@@ -463,7 +461,7 @@ export function registerArgocdOidcRoutes(
               !user.rowCount ||
               current?.status !== "active" ||
               argocdOidcConfig(current.config.userOidc)?.revision !== config.revision ||
-              !["source", "source + custom"].includes(policyNow.mode)
+              policyNow.mode !== "source"
             )
               throw new Error("flow invalidated");
           },
