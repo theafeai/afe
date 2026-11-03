@@ -1,6 +1,7 @@
 # ADR 0013: Colour-code data by tool
 
-- Status: Accepted
+- Status: Accepted; the tool-coloured row rule and the Afe mark superseded by
+  [ADR 0015](0015-ink-design-language.md)
 - Date: 2026-11-01
 - Linear: AFE-65
 - Supersedes: the "Tool" status-language rule in [ADR 0009](0009-web-ui-design-system.md)

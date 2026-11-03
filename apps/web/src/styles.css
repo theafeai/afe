@@ -1,43 +1,54 @@
 /*
- * Afe design tokens (AFE-43). Direction: precise and technical — cool graphite
- * neutrals, 1px hairlines, one indigo accent, colour reserved for signal.
- * Every stylesheet reads these; never hard-code a colour or size in a page.
+ * Afe design tokens. Direction "Ink" (ADR 0015, AFE-86): black and white, with
+ * colour reserved for signal. Buttons, links and navigation are ink; status,
+ * tools and confidence carry the only colours; one blue (--select) marks focus
+ * and selection. Every stylesheet reads these; never hard-code a colour or size
+ * in a page.
  *
- * --accent is the readable accent (links, accent text, outlines);
- * --accent-solid / --on-accent fill primary buttons and selected controls.
+ * --accent is the readable accent (links, accent text): ink.
+ * --accent-solid / --on-accent fill primary buttons: ink, inverted in dark.
+ * --select / --select-soft: focus rings, selected cells, highlights, active filters.
+ *
+ * Themes: light values on :root; dark values in two identical blocks, one for the
+ * OS setting and one for the in-app choice (data-theme on <html>, see theme.ts).
+ * design-system.test.ts checks that the two dark blocks match.
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Neutrals */
-  --bg: #fcfcfd;
-  --sidebar: #f6f6f8;
+  --bg: #ffffff;
+  --sidebar: #fafafa;
   --surface: #ffffff;
-  --surface-2: #f4f4f6;
-  --surface-3: #ebebef;
-  --border: #e4e4e9;
-  --border-strong: #d1d1d9;
-  --text: #111116;
-  --text-2: #3f3f4a;
-  --muted: #676774;
-  --faint: #9b9ba7;
+  --surface-2: #f5f5f5;
+  --surface-3: #ebebeb;
+  --border: #ebebeb;
+  --border-strong: #d4d4d4;
+  --text: #0a0a0a;
+  --text-2: #3d3d3d;
+  --muted: #666666;
+  --faint: #a3a3a3;
 
-  /* Accent: indigo */
-  --accent: #4f4fc9;
-  --accent-solid: #5b5bd6;
-  --accent-solid-hover: #4e4ec8;
+  /* Accent: ink */
+  --accent: #0a0a0a;
+  --accent-solid: #0a0a0a;
+  --accent-solid-hover: #2e2e2e;
   --on-accent: #ffffff;
   --accent-text: #ffffff;
-  --accent-soft: #eff0fe;
-  --accent-ring: rgba(91, 91, 214, 0.28);
-  --focus: #5b5bd6;
+  --accent-soft: #f0f0f0;
+
+  /* Selection and focus: the one blue */
+  --select: #2160e0;
+  --select-soft: #ebf1fd;
+  --accent-ring: rgba(33, 96, 224, 0.28);
+  --focus: #2160e0;
 
   /* Signal */
   --ok: #167a3b;
   --ok-bg: #ecf8f0;
   --bad: #c0281b;
   --bad-bg: #fdf0ee;
-  --warn: #935700;
+  --warn: #8f5500;
   --warn-bg: #fff6e6;
   --warn-border: #efd09a;
   --recon: #a3215f;
@@ -45,38 +56,40 @@
   --backfill: #0a6e80;
   --backfill-bg: #e9f5f7;
 
-  /* Confidence (AFE-46): one scale for matrix, timeline, journey, drift */
+  /* Confidence: green (certain) → lime (strong) → amber (probable) → red (weak) */
   --conf-certain: var(--ok);
-  --conf-strong: #1d63c9;
+  --conf-strong: #4a7012;
   --conf-probable: var(--warn);
   --conf-weak: var(--bad);
   --conf-ambiguous: var(--recon);
   --conf-conflict: var(--bad);
   --conf-unknown: var(--muted);
-  --env-selected: var(--accent-soft);
-  --highlight: var(--accent);
-  --highlight-bg: var(--accent-soft);
+  --env-selected: var(--select-soft);
+  --highlight: var(--select);
+  --highlight-bg: var(--select-soft);
 
-  /* Tool colours (AFE-65): logos and the 2px rule on rows; never status */
+  /* Tool colours (ADR 0013): tool logos only; never status */
   --github: #6e7781;
   --argocd: #e2582a;
   --vercel: #000000;
   --terraform: #7b42bc;
-  --afe: var(--accent-solid);
+  --afe: var(--text);
 
   /* Type */
-  --font: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font:
+    "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
   --mono:
     "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --fs-xs: 0.75rem; /* 12px: overlines, table heads */
   --fs-sm: 0.8125rem; /* 13px: badges, labels, meta */
   --fs-md: 0.875rem; /* 14px: controls, dense rows */
   --fs-base: 0.9375rem; /* 15px: body */
-  --fs-lg: 1.0625rem; /* 17px: section and card titles */
-  --fs-xl: 1.5rem; /* 24px: page titles */
+  --fs-lg: 1.125rem; /* 18px: section and card titles */
+  --fs-xl: 1.75rem; /* 28px: page titles */
   --lh: 1.55; /* body and running text */
   --lh-dense: 1.45; /* rows, cells, callouts */
-  --lh-tight: 1.25; /* headings */
+  --lh-tight: 1.2; /* headings */
 
   /* Space, shape, depth, motion */
   --space-1: 0.25rem;
@@ -85,26 +98,26 @@
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
-  --radius-sm: 6px;
-  --radius: 8px;
-  --radius-lg: 12px;
+  --space-7: 3rem;
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
   --control-h: 2.25rem;
-  --shadow-xs: 0 1px 2px rgba(16, 16, 24, 0.05);
-  --shadow-sm: 0 1px 2px rgba(16, 16, 24, 0.04), 0 2px 6px rgba(16, 16, 24, 0.04);
-  --shadow-md: 0 4px 16px rgba(16, 16, 24, 0.08), 0 1px 3px rgba(16, 16, 24, 0.06);
-  --sheen: rgba(255, 255, 255, 0.14);
+  --shadow-xs: 0 0 0 0 transparent;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --sheen: transparent;
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur: 120ms;
 
   /* Layout */
-  --sidebar-w: 248px;
+  --sidebar-w: 236px;
   --topbar-h: 0px;
   --sticky-top: 0px;
 
   font-family: var(--font);
   font-size: var(--fs-base);
-  /* cv05/cv08: distinct l and I, so identifiers such as "Il1" read unambiguously. */
-  font-feature-settings: "cv05", "cv08", "calt";
   line-height: var(--lh);
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
@@ -113,27 +126,31 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0b0d;
-    --sidebar: #0f0f12;
-    --surface: #131316;
-    --surface-2: #1a1a1e;
-    --surface-3: #232328;
-    --border: #26262c;
-    --border-strong: #34343c;
-    --text: #ededf0;
-    --text-2: #c2c2ca;
-    --muted: #8f8f9a;
-    --faint: #62626c;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0a0a0a;
+    --sidebar: #0a0a0a;
+    --surface: #0f0f0f;
+    --surface-2: #181818;
+    --surface-3: #232323;
+    --border: #262626;
+    --border-strong: #3a3a3a;
+    --text: #f5f5f5;
+    --text-2: #c9c9c9;
+    --muted: #9c9c9c;
+    --faint: #5c5c5c;
 
-    --accent: #a3a4ff;
-    --accent-solid: #5b5bd6;
-    --accent-solid-hover: #6a6ae0;
-    --on-accent: #ffffff;
-    --accent-text: #0d0d24;
-    --accent-soft: rgba(110, 110, 240, 0.16);
-    --accent-ring: rgba(130, 130, 255, 0.35);
-    --focus: #8f90ff;
+    --accent: #f5f5f5;
+    --accent-solid: #f5f5f5;
+    --accent-solid-hover: #d6d6d6;
+    --on-accent: #0a0a0a;
+    --accent-text: #0a0a0a;
+    --accent-soft: #1f1f1f;
+
+    --select: #7ea8ff;
+    --select-soft: rgba(80, 130, 255, 0.16);
+    --accent-ring: rgba(126, 168, 255, 0.4);
+    --focus: #7ea8ff;
 
     --ok: #5fd38a;
     --ok-bg: rgba(52, 199, 105, 0.12);
@@ -147,17 +164,64 @@
     --backfill: #67d0dc;
     --backfill-bg: rgba(40, 180, 200, 0.12);
 
-    --conf-strong: #7cb0ff;
+    --conf-strong: #a8d65e;
 
     --github: #9198a1;
     --argocd: #ff9466;
     --vercel: #ffffff;
     --terraform: #a983ff;
 
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.35);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --sidebar: #0a0a0a;
+  --surface: #0f0f0f;
+  --surface-2: #181818;
+  --surface-3: #232323;
+  --border: #262626;
+  --border-strong: #3a3a3a;
+  --text: #f5f5f5;
+  --text-2: #c9c9c9;
+  --muted: #9c9c9c;
+  --faint: #5c5c5c;
+
+  --accent: #f5f5f5;
+  --accent-solid: #f5f5f5;
+  --accent-solid-hover: #d6d6d6;
+  --on-accent: #0a0a0a;
+  --accent-text: #0a0a0a;
+  --accent-soft: #1f1f1f;
+
+  --select: #7ea8ff;
+  --select-soft: rgba(80, 130, 255, 0.16);
+  --accent-ring: rgba(126, 168, 255, 0.4);
+  --focus: #7ea8ff;
+
+  --ok: #5fd38a;
+  --ok-bg: rgba(52, 199, 105, 0.12);
+  --bad: #ff8b80;
+  --bad-bg: rgba(240, 70, 60, 0.13);
+  --warn: #f2b84f;
+  --warn-bg: rgba(242, 166, 30, 0.11);
+  --warn-border: rgba(242, 166, 30, 0.35);
+  --recon: #f490c0;
+  --recon-bg: rgba(236, 90, 160, 0.14);
+  --backfill: #67d0dc;
+  --backfill-bg: rgba(40, 180, 200, 0.12);
+
+  --conf-strong: #a8d65e;
+
+  --github: #9198a1;
+  --argocd: #ff9466;
+  --vercel: #ffffff;
+  --terraform: #a983ff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 /* Base ------------------------------------------------------------------------ */
@@ -172,14 +236,18 @@ body {
 ::selection {
   background: var(--accent-ring);
 }
+/* Ink links: the accent is the text colour, so links carry a quiet underline
+   that darkens on hover. Buttons, nav and row links opt out with their classes. */
 a {
   color: var(--accent);
-  text-decoration: none;
-  text-underline-offset: 0.18em;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  text-underline-offset: 0.2em;
   text-decoration-thickness: 1px;
 }
 a:hover {
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 p a,
 .lede a,
@@ -214,12 +282,13 @@ h3 {
 }
 h1 {
   font-size: var(--fs-xl);
-  font-weight: 650;
-  letter-spacing: -0.021em;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   margin: 0 0 var(--space-2);
 }
 h2 {
   font-size: var(--fs-lg);
+  letter-spacing: -0.015em;
   margin: 0 0 var(--space-3);
 }
 h3 {
@@ -248,11 +317,39 @@ hr {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* Disclosures: a labelled toggle with a chevron, not the browser's arrow. */
 details > summary {
   cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 550;
+  color: var(--text);
+  border-radius: var(--radius-sm);
 }
-details > summary::marker {
-  color: var(--muted);
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details > summary::before {
+  content: "";
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin: 0 0.15rem;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform var(--dur) var(--ease);
+}
+details[open] > summary::before {
+  transform: rotate(45deg);
+}
+details > summary:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+  text-underline-offset: 0.2em;
 }
 
 /* App shell (AFE-44): sidebar + content ------------------------------------- */
@@ -281,7 +378,7 @@ details > summary::marker {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-3) var(--space-3);
+  padding: var(--space-4) var(--space-3) var(--space-3);
   background: var(--sidebar);
   border-right: 1px solid var(--border);
   z-index: 20;
@@ -290,25 +387,24 @@ details > summary::marker {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-1) var(--space-2) var(--space-3);
+  padding: var(--space-1) var(--space-3) var(--space-4);
 }
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
   color: var(--text);
   text-decoration: none;
-  font-weight: 650;
-  font-size: var(--fs-lg);
-  letter-spacing: -0.025em;
+  border-radius: var(--radius-sm);
 }
 .brand:hover {
   text-decoration: none;
 }
+/* The Afe wordmark (icons.tsx BrandMark): drawn in currentColor, sized by height. */
 .brand-mark {
-  width: 1.5rem;
-  height: 1.5rem;
+  height: 1.375rem;
+  width: auto;
   flex: none;
+  fill: currentColor;
 }
 .sidebar .nav-toggle {
   display: none;
@@ -318,7 +414,7 @@ details > summary::marker {
   overflow-y: auto;
   display: grid;
   align-content: start;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 .nav-group ul {
   list-style: none;
@@ -329,11 +425,9 @@ details > summary::marker {
 }
 .nav-heading {
   margin: 0 0 var(--space-1);
-  padding: 0 var(--space-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  padding: 0 var(--space-3);
+  font-size: var(--fs-sm);
+  font-weight: 500;
   color: var(--muted);
 }
 .sidebar nav a {
@@ -341,8 +435,8 @@ details > summary::marker {
   align-items: center;
   gap: 0.625rem;
   height: var(--control-h);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
   color: var(--text-2);
   font-size: var(--fs-md);
   font-weight: 500;
@@ -355,18 +449,16 @@ details > summary::marker {
   color: var(--muted);
 }
 .sidebar nav a:hover {
-  background: var(--surface-3);
+  background: var(--surface-2);
   color: var(--text);
 }
 .sidebar nav a[aria-current="page"] {
-  background: var(--surface);
+  background: var(--accent-soft);
   color: var(--text);
-  box-shadow:
-    var(--shadow-xs),
-    0 0 0 1px var(--border);
+  font-weight: 600;
 }
 .sidebar nav a[aria-current="page"] .icon {
-  color: var(--accent);
+  color: var(--text);
 }
 .icon {
   width: 1rem;
@@ -374,13 +466,53 @@ details > summary::marker {
   flex: none;
 }
 .session {
+  display: grid;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
+  padding: var(--space-3) var(--space-3) var(--space-3) calc(var(--space-3) + var(--space-1));
+}
+.session-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: var(--space-2);
-  border-top: 1px solid var(--border);
-  margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3));
-  padding: var(--space-3) var(--space-3) var(--space-3) calc(var(--space-3) + var(--space-2));
+}
+/* Theme choice (System / Light / Dark) in the account area; see theme.ts. */
+.theme-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.theme-switch button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 1.75rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.theme-switch .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.theme-switch button:hover {
+  color: var(--text);
+}
+.theme-switch button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 550;
+  box-shadow: var(--shadow-sm);
 }
 .avatar {
   display: grid;
@@ -388,10 +520,10 @@ details > summary::marker {
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface-3);
+  color: var(--text);
   font-size: var(--fs-sm);
-  font-weight: 650;
+  font-weight: 600;
   flex: none;
 }
 .session-who {
@@ -427,20 +559,20 @@ main {
   justify-items: center;
   gap: var(--space-4);
   padding: var(--space-6) var(--space-4);
-  background:
-    radial-gradient(60rem 30rem at 50% -10%, var(--accent-soft), transparent 70%), var(--bg);
+  background: var(--bg);
 }
-.login-card {
+.card.login-card {
   width: min(26rem, 100%);
   padding: var(--space-6);
   margin: 0;
-  box-shadow: var(--shadow-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   border-radius: var(--radius-lg);
 }
 .login-card .brand-mark {
-  width: 2.25rem;
-  height: 2.25rem;
-  margin-bottom: var(--space-4);
+  height: 1.75rem;
+  margin-bottom: var(--space-5);
 }
 .login-card h1 {
   font-size: var(--fs-xl);
@@ -484,7 +616,7 @@ main {
 .page {
   max-width: 1240px;
   margin: 0 auto;
-  padding: var(--space-6) var(--space-6) 4rem;
+  padding: var(--space-7) var(--space-7) 4rem;
 }
 .page.narrow {
   max-width: 840px;
@@ -496,6 +628,9 @@ main {
   gap: var(--space-4);
   flex-wrap: wrap;
   margin-bottom: var(--space-6);
+}
+.page-header h1 {
+  margin-bottom: var(--space-1);
 }
 .lede {
   margin: var(--space-1) 0 0;
@@ -517,14 +652,16 @@ main {
   flex-wrap: wrap;
   align-items: center;
 }
+/* Ink: a card is a section under a hairline, not a box. Tables, the timeline and
+   forms inside it keep their own containers. The sign-in card is boxed (.login-card). */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-5);
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  padding: var(--space-5) 0 var(--space-4);
   margin-bottom: var(--space-4);
   min-width: 0;
-  box-shadow: var(--shadow-xs);
 }
 .card > h2,
 .card > h3:first-child {
@@ -538,7 +675,7 @@ main {
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--space-4);
+  gap: var(--space-4) var(--space-6);
 }
 .grid-2 .card {
   margin-bottom: 0;
@@ -546,6 +683,131 @@ main {
 .grid-2 + .card,
 .grid-2 + section {
   margin-top: var(--space-4);
+}
+
+/* Sections and entity lists (AFE-83, AFE-86) --------------------------------- */
+/* A section header: title (with an optional count) and hint on the left, the
+   section's main action (e.g. "Add service") on the right. */
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.section-head p {
+  margin: var(--space-1) 0 0;
+}
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.section-title h2 {
+  margin: 0;
+}
+.count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  height: 1.375rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Rows of named things (services, environments, rules): name and identifier
+   on the left, metadata under them, actions aligned on the right. */
+.entity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.entity-list > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3rem;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+}
+.entity-list > li:first-child {
+  border-top: 0;
+}
+.entity-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.125rem;
+}
+.entity-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+.entity-name strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.entity-name code {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.entity-meta {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.entity-order {
+  width: 1.25rem;
+  flex: none;
+  text-align: right;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.entity-actions,
+.row-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  justify-content: flex-end;
+}
+.table td.row-actions {
+  display: table-cell;
+  white-space: nowrap;
+  text-align: right;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+.table .num {
+  width: 2.5rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A creation form opened in place by its section's "Add …" button. */
+.inline-form {
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.form-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-4);
+}
+.form-end {
+  justify-content: flex-end;
 }
 
 /* Buttons and forms (AFE-45) -------------------------------------------------- */
@@ -559,15 +821,14 @@ main {
   font-weight: 550;
   line-height: 1;
   height: var(--control-h);
-  padding: 0 0.875rem;
-  border-radius: var(--radius-sm);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
-  box-shadow: var(--shadow-xs);
   transition:
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
@@ -591,9 +852,6 @@ main {
   background: var(--accent-solid);
   color: var(--on-accent);
   border-color: transparent;
-  box-shadow:
-    var(--shadow-xs),
-    inset 0 1px 0 var(--sheen);
 }
 .btn-primary:hover {
   background: var(--accent-solid-hover);
@@ -615,12 +873,28 @@ main {
   color: var(--text-2);
 }
 .btn-ghost:hover {
-  background: var(--surface-3);
+  background: var(--surface-2);
   color: var(--text);
 }
 .btn-icon {
   width: var(--control-h);
   padding: 0;
+}
+.btn-sm {
+  height: 2rem;
+  padding: 0 var(--space-3);
+  font-size: var(--fs-sm);
+}
+.btn-sm.btn-icon {
+  width: 2rem;
+  padding: 0;
+}
+.btn-ghost.btn-danger {
+  color: var(--muted);
+}
+.btn-ghost.btn-danger:hover {
+  color: var(--bad);
+  background: var(--bad-bg);
 }
 .btn-wide {
   width: 100%;
@@ -633,6 +907,7 @@ main {
   color: var(--accent);
   cursor: pointer;
   font: inherit;
+  font-weight: 550;
   padding: 0;
 }
 .btn-link:hover {
@@ -647,10 +922,9 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 0 0.7rem;
+  padding: 0 0.75rem;
   height: var(--control-h);
   max-width: 100%;
-  box-shadow: var(--shadow-xs);
   transition:
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
@@ -668,7 +942,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: none;
-  border-color: var(--accent-solid);
+  border-color: var(--focus);
   box-shadow: 0 0 0 3px var(--accent-ring);
   border-radius: var(--radius-sm);
 }
@@ -706,6 +980,9 @@ textarea {
 .form {
   display: grid;
   gap: var(--space-4);
+}
+.form > .btn:not(.btn-wide) {
+  justify-self: start;
 }
 .form .field input,
 .form .field textarea,
@@ -769,12 +1046,9 @@ legend {
   flex-wrap: wrap;
   gap: var(--space-3);
   align-items: flex-end;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-4);
+  padding: 0 0 var(--space-5);
   margin-bottom: var(--space-5);
-  box-shadow: var(--shadow-xs);
+  border-bottom: 1px solid var(--border);
 }
 .filters fieldset {
   border: none;
@@ -818,11 +1092,11 @@ legend {
   align-items: center;
   gap: 0.2rem;
   height: 1.75rem;
-  background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  border-radius: var(--radius-sm);
-  padding: 0 0.15rem 0 0.55rem;
+  background: var(--select-soft);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--select) 30%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 0 0.2rem 0 0.7rem;
   font-size: var(--fs-sm);
   font-weight: 500;
 }
@@ -835,10 +1109,10 @@ legend {
   line-height: 1;
   width: 1.25rem;
   height: 1.25rem;
-  border-radius: 4px;
+  border-radius: 50%;
 }
 .chip button:hover {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  background: color-mix(in srgb, var(--select) 18%, transparent);
 }
 
 /* Callouts and states -------------------------------------------------------- */
@@ -894,7 +1168,7 @@ legend {
   height: 0.875rem;
   border-radius: 50%;
   border: 1.5px solid var(--border-strong);
-  border-top-color: var(--accent-solid);
+  border-top-color: var(--text);
   animation: spin 0.7s linear infinite;
 }
 @keyframes spin {
@@ -924,7 +1198,7 @@ legend {
   background: var(--surface);
   box-shadow:
     var(--shadow-md),
-    inset 2px 0 0 var(--accent);
+    inset 2px 0 0 var(--text);
   color: var(--text);
   font-size: var(--fs-md);
   line-height: var(--lh-dense);
@@ -992,7 +1266,7 @@ legend {
   padding: 3rem var(--space-4);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: transparent;
   color: var(--muted);
 }
 .empty h3 {
@@ -1011,10 +1285,10 @@ legend {
   width: 2.75rem;
   height: 2.75rem;
   margin-bottom: var(--space-3);
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .empty-icon .icon {
   width: 1.25rem;
@@ -1040,7 +1314,7 @@ legend {
   font-weight: 500;
   line-height: 1;
   padding: 0 0.5rem;
-  border-radius: 5px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-2);
@@ -1048,8 +1322,8 @@ legend {
   vertical-align: middle;
   letter-spacing: 0;
 }
-/* Tools (AFE-65): neutral chip with the tool's logo in its colour. Rows and
-   cards that belong to one tool carry a 2px rule in that colour (.tool-row). */
+/* Tools (ADR 0013, ADR 0015): neutral chip with the tool's logo in its colour.
+   Rows stay neutral; the logo alone identifies the tool. */
 .tool {
   background: var(--surface);
   color: var(--text-2);
@@ -1067,11 +1341,6 @@ legend {
   margin: 0 0.1875rem;
   border-radius: 2px;
   background: var(--tool, var(--muted));
-}
-/* Zero specificity (:where), so status rules such as journey highlights win. */
-:where(.event-row.tool-row > .row-link),
-:where(.table tr.tool-row > td:first-child) {
-  box-shadow: inset 2px 0 0 var(--tool);
 }
 .tool-github {
   --tool: var(--github);
@@ -1304,12 +1573,10 @@ a.alert-badge:hover {
   position: sticky;
   top: var(--sticky-top);
   background: var(--bg);
-  margin: var(--space-5) 0 var(--space-2);
+  margin: var(--space-5) 0 0;
   padding: var(--space-2) 0;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--muted);
   z-index: 2;
 }
@@ -1317,11 +1584,8 @@ a.alert-badge:hover {
   list-style: none;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  overflow: hidden;
-  box-shadow: var(--shadow-xs);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 .event-row + .event-row {
   border-top: 1px solid var(--border);
@@ -1330,7 +1594,7 @@ a.alert-badge:hover {
   display: grid;
   grid-template-columns: 5rem 1fr auto;
   gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3);
   line-height: var(--lh-dense);
   color: inherit;
   text-decoration: none;
@@ -1364,7 +1628,7 @@ a.alert-badge:hover {
 }
 .row-title .action {
   font-family: var(--mono);
-  font-weight: 600;
+  font-weight: 500;
   font-size: var(--fs-md);
   word-break: break-word;
 }
@@ -1423,7 +1687,6 @@ a.alert-badge:hover {
   border-radius: var(--radius);
   background: var(--surface);
   margin-bottom: var(--space-4);
-  box-shadow: var(--shadow-xs);
 }
 .table {
   border-collapse: collapse;
@@ -1443,10 +1706,8 @@ a.alert-badge:hover {
   border-bottom: none;
 }
 .table th {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-sm);
+  font-weight: 500;
   color: var(--muted);
   background: var(--surface);
   white-space: nowrap;
@@ -1530,7 +1791,6 @@ a.alert-badge:hover {
   border-radius: var(--radius);
   background: var(--surface);
   text-decoration: none;
-  box-shadow: var(--shadow-xs);
   font-size: var(--fs-md);
   line-height: var(--lh-dense);
   color: var(--text-2);
@@ -1558,8 +1818,7 @@ a.alert-badge:hover {
   font-size: var(--fs-base);
 }
 .connect-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--text);
   text-decoration: none;
 }
 .conn-list {
@@ -1639,7 +1898,7 @@ a.alert-badge:hover {
     margin: 0 calc(-1 * var(--space-3));
   }
   .page {
-    padding: var(--space-5) var(--space-4) 3rem;
+    padding: var(--space-6) var(--space-5) 3rem;
   }
 }
 @media (max-width: 640px) {
@@ -1680,7 +1939,10 @@ a.alert-badge:hover {
     padding: var(--space-5) var(--space-4) 3rem;
   }
   .card {
-    padding: var(--space-4);
+    padding: var(--space-4) 0;
+  }
+  .card.login-card {
+    padding: var(--space-5);
   }
   .page-header {
     margin-bottom: var(--space-5);

@@ -2,3 +2,11 @@ Afe
 Copyright 2026 The Afe Authors
 
 This product is licensed under the Apache License, Version 2.0.
+
+This product includes third-party material:
+
+- Icon outlines from Lucide (https://lucide.dev), ISC License,
+  Copyright (c) Lucide Contributors. Copied into apps/web/src/icons.tsx.
+- The Afe wordmark and favicon are outlines of glyphs from Instrument Sans,
+  SIL Open Font License 1.1, Copyright 2022 The Instrument Sans Project Authors.
+- Tool logo outlines from Simple Icons (https://simpleicons.org), CC0-1.0.

@@ -1,9 +1,10 @@
 # Afe design system
 
 This is the binding reference for every change to the web UI (`apps/web`). It
-implements [ADR 0009](decisions/0009-web-ui-design-system.md) and the type scale of
-[ADR 0012](decisions/0012-readable-type-scale.md) and the tool colours of
-[ADR 0013](decisions/0013-tool-colour-coding.md). Humans and
+implements [ADR 0009](decisions/0009-web-ui-design-system.md), the type scale of
+[ADR 0012](decisions/0012-readable-type-scale.md), the tool colours of
+[ADR 0013](decisions/0013-tool-colour-coding.md) and the Ink design language of
+[ADR 0015](decisions/0015-ink-design-language.md). Humans and
 agents follow it for **all** UI work, new features included. The rules marked
 **[enforced]** are checked by `apps/web/src/design-system.test.ts`, which runs
 in `pnpm test`; a violation fails CI.
@@ -28,7 +29,8 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
    **[enforced]**
 4. **Themes are tokens, not overrides.** Only `styles.css` may contain
    `prefers-color-scheme`. A page that looks right in light mode with tokens is
-   right in dark mode. **[enforced]**
+   right in dark mode. The dark tokens appear twice in `styles.css` (OS setting and
+   the in-app `data-theme="dark"` choice) and must stay identical. **[enforced]**
 5. **Every class used in markup must be styled**, or be listed (with a reason)
    in `SEMANTIC_HOOKS` in the test. An unstyled `className` is a bug: it renders
    as browser defaults. **[enforced]**
@@ -48,24 +50,27 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
 
 ## Principles
 
-- **Precise and technical.** Cool graphite neutrals, 1px hairlines, tight type.
-  It should feel like an instrument, not a marketing page.
-- **Calm by default, loud only when it matters.** Most data is routine and
-  stays neutral. Colour, weight and tinted backgrounds are reserved for what
-  needs attention: observation gaps, drift, weak or conflicting confidence,
-  failures. If everything is highlighted, nothing is.
-- **One accent.** Indigo marks interactivity and selection (links, primary
-  buttons, the current nav item, focus). It never encodes a status.
-- **Data-dense but legible.** 15px body, 14px dense rows, nothing below 12px,
-  tabular numerals, monospace only for identifiers.
+- **Ink.** Black and white, neutral greys, 1px hairlines. Sections are divided by
+  hairlines and whitespace rather than boxed. It should feel like a precise
+  instrument, not a marketing page.
+- **Colour only means something.** Buttons, links and navigation are ink. The
+  only colours are status (gaps, drift, confidence, outcomes, failures), tool
+  logos and the selection blue. If everything is highlighted, nothing is.
+- **One blue, for selection.** `--select` marks focus, selected cells, journey
+  highlights and active filters. It never encodes a status and is never decoration.
+- **Airy shell, compact data.** Page headers, forms and settings breathe; the
+  timeline, tables and matrix keep tight rows. 15px body, 14px dense rows,
+  nothing below 12px, tabular numerals, monospace only for identifiers.
 - **Say what is known and how sure Afe is.** The UI never hides uncertainty;
   it shows it quietly and consistently ([Status language](#status-language)).
 
 ## Tokens
 
 All tokens live in `apps/web/src/styles.css`: light values in `:root`, dark
-values in `@media (prefers-color-scheme: dark) { :root { … } }`. Use the
-token whose **role** matches, not the one whose colour looks right.
+values in `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { … } }`
+and again, identically, in `:root[data-theme="dark"] { … }` (the in-app theme
+choice, `theme.ts`). Use the token whose **role** matches, not the one whose
+colour looks right.
 
 ### Colour roles
 
@@ -82,10 +87,11 @@ token whose **role** matches, not the one whose colour looks right.
 | `--text-2`                                                | Secondary text (cell content, descriptions inside cards)            |
 | `--muted`                                                 | Labels, metadata, timestamps, placeholders for values               |
 | `--faint`                                                 | Decorative only (section overlines, empty cells); never for content |
-| `--accent`                                                | Links and accent text (readable on surfaces)                        |
-| `--accent-solid` / `--accent-solid-hover` / `--on-accent` | Primary button and selected-control fill and its text               |
-| `--accent-soft`                                           | Selected backgrounds, chips, icon tiles                             |
-| `--accent-ring` / `--focus`                               | Focus rings                                                         |
+| `--accent`                                                | Links and accent text: ink (readable on surfaces)                   |
+| `--accent-solid` / `--accent-solid-hover` / `--on-accent` | Primary button and filled-control fill (ink) and its text           |
+| `--accent-soft`                                           | Current nav item, neutral selected backgrounds                      |
+| `--select` / `--select-soft`                              | Selection: selected cells, journey highlights, active filter chips  |
+| `--accent-ring` / `--focus`                               | Focus rings (the selection blue)                                    |
 | `--ok` / `--ok-bg`                                        | Succeeded, healthy, certain                                         |
 | `--warn` / `--warn-bg` / `--warn-border`                  | Pending, degraded, observation gaps, probable                       |
 | `--bad` / `--bad-bg`                                      | Failed, revoked, weak, conflict, alerts                             |
@@ -93,42 +99,42 @@ token whose **role** matches, not the one whose colour looks right.
 | `--backfill` / `--backfill-bg`                            | Imported by backfill                                                |
 | `--conf-*`                                                | Confidence scale (see [Status language](#status-language))          |
 | `--highlight` / `--highlight-bg` / `--env-selected`       | Journey highlight, selected matrix cell                             |
-| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool logos and tool rows only; never status                         |
+| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool logos only; never status                                       |
 
 ### Type, space, shape, depth, motion
 
-| Group          | Tokens                                                                                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Font families  | `--font` (Inter), `--mono` (JetBrains Mono)                                                                                                                                                                        |
-| Font sizes     | `--fs-xs` 12px (overlines, table heads) · `--fs-sm` 13px (badges, labels, meta) · `--fs-md` 14px (controls, dense rows) · `--fs-base` 15px (body) · `--fs-lg` 17px (section titles) · `--fs-xl` 24px (page titles) |
-| Line height    | `--lh` 1.55 (running text) · `--lh-dense` 1.45 (rows, cells, callouts) · `--lh-tight` 1.25 (headings)                                                                                                              |
-| Spacing        | `--space-1` 4px · `--space-2` 8px · `--space-3` 12px · `--space-4` 16px · `--space-5` 24px · `--space-6` 32px                                                                                                      |
-| Radius         | `--radius-sm` 6px (controls, badges) · `--radius` 8px (cards, tables) · `--radius-lg` 12px (dialogs, sign-in card)                                                                                                 |
-| Control height | `--control-h` 36px                                                                                                                                                                                                 |
-| Elevation      | `--shadow-xs` (cards, controls) · `--shadow-sm` (hover lift) · `--shadow-md` (popovers, sign-in card) · `--sheen` (inner highlight on primary buttons)                                                             |
-| Motion         | `--dur` 120ms · `--ease`; respect `prefers-reduced-motion` (handled globally)                                                                                                                                      |
-| Layout         | `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                                                              |
+| Group          | Tokens                                                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Font families  | `--font` (Instrument Sans), `--mono` (JetBrains Mono)                                                                                                                                                                      |
+| Font sizes     | `--fs-xs` 12px (counts, overlines) · `--fs-sm` 13px (badges, labels, meta, table heads) · `--fs-md` 14px (controls, dense rows) · `--fs-base` 15px (body) · `--fs-lg` 18px (section titles) · `--fs-xl` 28px (page titles) |
+| Line height    | `--lh` 1.55 (running text) · `--lh-dense` 1.45 (rows, cells, callouts) · `--lh-tight` 1.25 (headings)                                                                                                                      |
+| Spacing        | `--space-1` 4px · `--space-2` 8px · `--space-3` 12px · `--space-4` 16px · `--space-5` 24px · `--space-6` 32px · `--space-7` 48px (page padding)                                                                            |
+| Radius         | `--radius-pill` (buttons, nav items, chips, badges) · `--radius-sm` 8px (inputs) · `--radius` 12px (tables, callouts, inline forms) · `--radius-lg` 16px (dialogs, sign-in card)                                           |
+| Control height | `--control-h` 36px                                                                                                                                                                                                         |
+| Elevation      | None at rest (`--shadow-xs` and `--sheen` are transparent) · `--shadow-sm` (sign-in card, pressed theme switch) · `--shadow-md` (popovers, toasts)                                                                         |
+| Motion         | `--dur` 120ms · `--ease`; respect `prefers-reduced-motion` (handled globally)                                                                                                                                              |
+| Layout         | `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                                                                      |
 
 Prefer the spacing and size tokens for new CSS. Some older page rules still
 use literal `rem` values; convert them when you touch those rules.
 
 ## Typography
 
-- **Inter** for all UI text. **JetBrains Mono** only for identifiers: commit
+- **Instrument Sans** for all UI text. **JetBrains Mono** only for identifiers: commit
   SHAs, image references, event types (`deployment.created`), times in
   timelines, rule expressions. Never for prose or labels.
-- Page title: `h1` (`--fs-xl`, weight 650). Section title: `h2` (`--fs-lg`).
+- Page title: `h1` (`--fs-xl`, weight 600). Section title: `h2` (`--fs-lg`).
   Card title: `h2` (or a first-child `h3`) inside `.card`, shown at `--fs-lg`;
   later `h3`s in a card are subsections at `--fs-base`.
 - Body text has no negative letter spacing; only headings are tightened.
-  Inter's `cv05`/`cv08` alternates keep `l`, `I` and `1` distinct.
+  Identifiers are always mono, where `l`, `I` and `1` are distinct.
 - Labels are muted and values are `--text` (`.kv`, `.field`); ledes use
   `--text-2`. `--faint` is never used for text that carries content, including
   placeholders and navigation headings.
 - Never set a font size below `--fs-xs` (12px), and use the size tokens, not
   literal `rem`/`px` font sizes.
-- Overlines and table headers: `--fs-xs`, uppercase, `letter-spacing: 0.06em`,
-  `--muted`. Use sparingly.
+- Table headers and day headings: `--fs-sm`, sentence case, `--muted`. No
+  uppercase overlines.
 - Numbers that line up (tables, times, counts): `font-variant-numeric:
 tabular-nums` (already on `.table`, `.row-time`).
 - Sentence case everywhere ("Add a connection", not "Add A Connection").
@@ -157,7 +163,9 @@ Every page follows this structure:
 
 - Wide data pages may widen `.page` with a page class (see `.page.env-page`,
   `.page.journey-page`).
-- Group content in `.card`s. Two cards side by side: `.grid-2`.
+- Group content in `.card`s: a section under a hairline, not a box. Start a
+  section with `SectionHead` (title, optional count and hint, and the section's
+  main action on the right). Two sections side by side: `.grid-2`.
 - Back links sit above the `h1`: `<Link to="/events">← Events</Link>`.
 - Pages shown before sign-in (sign-in, invitation, reset) use the auth card:
   `<div className="login"><section className="card login-card"><BrandMark />
@@ -180,26 +188,28 @@ Use these instead of re-creating their markup.
 | `OutcomeBadge`, `HealthBadge`, `StatusBadge`, `MethodBadge`                  | Event outcome, connection health, connection status, observation method |
 | `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
 | `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
+| `SectionHead`                                                                | A section's title, optional count and hint, and its main action         |
 | `useToast` (`toast.tsx`)                                                     | Confirming an action the user just took (see [Patterns](#patterns))     |
-| `icons.*`, `BrandMark`, `ToolMark`                                           | 16px line icons (`aria-hidden`), the Afe mark and tool logos            |
+| `icons.*`, `BrandMark`, `ToolMark`                                           | 16px Lucide line icons (`aria-hidden`), the Afe wordmark and tool logos |
 | `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
 
 ### CSS classes (`styles.css`)
 
-| Need             | Class                                                                                                                                                                                                                                                                              |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Buttons          | `.btn` (secondary, default) · `.btn-primary` (one per view, the main action) · `.btn-ghost` (toolbar and row actions) · `.btn-danger` (destructive) · `.btn-icon` (square, needs `aria-label`) · `.btn-wide` (full width, auth card) · `.btn-link` (a button that reads as a link) |
-| Button groups    | `.toolbar`, `.button-row` (`.actions` is an alias) · `.segmented` (toggle group; set `aria-pressed`)                                                                                                                                                                               |
-| Forms            | `.form` (vertical form) · `.field` (label + control) · `.check` (checkbox/radio + label) · `fieldset`/`legend` · `.joined` (select + input pair)                                                                                                                                   |
-| Filters          | `.filters` (filter bar card) · `.chips` / `.chip` (active filters, removable)                                                                                                                                                                                                      |
-| Containers       | `.card` · `.grid-2` · `.table-wrap` + `.table` · `.kv` · `.json` (raw data)                                                                                                                                                                                                        |
-| Lists            | `.events` / `.event-row` / `.row-link` (timeline rows) · `.inline-list` · `.plain` · `.conn-list`                                                                                                                                                                                  |
-| Callouts         | `.callout` + `.callout-error` / `.callout-ok` / `.callout-gap` / `.callout-reconciled`                                                                                                                                                                                             |
-| Toasts           | `.toasts` / `.toast` + `.toast-ok` / `.toast-info` / `.toast-error` (rendered by `ToastProvider`; do not write this markup by hand)                                                                                                                                                |
-| States           | `.state` (inline status text) · `.spinner` · `.empty` (+ `.empty-icon`) · `.end` (end of list)                                                                                                                                                                                     |
-| Badges           | `.badge` + a modifier from [Status language](#status-language)                                                                                                                                                                                                                     |
-| Text             | `.muted` · `.small` · `.lede` · `.mono-title` · `.hash` · `.sr-only`                                                                                                                                                                                                               |
-| Navigation cards | `.connect-buttons` / `.connect-card` + `.tool-<source>`                                                                                                                                                                                                                            |
+| Need             | Class                                                                                                                                                                                                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Buttons          | `.btn` (secondary, default) · `.btn-primary` (one per view, the main action) · `.btn-ghost` (toolbar and row actions) · `.btn-danger` (destructive) · `.btn-icon` (round, needs `aria-label`) · `.btn-sm` (section and row actions) · `.btn-wide` (full width, auth card) · `.btn-link` (a button that reads as a link) |
+| Button groups    | `.toolbar`, `.button-row` (`.actions` is an alias) · `.segmented` (toggle group; set `aria-pressed`)                                                                                                                                                                                                                    |
+| Forms            | `.form` (vertical form) · `.field` (label + control) · `.check` (checkbox/radio + label) · `fieldset`/`legend` · `.joined` (select + input pair) · `.inline-form` (a creation form opened in place) · `.form-pair` (two fields side by side) · `.form-end` (right-aligned buttons)                                      |
+| Filters          | `.filters` (filter bar card) · `.chips` / `.chip` (active filters, removable)                                                                                                                                                                                                                                           |
+| Containers       | `.card` · `.grid-2` · `.section-head` / `.section-title` / `.count` · `.table-wrap` + `.table` (`.num`, `.row-actions` cells) · `.kv` · `.json` (raw data)                                                                                                                                                              |
+| Lists            | `.events` / `.event-row` / `.row-link` (timeline rows) · `.entity-list` with `.entity-main` / `.entity-name` / `.entity-meta` / `.entity-order` / `.entity-actions` (named things) · `.inline-list` · `.plain` · `.conn-list`                                                                                           |
+| Callouts         | `.callout` + `.callout-error` / `.callout-ok` / `.callout-gap` / `.callout-reconciled`                                                                                                                                                                                                                                  |
+| Toasts           | `.toasts` / `.toast` + `.toast-ok` / `.toast-info` / `.toast-error` (rendered by `ToastProvider`; do not write this markup by hand)                                                                                                                                                                                     |
+| States           | `.state` (inline status text) · `.spinner` · `.empty` (+ `.empty-icon`) · `.end` (end of list)                                                                                                                                                                                                                          |
+| Badges           | `.badge` + a modifier from [Status language](#status-language)                                                                                                                                                                                                                                                          |
+| Text             | `.muted` · `.small` · `.lede` · `.mono-title` · `.hash` · `.sr-only`                                                                                                                                                                                                                                                    |
+| Navigation cards | `.connect-buttons` / `.connect-card` + `.tool-<source>`                                                                                                                                                                                                                                                                 |
+| Shell            | `.theme-switch` (System / Light / Dark, `aria-pressed`) in the sidebar account area                                                                                                                                                                                                                                     |
 
 ## Status language
 
@@ -216,18 +226,16 @@ encodings, the same way on every page.
   succeeded/failed, hollow for pending/in progress.
 - **Health** (`HealthBadge`): a dot with a soft halo, plus a word.
 - **Tool** (`ToolBadge`, `.tool-<source>`): a neutral badge with the tool's
-  logo in its colour (`ToolMark`). A row that belongs to one tool adds
-  `tool-row tool-<source>` for a 2px left rule in the tool colour (timeline
-  rows, table rows). Tool colours are never used for anything else, and the
-  tool rule always gives way to status emphasis (gaps, journey highlights).
-  See [ADR 0013](decisions/0013-tool-colour-coding.md).
+  logo in its colour (`ToolMark`). Rows stay neutral: no tool-coloured rules or
+  tints ([ADR 0015](decisions/0015-ink-design-language.md)). Tool colours are
+  never used for anything else.
 - **Observation gaps:** the loud form is `GapBanners`, one panel per page, at
   the top. The per-item form is quiet: `.gap-badge` (warn text with a hollow
   diamond, no fill), e.g. "possibly stale". Never hatch, stripe or fill whole
   rows or cells for a gap.
 - **Late observation:** `.row-reconciliation` and `.row-backfill` mark rows
   with a light tint (`--recon-bg`, `--backfill-bg`) plus a note; `MethodBadge`
-  names the method. The left edge is left to the tool rule.
+  names the method.
 - **Alerts:** `.alert-badge` ("Alert open"), linking to where the full message
   is shown. Do not put long alert prose in tables.
 - **Severity** (drift): `.severity-high` / `.severity-critical` (bad),
@@ -249,6 +257,18 @@ disconnect actions using theme tokens.
 - **Tables** go in `.table-wrap`. Headers are short nouns. Row actions are
   `.btn-ghost` buttons or links at the end of the row; destructive actions ask
   for confirmation.
+- **Creating things** (AFE-85): a section's "Add …" button (`.btn.btn-sm` with
+  `icons.plus`, `aria-expanded`) opens an `.inline-form` in place with Cancel and
+  a primary Save. Never hide a creation form behind an arrow (`<details>`).
+  `<details>` is for optional reading (raw data, legends) and renders as a
+  labelled chevron toggle.
+- **Lists of named things** (AFE-83) use `.entity-list`: the name in `strong`,
+  the identifier in `code`, metadata in `.entity-meta`, and icon-only
+  `.btn-ghost.btn-icon.btn-sm` actions in `.entity-actions`, each with an
+  `aria-label` and a matching `title`.
+- **Pickers** with many options (the GitHub repository picker) are a labelled
+  button that opens a search popover (`role="dialog"`), closed by Escape or a
+  click outside, returning focus to the button.
 - **Row actions that repeat on every row** of a long list are shown on hover
   and focus only (see `.event-row.has-action`); touch screens always show them.
 - **Identifiers**: short SHA (7 characters) in `<code>`, full value in `title`.
@@ -296,6 +316,6 @@ Before opening a PR that touches `apps/web`:
 
 - [ ] Uses existing components and classes; anything new is added per [Adding to the system](#adding-to-the-system)
 - [ ] Loading, error and empty states handled
-- [ ] Checked in light and dark, at desktop width and at 390px; screenshots in the PR
+- [ ] Checked in light and dark (switch with the theme control), at desktop width and at 390px; screenshots in the PR
 - [ ] Keyboard: everything reachable with Tab, focus visible, icon buttons labelled
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` pass (includes the design-system check)

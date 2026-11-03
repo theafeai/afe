@@ -104,7 +104,7 @@ export function Deployments() {
                   return (
                     <tr
                       key={r.eventId}
-                      className={`tool-row tool-${r.source}${late ? ` row-${r.provenance.method}` : ""}`}
+                      className={`tool-${r.source}${late ? ` row-${r.provenance.method}` : ""}`}
                     >
                       <td>
                         <Link to={`/events/${r.eventId}`}>

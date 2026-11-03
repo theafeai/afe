@@ -18,8 +18,17 @@ import {
   type RuleView,
   type UnmappedValue,
 } from "../api/mapping.ts";
-import { Empty, ErrorBox, Loading, ToolBadge, useAsync, useDocumentTitle } from "../components.tsx";
+import {
+  Empty,
+  ErrorBox,
+  Loading,
+  SectionHead,
+  ToolBadge,
+  useAsync,
+  useDocumentTitle,
+} from "../components.tsx";
 import { formatDateTime } from "../format.ts";
+import { icons } from "../icons.tsx";
 import { Link } from "../router.tsx";
 import { useToast } from "../toast.tsx";
 
@@ -72,32 +81,48 @@ function ScopedMappingPage() {
   const state = useAsync((s) => mappingApi.get(s), []);
   return (
     <div className="page">
-      <h1>Environment and service mapping</h1>
-      <p>
-        Services and environments observed in your most recent permitted deployment events. Mapping
-        rules are managed by your administrator.
-      </p>
+      <header className="page-header">
+        <div>
+          <h1>Environment and service mapping</h1>
+          <p className="lede">
+            Services and environments observed in your most recent permitted deployment events.
+            Mapping rules are managed by your administrator.
+          </p>
+        </div>
+      </header>
       {state.loading ? (
         <Loading label="Loading mapping…" />
       ) : state.error ? (
         <ErrorBox error={state.error} onRetry={state.reload} />
       ) : (
         <div className="grid-2">
-          <section className="card">
-            <h2>Services</h2>
-            <ul>
+          <section className="card" aria-labelledby="services-h">
+            <SectionHead id="services-h" title="Services" count={state.data?.services.length} />
+            <ul className="entity-list">
               {state.data?.services.map((s) => (
-                <li key={s.id}>{s.name}</li>
+                <li key={s.id}>
+                  <span className="entity-main">
+                    <span className="entity-name">
+                      <strong>{s.name}</strong>
+                    </span>
+                  </span>
+                </li>
               ))}
             </ul>
           </section>
-          <section className="card">
-            <h2>Environments</h2>
-            <ul>
+          <section className="card" aria-labelledby="envs-h">
+            <SectionHead id="envs-h" title="Environments" count={state.data?.environments.length} />
+            <ol className="entity-list">
               {state.data?.environments.map((e) => (
-                <li key={e.id}>{e.name}</li>
+                <li key={e.id}>
+                  <span className="entity-main">
+                    <span className="entity-name">
+                      <strong>{e.name}</strong>
+                    </span>
+                  </span>
+                </li>
               ))}
-            </ul>
+            </ol>
           </section>
         </div>
       )}
@@ -210,9 +235,43 @@ function EditableMappingPage() {
 
 type Act = (what: () => Promise<unknown>, done: string) => Promise<boolean>;
 
+/** Icon-only row action: a ghost button with a visible tooltip and an accessible name. */
+function RowAction({
+  label,
+  icon,
+  onClick,
+  disabled,
+  danger,
+}: {
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-ghost btn-icon btn-sm${danger ? " btn-danger" : ""}`}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {icon}
+    </button>
+  );
+}
+
 function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const close = () => {
+    setAdding(false);
+    setName("");
+    setDescription("");
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -221,67 +280,103 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
         mappingApi.createService({ name: name.trim(), description: description.trim() || null }),
       `Service “${name.trim()}” added.`,
     );
-    if (ok) {
-      setName("");
-      setDescription("");
-    }
+    if (ok) close();
   };
   return (
     <section className="card" aria-labelledby="services-h">
-      <h2 id="services-h">Services</h2>
+      <SectionHead
+        id="services-h"
+        title="Services"
+        count={state.services.length}
+        hint="Rows on the Environments page."
+        action={
+          !adding && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-controls="svc-form"
+              aria-expanded={adding}
+              onClick={() => setAdding(true)}
+            >
+              {icons.plus}
+              Add service
+            </button>
+          )
+        }
+      />
+      {adding && (
+        <form className="form inline-form" id="svc-form" onSubmit={submit} aria-label="New service">
+          <div className="field">
+            <label htmlFor="svc-name">Service name</label>
+            <input
+              id="svc-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={128}
+              autoFocus
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="svc-desc">Description (optional)</label>
+            <input
+              id="svc-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={1024}
+            />
+          </div>
+          <div className="button-row form-end">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={close}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!name.trim()}>
+              Save service
+            </button>
+          </div>
+        </form>
+      )}
       {state.services.length === 0 ? (
-        <p className="muted">No services yet. Every deployment shows as “unmapped service”.</p>
+        !adding && (
+          <p className="muted">No services yet. Every deployment shows as “unmapped service”.</p>
+        )
       ) : (
-        <ul className="plain">
+        <ul className="entity-list">
           {state.services.map((s) => (
             <li key={s.id}>
-              <strong>{s.name}</strong> <code className="small">{s.id}</code>
-              {s.description && <span className="muted"> — {s.description}</span>}{" "}
-              <button
-                type="button"
-                className="btn-link"
-                aria-label={`Delete service ${s.name}`}
-                onClick={() =>
-                  void act(() => mappingApi.deleteService(s.id), `Service “${s.name}” deleted.`)
-                }
-              >
-                Delete
-              </button>
+              <span className="entity-main">
+                <span className="entity-name">
+                  <strong>{s.name}</strong> <code>{s.id}</code>
+                </span>
+                {s.description && <span className="entity-meta">{s.description}</span>}
+              </span>
+              <span className="entity-actions">
+                <RowAction
+                  label={`Delete service ${s.name}`}
+                  icon={icons.trash}
+                  danger
+                  onClick={() =>
+                    void act(() => mappingApi.deleteService(s.id), `Service “${s.name}” deleted.`)
+                  }
+                />
+              </span>
             </li>
           ))}
         </ul>
       )}
-      <form className="form" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="svc-name">Service name</label>
-          <input
-            id="svc-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={128}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="svc-desc">Description (optional)</label>
-          <input
-            id="svc-desc"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={1024}
-          />
-        </div>
-        <button type="submit" className="btn" disabled={!name.trim()}>
-          Add service
-        </button>
-      </form>
     </section>
   );
 }
 
 function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<EnvironmentKind>("other");
   const envs = state.environments;
+  const close = () => {
+    setAdding(false);
+    setName("");
+    setKind("other");
+  };
   const move = (i: number, by: number) => {
     const a = envs[i]!;
     const b = envs[i + by]!;
@@ -297,81 +392,117 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
       () => mappingApi.createEnvironment({ name: name.trim(), kind }),
       `Environment “${name.trim()}” added.`,
     );
-    if (ok) setName("");
+    if (ok) close();
   };
   return (
     <section className="card" aria-labelledby="envs-h">
-      <h2 id="envs-h">Environments</h2>
-      {!state.customised && (
-        <p className="muted small">Built-in defaults; your first change makes them your own.</p>
+      <SectionHead
+        id="envs-h"
+        title="Environments"
+        count={envs.length}
+        hint={
+          state.customised
+            ? "Columns on the Environments page, in this order."
+            : "Built-in defaults; your first change makes them your own."
+        }
+        action={
+          !adding && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-controls="env-form"
+              aria-expanded={adding}
+              onClick={() => setAdding(true)}
+            >
+              {icons.plus}
+              Add environment
+            </button>
+          )
+        }
+      />
+      {adding && (
+        <form
+          className="form inline-form"
+          id="env-form"
+          onSubmit={submit}
+          aria-label="New environment"
+        >
+          <div className="form-pair">
+            <div className="field">
+              <label htmlFor="env-name">Environment name</label>
+              <input
+                id="env-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={128}
+                autoFocus
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="env-kind">Kind</label>
+              <select
+                id="env-kind"
+                value={kind}
+                onChange={(e) => setKind(e.target.value as EnvironmentKind)}
+              >
+                {state.environmentKinds.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="button-row form-end">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={close}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!name.trim()}>
+              Save environment
+            </button>
+          </div>
+        </form>
       )}
-      <ol className="plain">
+      <ol className="entity-list">
         {envs.map((e, i) => (
           <li key={e.id}>
-            <strong>{e.name}</strong> <code className="small">{e.id}</code>{" "}
-            <span className="muted">({e.kind})</span>{" "}
-            <button
-              type="button"
-              className="btn-link"
-              aria-label={`Move environment ${e.name} left`}
-              disabled={i === 0}
-              onClick={() => move(i, -1)}
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              className="btn-link"
-              aria-label={`Move environment ${e.name} right`}
-              disabled={i === envs.length - 1}
-              onClick={() => move(i, 1)}
-            >
-              →
-            </button>{" "}
-            <button
-              type="button"
-              className="btn-link"
-              aria-label={`Delete environment ${e.name}`}
-              onClick={() =>
-                void act(
-                  () => mappingApi.deleteEnvironment(e.id),
-                  `Environment “${e.name}” deleted.`,
-                )
-              }
-            >
-              Delete
-            </button>
+            <span className="entity-order" aria-hidden="true">
+              {i + 1}
+            </span>
+            <span className="entity-main">
+              <span className="entity-name">
+                <strong>{e.name}</strong> <code>{e.id}</code>
+              </span>
+            </span>
+            <span className="badge">{e.kind}</span>
+            <span className="entity-actions">
+              <RowAction
+                label={`Move environment ${e.name} left`}
+                icon={icons.up}
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              />
+              <RowAction
+                label={`Move environment ${e.name} right`}
+                icon={icons.down}
+                disabled={i === envs.length - 1}
+                onClick={() => move(i, 1)}
+              />
+              <RowAction
+                label={`Delete environment ${e.name}`}
+                icon={icons.trash}
+                danger
+                onClick={() =>
+                  void act(
+                    () => mappingApi.deleteEnvironment(e.id),
+                    `Environment “${e.name}” deleted.`,
+                  )
+                }
+              />
+            </span>
           </li>
         ))}
       </ol>
-      <form className="form" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="env-name">Environment name</label>
-          <input
-            id="env-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={128}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="env-kind">Kind</label>
-          <select
-            id="env-kind"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as EnvironmentKind)}
-          >
-            {state.environmentKinds.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button type="submit" className="btn" disabled={!name.trim()}>
-          Add environment
-        </button>
-      </form>
     </section>
   );
 }
@@ -405,15 +536,18 @@ function RulesTable({
   };
   return (
     <section className="card" aria-labelledby={`rules-${kind}`}>
-      <div className="toolbar">
-        <h2 id={`rules-${kind}`}>{title}</h2>
-        <button type="button" className="btn" onClick={onAdd}>
-          Add {kind} rule
-        </button>
-      </div>
-      <p className="muted small">
-        Checked top to bottom; the first match wins. Your rules come before the built-in defaults.
-      </p>
+      <SectionHead
+        id={`rules-${kind}`}
+        title={title}
+        count={rules.length}
+        hint="Checked top to bottom; the first match wins. Your rules come before the built-in defaults."
+        action={
+          <button type="button" className="btn btn-sm" onClick={onAdd}>
+            {icons.plus}
+            Add {kind} rule
+          </button>
+        }
+      />
       {rules.length === 0 ? (
         <p className="muted">No {kind} rules.</p>
       ) : (
@@ -421,7 +555,9 @@ function RulesTable({
           <table className="table">
             <thead>
               <tr>
-                <th scope="col">#</th>
+                <th scope="col" className="num">
+                  #
+                </th>
                 <th scope="col">When</th>
                 <th scope="col">Assigns</th>
                 <th scope="col">Status</th>
@@ -433,7 +569,7 @@ function RulesTable({
             <tbody>
               {rules.map((r, i) => (
                 <tr key={r.id}>
-                  <td>{i + 1}</td>
+                  <td className="num">{i + 1}</td>
                   <td>
                     <code>{r.field}</code> {MATCH_LABEL[r.match]} <code>{r.pattern}</code>
                     {r.caseSensitive && <span className="muted small"> (case-sensitive)</span>}
@@ -446,41 +582,30 @@ function RulesTable({
                       "Active"
                     )}
                   </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn-link"
-                      aria-label={`Move rule ${i + 1} up`}
+                  <td className="row-actions">
+                    <RowAction
+                      label={`Move rule ${i + 1} up`}
+                      icon={icons.up}
                       disabled={i === 0}
                       onClick={() => move(i, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-link"
-                      aria-label={`Move rule ${i + 1} down`}
+                    />
+                    <RowAction
+                      label={`Move rule ${i + 1} down`}
+                      icon={icons.down}
                       disabled={i === rules.length - 1}
                       onClick={() => move(i, 1)}
-                    >
-                      ↓
-                    </button>{" "}
-                    <button
-                      type="button"
-                      className="btn-link"
-                      aria-label={`Edit rule ${r.pattern}`}
+                    />
+                    <RowAction
+                      label={`Edit rule ${r.pattern}`}
+                      icon={icons.edit}
                       onClick={() => onEdit(r)}
-                    >
-                      Edit
-                    </button>{" "}
-                    <button
-                      type="button"
-                      className="btn-link"
-                      aria-label={`Delete rule ${r.pattern}`}
+                    />
+                    <RowAction
+                      label={`Delete rule ${r.pattern}`}
+                      icon={icons.trash}
+                      danger
                       onClick={() => void act(() => mappingApi.deleteRule(r.id), "Rule deleted.")}
-                    >
-                      Delete
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}
@@ -704,19 +829,27 @@ function PreviewSummary({ data }: { data: PreviewResult }) {
 }
 
 function BuiltinRules({ state, act }: { state: MappingState; act: Act }) {
+  const [open, setOpen] = useState(false);
   return (
     <section className="card" aria-labelledby="builtin-h">
-      <details>
-        <summary>
-          <h2 id="builtin-h" style={{ display: "inline" }}>
-            Built-in defaults ({state.builtinRules.filter((r) => r.enabled).length} of{" "}
-            {state.builtinRules.length} on)
-          </h2>
-        </summary>
-        <p className="muted small">
-          Applied after your rules. Switch one off, or add a rule above, to override it.
-        </p>
-        <ul className="plain">
+      <SectionHead
+        id="builtin-h"
+        title={`Built-in defaults (${state.builtinRules.filter((r) => r.enabled).length} of ${state.builtinRules.length} on)`}
+        hint="Applied after your rules. Switch one off, or add a rule above, to override it."
+        action={
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-expanded={open}
+            aria-controls="builtin-list"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? "Hide defaults" : "Show defaults"}
+          </button>
+        }
+      />
+      {open && (
+        <ul className="entity-list" id="builtin-list">
           {state.builtinRules.map((r) => (
             <li key={r.id}>
               <label className="check">
@@ -730,16 +863,18 @@ function BuiltinRules({ state, act }: { state: MappingState; act: Act }) {
                     )
                   }
                 />{" "}
-                <code>{r.field}</code> {MATCH_LABEL[r.match]} <code>{r.pattern}</code> →{" "}
-                {targetName(state, r.kind, r.targetId)}
-                {r.inactiveReason && r.enabled && (
-                  <span className="muted small"> (inactive: {r.inactiveReason})</span>
-                )}
+                <span>
+                  <code>{r.field}</code> {MATCH_LABEL[r.match]} <code>{r.pattern}</code> →{" "}
+                  {targetName(state, r.kind, r.targetId)}
+                  {r.inactiveReason && r.enabled && (
+                    <span className="muted small"> (inactive: {r.inactiveReason})</span>
+                  )}
+                </span>
               </label>
             </li>
           ))}
         </ul>
-      </details>
+      )}
     </section>
   );
 }

@@ -10,7 +10,16 @@ import type {
 } from "@afe/core";
 import { AccessContext } from "../access.tsx";
 import { ApiError, request } from "../api/client.ts";
-import { Empty, ErrorBox, Loading, KeyValue, useAsync, useDocumentTitle } from "../components.tsx";
+import {
+  Empty,
+  ErrorBox,
+  KeyValue,
+  Loading,
+  SectionHead,
+  useAsync,
+  useDocumentTitle,
+} from "../components.tsx";
+import { icons } from "../icons.tsx";
 import { formatBytes, humanize } from "../format.ts";
 import { Link, useLocation } from "../router.tsx";
 import { TimeAgo } from "./environments-ui.tsx";
@@ -260,8 +269,9 @@ function RepositoryPicker({
     }
   });
   const [search, setSearch] = useState("");
-  const dropdown = useRef<HTMLDetailsElement>(null);
-  const trigger = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState(false);
+  const picker = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const available = new Set(choices.map(repositoryKey));
   const accessiblePins = pins.filter((key) => available.has(key));
@@ -278,87 +288,115 @@ function RepositoryPicker({
       // Storage may be disabled; pins still work for this visit.
     }
   }, [storageKey, savedPins]);
-  function select(key: string) {
-    onSelect(key);
-    if (dropdown.current) dropdown.current.open = false;
+  // Close on a click outside the picker; Escape is handled on the picker itself.
+  useEffect(() => {
+    if (!open) return;
+    searchInput.current?.focus();
+    const away = (event: MouseEvent) => {
+      if (!picker.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  function close() {
+    setOpen(false);
     setSearch("");
     trigger.current?.focus();
   }
+  function select(key: string) {
+    onSelect(key);
+    close();
+  }
   return (
     <>
-      <details
-        className="gh-repository-dropdown"
-        ref={dropdown}
-        onToggle={() => {
-          if (dropdown.current?.open) searchInput.current?.focus();
-        }}
+      <div
+        className="gh-repo-picker"
+        ref={picker}
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
+          if (event.key === "Escape" && open) {
             event.preventDefault();
-            if (dropdown.current) dropdown.current.open = false;
-            trigger.current?.focus();
+            close();
           }
         }}
       >
-        <summary ref={trigger}>
-          Repository: {current.repository} · {current.connectionName}
-        </summary>
-        <div className="gh-repository-menu">
-          <label className="field">
-            <span>Search repositories</span>
-            <input
-              type="search"
-              value={search}
-              ref={searchInput}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by repository name"
-            />
-          </label>
-          <p className="small muted" role="status">
-            {matches.length} of {choices.length} repositories
-          </p>
-          {matches.length ? (
-            <ul className="gh-repository-options" aria-label="Repository results">
-              {matches.map((r) => {
-                const key = repositoryKey(r);
-                const isPinned = pinSet.has(key);
-                const label = `${r.repository} · ${r.connectionName}`;
-                return (
-                  <li key={key}>
-                    <button
-                      type="button"
-                      className="gh-tab gh-repository-choice"
-                      aria-pressed={key === currentKey}
-                      onClick={() => select(key)}
-                    >
-                      {label}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      aria-label={`${isPinned ? "Unpin" : "Pin"} ${label}`}
-                      aria-pressed={isPinned}
-                      onClick={() =>
-                        setPins(
-                          isPinned
-                            ? accessiblePins.filter((p) => p !== key)
-                            : [...accessiblePins, key],
-                        )
-                      }
-                    >
-                      {isPinned ? "Unpin" : "Pin"}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <Empty title="No matching repositories">
-              <p>Try another repository name.</p>
-            </Empty>
-          )}
-        </div>
-      </details>
+        <button
+          type="button"
+          className="btn gh-repo-trigger"
+          ref={trigger}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls="gh-repository-menu"
+          onClick={() => (open ? close() : setOpen(true))}
+        >
+          <span className="gh-repo-label">Repository</span>
+          <strong>{current.repository}</strong>
+          <span className="gh-repo-conn">{current.connectionName}</span>
+          {icons.chevrons}
+        </button>
+        {open && (
+          <div
+            className="gh-repository-menu"
+            id="gh-repository-menu"
+            role="dialog"
+            aria-label="Choose a repository"
+          >
+            <label className="field">
+              <span>Search repositories</span>
+              <input
+                type="search"
+                value={search}
+                ref={searchInput}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by repository name"
+              />
+            </label>
+            <p className="small muted" role="status">
+              {matches.length} of {choices.length} repositories
+            </p>
+            {matches.length ? (
+              <ul className="gh-repository-options" aria-label="Repository results">
+                {matches.map((r) => {
+                  const key = repositoryKey(r);
+                  const isPinned = pinSet.has(key);
+                  const label = `${r.repository} · ${r.connectionName}`;
+                  return (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        className="gh-tab gh-repository-choice"
+                        aria-pressed={key === currentKey}
+                        onClick={() => select(key)}
+                      >
+                        {label}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon btn-sm gh-pin"
+                        aria-label={`${isPinned ? "Unpin" : "Pin"} ${label}`}
+                        title={isPinned ? "Unpin from tabs" : "Pin as a tab"}
+                        aria-pressed={isPinned}
+                        onClick={() =>
+                          setPins(
+                            isPinned
+                              ? accessiblePins.filter((p) => p !== key)
+                              : [...accessiblePins, key],
+                          )
+                        }
+                      >
+                        {icons.pin}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <Empty title="No matching repositories">
+                <p>Try another repository name.</p>
+              </Empty>
+            )}
+          </div>
+        )}
+      </div>
       {pinned.length ? (
         <div
           className="gh-repository-tabs"
@@ -374,12 +412,13 @@ function RepositoryPicker({
               aria-pressed={currentKey === repositoryKey(r)}
               onClick={() => onSelect(repositoryKey(r))}
             >
+              {icons.pin}
               {r.repository} · {r.connectionName}
             </button>
           ))}
         </div>
       ) : (
-        <p className="small muted">Pin repositories in the dropdown for quick access here.</p>
+        <p className="small muted">Pin repositories from the list to keep them here as tabs.</p>
       )}
     </>
   );
@@ -948,8 +987,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
         )}
       </section>
       {tab === "deployments" && !selected && (
-        <details className="card gh-create">
-          <summary>Create deployment</summary>
+        <CreatePanel id="gh-create-deployment" title="Create deployment" action="New deployment">
           <DeploymentPanel
             key={`new:${revision}`}
             item={null}
@@ -958,11 +996,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             button={button}
             can={can}
           />
-        </details>
+        </CreatePanel>
       )}
       {tab === "environments" && !selected && (
-        <details className="card gh-create">
-          <summary>Create environment</summary>
+        <CreatePanel id="gh-create-environment" title="Create environment" action="New environment">
           <EnvironmentPanel
             key={`new:${revision}`}
             item={null}
@@ -971,9 +1008,54 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             button={button}
             can={can}
           />
-        </details>
+        </CreatePanel>
       )}
     </div>
+  );
+}
+/** A creation form behind a clearly labelled button (AFE-85), opened in place. */
+function CreatePanel({
+  id,
+  title,
+  action,
+  children,
+}: {
+  id: string;
+  title: string;
+  action: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="card gh-create" aria-labelledby={`${id}-h`}>
+      <SectionHead
+        id={`${id}-h`}
+        title={title}
+        action={
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-expanded={open}
+            aria-controls={id}
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? (
+              "Cancel"
+            ) : (
+              <>
+                {icons.plus}
+                {action}
+              </>
+            )}
+          </button>
+        }
+      />
+      {open && (
+        <div className="inline-form" id={id}>
+          {children}
+        </div>
+      )}
+    </section>
   );
 }
 type PanelProps = {

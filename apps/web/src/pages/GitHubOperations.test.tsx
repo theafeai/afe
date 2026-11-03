@@ -334,7 +334,7 @@ it("loads every repository page, defaults automatically, remembers selection and
   let view = mount();
   await screen.findByText("App workflow");
   expect(pages).toEqual(["1", "2", "3"]);
-  fireEvent.click(screen.getByText(/^Repository:/));
+  fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
   fireEvent.click(screen.getByRole("button", { name: "Pin acme/api · other" }));
   fireEvent.click(
     within(screen.getByRole("group", { name: "Pinned repositories" })).getByRole("button", {
@@ -412,7 +412,7 @@ it("ignores a late workflow response after switching repository tabs", async () 
     </Router>,
   );
   await waitFor(() => expect(resolveOld).toBeTypeOf("function"));
-  fireEvent.click(screen.getByText(/^Repository:/));
+  fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
   fireEvent.click(screen.getByRole("button", { name: "acme/api · acme" }));
   await screen.findByText("New workflow");
   await act(async () => {
@@ -452,7 +452,7 @@ it("shows discovery loading and retry states before selecting a repository", asy
   fail = false;
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await screen.findByText("No workflows on this page");
-  fireEvent.click(screen.getByText(/^Repository:/));
+  fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
   expect(screen.getByRole("button", { name: "acme/app · acme" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
@@ -576,13 +576,13 @@ it("searches repository names, keeps pins separate from selection and remembers 
   let view = mount();
   await screen.findByText("app workflow");
   expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
-  fireEvent.click(screen.getByText(/^Repository:/));
+  fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
   const search = screen.getByRole("searchbox", { name: "Search repositories" });
   fireEvent.change(search, { target: { value: " API " } });
   expect(screen.getByRole("status").textContent).toBe("1 of 3 repositories");
   expect(screen.queryByRole("button", { name: "acme/app · acme" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Pin acme/api · acme" }));
-  expect(screen.getByText(/^Repository:/).textContent).toContain("acme/app");
+  expect(screen.getByRole("button", { name: /^Repository/ }).textContent).toContain("acme/app");
   const tabs = screen.getByRole("group", { name: "Pinned repositories" });
   fireEvent.click(within(tabs).getByRole("button", { name: "acme/api · acme" }));
   await screen.findByText("api workflow");
@@ -594,13 +594,15 @@ it("searches repository names, keeps pins separate from selection and remembers 
   expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
   expect(screen.getByText("api workflow")).toBeTruthy();
   fireEvent.keyDown(search, { key: "Escape" });
-  expect(document.activeElement).toBe(screen.getByText(/^Repository:/));
-  expect(screen.getByText(/^Repository:/).closest("details")!.open).toBe(false);
+  const trigger = screen.getByRole("button", { name: /^Repository/ });
+  expect(document.activeElement).toBe(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("dialog", { name: "Choose a repository" })).toBeNull();
   view.unmount();
   view = mount();
   await screen.findByText("api workflow");
   expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
-  fireEvent.click(screen.getByText(/^Repository:/));
+  fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
   expect(screen.getByRole("button", { name: "acme/api · acme" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
@@ -614,7 +616,7 @@ it.each(["broken json", '{"unexpected":true}', '[null,1,"inaccessible"]'])(
     fixture();
     await screen.findByText("Deploy");
     expect(screen.queryByRole("group", { name: "Pinned repositories" })).toBeNull();
-    fireEvent.click(screen.getByText(/^Repository:/));
+    fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
     fireEvent.click(screen.getByRole("button", { name: "Pin acme/app · acme" }));
     expect(screen.getByRole("group", { name: "Pinned repositories" })).toBeTruthy();
   },
@@ -629,7 +631,7 @@ it("supports selection and pins when browser storage is unavailable", async () =
   try {
     fixture();
     await screen.findByText("Deploy");
-    fireEvent.click(screen.getByText(/^Repository:/));
+    fireEvent.click(screen.getByRole("button", { name: /^Repository/ }));
     fireEvent.click(screen.getByRole("button", { name: "Pin acme/app · acme" }));
     const tabs = screen.getByRole("group", { name: "Pinned repositories" });
     fireEvent.click(within(tabs).getByRole("button", { name: "acme/app · acme" }));

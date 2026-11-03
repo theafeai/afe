@@ -177,9 +177,12 @@ describe("Mapping settings page", () => {
   it("adds a service and reloads", async () => {
     render(<App />);
     await screen.findByText("acme/api");
-    fireEvent.change(screen.getByLabelText("Service name"), { target: { value: "Shop" } });
+    expect(screen.queryByLabelText("Service name")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Add service" }));
+    fireEvent.change(screen.getByLabelText("Service name"), { target: { value: "Shop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save service" }));
     expect(await screen.findByText("Service “Shop” added.")).toBeTruthy();
+    expect(screen.queryByRole("form", { name: "New service" })).toBeNull();
     expect(
       calls.find((c) => c.method === "POST" && c.url === "/api/mapping/services")?.body,
     ).toEqual({
@@ -187,6 +190,23 @@ describe("Mapping settings page", () => {
       description: null,
     });
     expect(await screen.findByText("Shop")).toBeTruthy();
+  });
+
+  it("opens the add-environment form inline and cancels it without saving", async () => {
+    render(<App />);
+    await screen.findByText("acme/api");
+    const button = screen.getByRole("button", { name: "Add environment" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    const form = screen.getByRole("form", { name: "New environment" });
+    fireEvent.change(within(form).getByLabelText("Environment name"), {
+      target: { value: "QA" },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("form", { name: "New environment" })).toBeNull();
+    expect(calls.some((c) => c.method === "POST" && c.url === "/api/mapping/environments")).toBe(
+      false,
+    );
   });
 
   it("previews a new rule live and saves it", async () => {

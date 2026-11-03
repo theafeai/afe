@@ -15,7 +15,7 @@
   display: flex;
   gap: var(--space-2);
   overflow-x: auto;
-  padding-bottom: var(--space-2);
+  padding: var(--space-3) 0 var(--space-2);
 }
 
 /* Repository header and tabs -------------------------------------------------- */
@@ -44,8 +44,8 @@
 .gh-tabs {
   display: flex;
   gap: var(--space-1);
-  margin: var(--space-4) calc(-1 * var(--space-5)) 0;
-  padding: 0 var(--space-4);
+  margin: var(--space-4) 0 0;
+  padding: 0;
   border-top: 1px solid var(--border);
   overflow-x: auto;
   scrollbar-width: none;
@@ -482,18 +482,6 @@ details.gh-section[open] > summary {
   margin: 0;
   background: transparent;
 }
-.gh-detail .form > .btn,
-.gh-create .form > .btn {
-  justify-self: start;
-}
-.gh-create > summary {
-  font-size: var(--fs-base);
-  font-weight: 600;
-  color: var(--text);
-}
-.gh-create[open] > summary {
-  margin-bottom: var(--space-4);
-}
 
 @media (max-width: 760px) {
   .gh-row-main {
@@ -544,33 +532,114 @@ details.gh-section[open] > summary {
   }
 }
 
-/* The picker stays in flow so a long result list cannot cover workflow controls. */
-.gh-repository-dropdown > summary {
-  cursor: pointer;
-  overflow-wrap: anywhere;
-  color: var(--text);
-  font-weight: 550;
+/* Repository picker (AFE-85): a labelled button that opens a search popover.
+   The popover is capped in height and closes on Escape or a click outside. */
+.gh-repo-picker {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.gh-repo-trigger {
+  max-width: 100%;
+  justify-content: flex-start;
+  gap: var(--space-2);
+}
+.gh-repo-trigger strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gh-repo-label,
+.gh-repo-conn {
+  color: var(--muted);
+  font-weight: 500;
+}
+.gh-repo-trigger .icon {
+  color: var(--muted);
 }
 .gh-repository-menu {
-  margin-top: var(--space-3);
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  width: min(26rem, calc(100vw - 2 * var(--space-4)));
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: var(--space-2);
+}
+.gh-repository-menu > p {
+  margin: 0;
+}
+.gh-repository-menu input {
+  width: 100%;
 }
 .gh-repository-options {
   list-style: none;
   padding: 0;
   margin: 0;
-  max-height: 20rem;
+  max-height: 18rem;
   overflow-y: auto;
 }
 .gh-repository-options li {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
 }
-.gh-repository-choice {
+.gh-repository-options li:hover {
+  background: var(--surface-2);
+}
+.gh-tab.gh-repository-choice {
   flex: 1;
   min-width: 0;
   text-align: left;
   white-space: normal;
   overflow-wrap: anywhere;
+  border: 0;
+  padding: var(--space-2);
+  color: var(--text);
+}
+.gh-tab.gh-repository-choice[aria-pressed="true"] {
+  font-weight: 600;
+}
+.gh-pin {
+  color: var(--muted);
+}
+.gh-pin[aria-pressed="true"] {
+  color: var(--text);
+}
+.gh-pin[aria-pressed="true"] .icon {
+  fill: currentColor;
+}
+/* Pinned repositories: pill tabs; the current one is filled. */
+.gh-repository-tabs .gh-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 2rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+}
+.gh-repository-tabs .gh-tab .icon {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: var(--muted);
+}
+.gh-repository-tabs .gh-tab:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.gh-repository-tabs .gh-tab[aria-pressed="true"] {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: var(--on-accent);
+}
+.gh-repository-tabs .gh-tab[aria-pressed="true"] .icon {
+  color: var(--on-accent);
 }
