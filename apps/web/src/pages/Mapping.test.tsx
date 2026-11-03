@@ -145,6 +145,16 @@ beforeEach(() => {
       state.services.push({ id: "shop", name: body.name, description: null });
       return json(201, { service: state.services.at(-1) });
     }
+    if (url.startsWith("/api/mapping/services/") && method === "DELETE") {
+      state.services = state.services.filter((s) => !url.endsWith(s.id));
+      return json(200, { ok: true });
+    }
+    if (url.startsWith("/api/mapping/environments/") && method === "PUT") {
+      const environment = state.environments.find((e) => url.endsWith(e.id))!;
+      Object.assign(environment, body);
+      state.environments.sort((a, b) => a.order - b.order);
+      return json(200, { environment });
+    }
     if (url === "/api/mapping/rules" && method === "POST") {
       state.rules.push(rule("r9", { ...body, priority: 30 }));
       return json(201, { rule: state.rules.at(-1) });
@@ -172,6 +182,76 @@ describe("Mapping settings page", () => {
     expect(within(envRules).getByText("*-prod")).toBeTruthy();
     expect(screen.getByText(/Built-in defaults \(1 of 1 on\)/)).toBeTruthy();
     expect(await screen.findByText(/Of 3 recent deployment events/)).toBeTruthy();
+  });
+
+  // Search and paging ported from #44 (AFE-83).
+  it("pages large service lists, searches all items, and recovers after deleting the last page", async () => {
+    state.services = Array.from({ length: 11 }, (_, i) => ({
+      id: `service-${i}`,
+      name: `Service ${i}`,
+      description: i === 10 ? "Billing owner" : null,
+    }));
+    render(<App />);
+    const list = await screen.findByRole("list", { name: "Existing services" });
+    const pages = screen.getByRole("navigation", { name: "services pages" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    fireEvent.click(within(pages).getByRole("button", { name: "Next" }));
+    fireEvent.click(within(pages).getByRole("button", { name: "Next" }));
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    fireEvent.click(within(list).getByRole("button", { name: "Delete service Service 10" }));
+    await waitFor(() => expect(screen.getByText("6–10 of 10 services")).toBeTruthy());
+    expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+    fireEvent.change(screen.getByLabelText("Search services"), { target: { value: "SERVICE-2" } });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(list).getByText("Service 2")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Search services"), { target: { value: "missing" } });
+    expect(screen.getByText("No matches. Try another search.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Search services"), { target: { value: "" } });
+    expect(screen.getByText("1–5 of 10 services")).toBeTruthy();
+  });
+
+  it("searches descriptions and environment kinds independently, preserving global ordering", async () => {
+    state.services[0]!.description = "Billing owner";
+    state.environments = Array.from({ length: 8 }, (_, i) => ({
+      id: `env-${i}`,
+      name: `Environment ${i}`,
+      kind: i === 5 ? "production" : "staging",
+      order: (i + 1) * 10,
+    }));
+    render(<App />);
+    await screen.findByRole("list", { name: "Existing services" });
+    fireEvent.change(screen.getByLabelText("Search services"), { target: { value: "billing" } });
+    const services = screen.getByRole("list", { name: "Existing services" });
+    expect(within(services).getAllByRole("listitem")).toHaveLength(1);
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "environments pages" })).getByRole("button", {
+        name: "Next",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Search environments"), {
+      target: { value: "production" },
+    });
+    const environments = screen.getByRole("list", { name: "Existing environments" });
+    expect(within(environments).getAllByRole("listitem")).toHaveLength(1);
+    const left = within(environments).getByRole("button", {
+      name: "Move environment Environment 5 left",
+    });
+    expect((left as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(left);
+    await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(2));
+    expect(calls.filter((c) => c.method === "PUT")).toMatchObject([
+      { url: "/api/mapping/environments/env-5", body: { order: 50 } },
+      { url: "/api/mapping/environments/env-4", body: { order: 60 } },
+    ]);
+    expect(within(services).getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("keeps short lists calm: search but no pager", async () => {
+    render(<App />);
+    await screen.findByRole("list", { name: "Existing services" });
+    expect(screen.getByLabelText("Search services")).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "services pages" })).toBeNull();
+    expect(screen.queryByText(/of \d+ services/)).toBeNull();
   });
 
   it("adds a service and reloads", async () => {

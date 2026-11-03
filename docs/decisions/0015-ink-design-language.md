@@ -55,7 +55,10 @@ sections are separated by hairlines and whitespace.
   (closed by Escape or a click outside), with pinned repositories as tabs beside it.
 - **Lists of named things (AFE-83).** Services, environments and similar lists use
   structured rows: name, identifier in mono, metadata underneath, labelled icon
-  actions aligned on the right.
+  actions aligned on the right. Service and environment lists also have a search box and
+  pages of five (from #44); the result count and Previous/Next appear only when
+  there is more than one page or a search is active. Environment arrows always
+  move the full column order, even from a filtered page.
 
 ## Consequences
 

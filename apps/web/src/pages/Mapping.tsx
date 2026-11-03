@@ -31,6 +31,7 @@ import { formatDateTime } from "../format.ts";
 import { icons } from "../icons.tsx";
 import { Link } from "../router.tsx";
 import { useToast } from "../toast.tsx";
+import "./Mapping.css";
 
 const LABEL_FIELD = "argocd.label:<key>";
 const MATCH_LABEL: Record<MatchType, string> = {
@@ -235,6 +236,91 @@ function EditableMappingPage() {
 
 type Act = (what: () => Promise<unknown>, done: string) => Promise<boolean>;
 
+const MAPPING_PAGE_SIZE = 5;
+
+/**
+ * Client-side search and paging for a mapping collection (from AFE-83, #44): a
+ * case-insensitive substring search over `searchText`, then pages of five. The
+ * API still returns the whole collection; this bounds what is rendered.
+ */
+function useMappingList<T>(items: T[], searchText: (item: T) => string) {
+  const [query, setQueryState] = useState("");
+  const [requestedPage, setPage] = useState(0);
+  const needle = query.trim().toLowerCase();
+  const filtered = items.filter((item) => searchText(item).toLowerCase().includes(needle));
+  const pages = Math.max(1, Math.ceil(filtered.length / MAPPING_PAGE_SIZE));
+  // Deleting the last item on the last page falls back to the new last page.
+  const page = Math.min(requestedPage, pages - 1);
+  return {
+    query,
+    setQuery: (value: string) => {
+      setQueryState(value);
+      setPage(0);
+    },
+    page,
+    pages,
+    setPage,
+    total: items.length,
+    matches: filtered.length,
+    items: filtered.slice(page * MAPPING_PAGE_SIZE, (page + 1) * MAPPING_PAGE_SIZE),
+  };
+}
+
+type MappingList = ReturnType<typeof useMappingList>;
+
+function MappingSearch({ list, kind }: { list: MappingList; kind: string }) {
+  return (
+    <div className="mapping-search">
+      <label className="sr-only" htmlFor={`mapping-search-${kind}`}>
+        Search {kind}
+      </label>
+      {icons.search}
+      <input
+        id={`mapping-search-${kind}`}
+        type="search"
+        value={list.query}
+        onChange={(event) => list.setQuery(event.target.value)}
+        placeholder={`Search ${kind}`}
+      />
+    </div>
+  );
+}
+
+/** "6–10 of 12 services" and Previous/Next, shown only when paging or searching. */
+function MappingPager({ list, kind }: { list: MappingList; kind: string }) {
+  if (list.pages <= 1 && !list.query.trim()) return null;
+  const start = list.matches === 0 ? 0 : list.page * MAPPING_PAGE_SIZE + 1;
+  const end = Math.min((list.page + 1) * MAPPING_PAGE_SIZE, list.matches);
+  return (
+    <div className="mapping-pager">
+      <span className="small muted" role="status">
+        {start}–{end} of {list.matches} {kind}
+        {list.query.trim() ? ` (${list.total} total)` : ""}
+      </span>
+      {list.pages > 1 && (
+        <nav className="button-row" aria-label={`${kind} pages`}>
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={list.page === 0}
+            onClick={() => list.setPage(list.page - 1)}
+          >
+            Previous
+          </button>
+          <button
+            className="btn btn-sm"
+            type="button"
+            disabled={list.page === list.pages - 1}
+            onClick={() => list.setPage(list.page + 1)}
+          >
+            Next
+          </button>
+        </nav>
+      )}
+    </div>
+  );
+}
+
 /** Icon-only row action: a ghost button with a visible tooltip and an accessible name. */
 function RowAction({
   label,
@@ -264,6 +350,7 @@ function RowAction({
 }
 
 function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
+  const list = useMappingList(state.services, (s) => `${s.name} ${s.id} ${s.description ?? ""}`);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -340,8 +427,14 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
           <p className="muted">No services yet. Every deployment shows as “unmapped service”.</p>
         )
       ) : (
-        <ul className="entity-list">
-          {state.services.map((s) => (
+        <MappingSearch list={list} kind="services" />
+      )}
+      {list.matches === 0 && list.total > 0 && (
+        <p className="muted">No matches. Try another search.</p>
+      )}
+      {list.matches > 0 && (
+        <ul className="entity-list" aria-label="Existing services">
+          {list.items.map((s) => (
             <li key={s.id}>
               <span className="entity-main">
                 <span className="entity-name">
@@ -363,6 +456,7 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
           ))}
         </ul>
       )}
+      <MappingPager list={list} kind="services" />
     </section>
   );
 }
@@ -372,6 +466,7 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<EnvironmentKind>("other");
   const envs = state.environments;
+  const list = useMappingList(envs, (e) => `${e.name} ${e.id} ${e.kind}`);
   const close = () => {
     setAdding(false);
     setName("");
@@ -463,46 +558,66 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
           </div>
         </form>
       )}
-      <ol className="entity-list">
-        {envs.map((e, i) => (
-          <li key={e.id}>
-            <span className="entity-order" aria-hidden="true">
-              {i + 1}
-            </span>
-            <span className="entity-main">
-              <span className="entity-name">
-                <strong>{e.name}</strong> <code>{e.id}</code>
+      {envs.length === 0 ? (
+        !adding && (
+          <p className="muted">No environments yet. Add one to group deployments into columns.</p>
+        )
+      ) : (
+        <MappingSearch list={list} kind="environments" />
+      )}
+      {list.matches === 0 && list.total > 0 && (
+        <p className="muted">No matches. Try another search.</p>
+      )}
+      {(list.pages > 1 || list.query.trim() !== "") && list.matches > 0 && (
+        <p className="small muted">
+          Arrows change the full column order, including environments outside this view.
+        </p>
+      )}
+      <ol className="entity-list" aria-label="Existing environments">
+        {list.items.map((e) => {
+          // Moves act on the full order, not the filtered page.
+          const i = envs.findIndex((item) => item.id === e.id);
+          return (
+            <li key={e.id}>
+              <span className="entity-order" aria-hidden="true">
+                {i + 1}
               </span>
-            </span>
-            <span className="badge">{e.kind}</span>
-            <span className="entity-actions">
-              <RowAction
-                label={`Move environment ${e.name} left`}
-                icon={icons.up}
-                disabled={i === 0}
-                onClick={() => move(i, -1)}
-              />
-              <RowAction
-                label={`Move environment ${e.name} right`}
-                icon={icons.down}
-                disabled={i === envs.length - 1}
-                onClick={() => move(i, 1)}
-              />
-              <RowAction
-                label={`Delete environment ${e.name}`}
-                icon={icons.trash}
-                danger
-                onClick={() =>
-                  void act(
-                    () => mappingApi.deleteEnvironment(e.id),
-                    `Environment “${e.name}” deleted.`,
-                  )
-                }
-              />
-            </span>
-          </li>
-        ))}
+              <span className="entity-main">
+                <span className="entity-name">
+                  <strong>{e.name}</strong> <code>{e.id}</code>
+                </span>
+              </span>
+              <span className="badge">{e.kind}</span>
+              <span className="entity-actions">
+                <RowAction
+                  label={`Move environment ${e.name} left`}
+                  icon={icons.up}
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                />
+                <RowAction
+                  label={`Move environment ${e.name} right`}
+                  icon={icons.down}
+                  disabled={i === envs.length - 1}
+                  onClick={() => move(i, 1)}
+                />
+                <RowAction
+                  label={`Delete environment ${e.name}`}
+                  icon={icons.trash}
+                  danger
+                  onClick={() =>
+                    void act(
+                      () => mappingApi.deleteEnvironment(e.id),
+                      `Environment “${e.name}” deleted.`,
+                    )
+                  }
+                />
+              </span>
+            </li>
+          );
+        })}
       </ol>
+      <MappingPager list={list} kind="environments" />
     </section>
   );
 }
