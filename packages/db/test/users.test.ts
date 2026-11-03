@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type pg from "pg";
-import { createTestPool } from "../src/testing.ts";
+import { createTestPool, seedLegacyToolPolicy } from "../src/testing.ts";
 import {
   authenticateLocalUser,
   createLocalUser,
@@ -42,8 +42,8 @@ it("stores only a hash, isolates tenants, rotates and disables credentials", asy
 it("defaults to none and isolates per-tool grants by tenant", async () => {
   const { user } = await createLocalUser(pool, "default", "bob");
   const policy = {
-    mode: "source + custom" as const,
-    custom: [{ resource: "org/repo", action: "read" }],
+    mode: "source" as const,
+    custom: [],
   };
   expect(await getUserToolPolicy(pool, "default", user.id, "github")).toEqual({
     mode: "none",
@@ -60,4 +60,38 @@ it("defaults to none and isolates per-tool grants by tenant", async () => {
     custom: [],
   });
   await expect(setUserToolPolicy(pool, "other", user.id, "github", policy)).rejects.toThrow();
+});
+
+it("rejects new custom grants and preserves legacy policies until explicit tenant-scoped review", async () => {
+  const { user } = await createLocalUser(pool, "default", "legacy");
+  const denied = [{ resource: "repository:acme/app", action: "github.delete_run" }];
+  for (const mode of ["custom", "source + custom"] as const) {
+    const legacy = { mode, custom: [{ resource: "repository:acme/app", action: "read" }], denied };
+    await seedLegacyToolPolicy(pool, "default", user.id, "github", legacy);
+    for (const policy of [
+      legacy,
+      { mode, custom: [] },
+      { mode: "source" as const, custom: legacy.custom },
+    ])
+      await expect(setUserToolPolicy(pool, "default", user.id, "github", policy)).rejects.toThrow(
+        "invalid tool policy",
+      );
+    expect(await getUserToolPolicy(pool, "default", user.id, "github")).toEqual(legacy);
+    await expect(
+      setUserToolPolicy(pool, "other", user.id, "github", { mode: "source", custom: [] }),
+    ).rejects.toThrow();
+    expect(await getUserToolPolicy(pool, "default", user.id, "github")).toEqual(legacy);
+    await setUserToolPolicy(pool, "default", user.id, "github", { mode: "none", custom: [] });
+    expect(await getUserToolPolicy(pool, "default", user.id, "github")).toEqual({
+      mode: "none",
+      custom: [],
+      denied,
+    });
+    await setUserToolPolicy(pool, "default", user.id, "github", { mode: "source", custom: [] });
+    expect(await getUserToolPolicy(pool, "default", user.id, "github")).toEqual({
+      mode: "source",
+      custom: [],
+      denied,
+    });
+  }
 });

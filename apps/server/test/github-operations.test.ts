@@ -1,15 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type pg from "pg";
-import { createTestPool } from "@afe/db/testing";
-import {
-  createLocalUser,
-  upsertConnection,
-  setUserToolPolicy,
-  storeCredential,
-  revokeCredential,
-} from "@afe/db";
-import { GITHUB_OPERATION_NAMES, type GitHubOperation } from "@afe/core";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
+import { createLocalUser, upsertConnection, storeCredential, revokeCredential } from "@afe/db";
+import { type GitHubOperation } from "@afe/core";
 import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe, type AfeApp } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
@@ -209,9 +203,9 @@ beforeEach(async () => {
       config: { repositories: [{ id: 1, fullName: "acme/app" }] },
     })
   ).id;
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
-    mode: "source + custom",
-    custom: GITHUB_OPERATION_NAMES.map((action) => ({ resource: "repository:acme/app", action })),
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source",
+    custom: [],
   });
   const credential = await storeCredential(pool, keys, "default", {
     kind: "user_github_token",
@@ -556,7 +550,7 @@ it("revalidates permissions on replay and compares all inputs when reusing an ID
   expect((await execute("github.rerun", params, p.json().version, requestId)).json().state).toBe(
     "accepted",
   );
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode: "source + custom",
     custom: [],
   });
@@ -629,8 +623,8 @@ it("allows a new intent after explicit rejection but preserves the original rece
   );
   expect(mutations).toHaveLength(2);
 });
-it("links a fine-grained personal token without returning it and scopes custom-only policies", async () => {
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+it("blocks legacy custom-only account linking and operations", async () => {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode: "custom",
     custom: [{ resource: "repository:acme/app", action: "read" }],
   });
@@ -640,12 +634,12 @@ it("links a fine-grained personal token without returning it and scopes custom-o
     headers: headers(),
     payload: { token: "new-fine-grained-test-token" },
   });
-  expect(response.statusCode).toBe(200);
+  expect(response.statusCode).toBe(403);
   expect(response.body).not.toContain("new-fine-grained");
-  expect((await afe.app.inject({ url: q("runs"), headers: headers() })).statusCode).toBe(200);
+  expect((await afe.app.inject({ url: q("runs"), headers: headers() })).statusCode).toBe(403);
   expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(403);
 });
-it("lets a linked administrator inherit operations immediately and retain optional allowlists", async () => {
+it("lets a linked administrator inherit operations and rejects custom policy updates", async () => {
   const adminHeaders = { authorization: `Bearer ${admin}` };
   expect(
     (
@@ -688,7 +682,7 @@ it("lets a linked administrator inherit operations immediately and retain option
         },
       })
     ).statusCode,
-  ).toBe(200);
+  ).toBe(400);
   const prepared = await prepareAdmin();
   expect(prepared.statusCode).toBe(200);
   const executed = await afe.app.inject({
@@ -961,7 +955,7 @@ it("reports pending logs and enforces exact log grants", async () => {
   const url = q("job_log", { runId: "123", attempt: "1", jobId: "234" });
   status = "in_progress";
   expect((await afe.app.inject({ url, headers: headers() })).statusCode).toBe(409);
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode: "source + custom",
     custom: [],
   });
@@ -970,7 +964,10 @@ it("reports pending logs and enforces exact log grants", async () => {
 });
 
 it("inherits all Afe action gates in Source mode and still applies provider roles", async () => {
-  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source",
+    custom: [],
+  });
   const caps = await afe.app.inject({ url: q("capabilities"), headers: headers() });
   expect(caps.statusCode).toBe(200);
   expect(caps.json().items.every((c: { enabled: boolean }) => c.enabled)).toBe(true);
@@ -1008,7 +1005,10 @@ it("inherits all Afe action gates in Source mode and still applies provider role
 });
 it("applies admin restrictions over Source access and rechecks them on replay", async () => {
   const params = { runId: 123, attempt: 1 };
-  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source",
+    custom: [],
+  });
   const p = await prepare("github.rerun", params),
     requestId = randomUUID();
   expect((await execute("github.rerun", params, p.json().version, requestId)).statusCode).toBe(202);
@@ -1082,7 +1082,7 @@ it.each(["github.*", "read", "github.unknown"])(
 it.each(["ghp_classic_fixture", "github_pat_fine_grained_fixture"])(
   "inherits Source operations with a linked %s",
   async (token) => {
-    await setUserToolPolicy(pool, "default", user.user.id, "github", {
+    await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
       mode: "source",
       custom: [],
     });
@@ -1100,7 +1100,10 @@ it.each(["ghp_classic_fixture", "github_pat_fine_grained_fixture"])(
   },
 );
 it("denies Source operations after credential revocation", async () => {
-  await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source",
+    custom: [],
+  });
   const id = (
     await pool.query<{ credential_id: string }>(
       "SELECT credential_id FROM user_tool_accounts WHERE tenant_id='default' AND user_id=$1 AND tool='github'",

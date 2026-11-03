@@ -15,8 +15,6 @@ import { useToast } from "../toast.tsx";
 const MODE_LABEL: Record<string, string> = {
   none: "No access",
   source: "Your tool permissions",
-  custom: "Custom grants",
-  "source + custom": "Your tool permissions + custom grants",
 };
 
 type Busy = "signin" | "link" | "disconnect" | null;
@@ -80,7 +78,8 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
       />
       {tool.sourceEnabled && tool.sourceAvailable === false && (
         <p className="muted">
-          This tool has no personal sign-in. Ask your administrator for custom resource access.
+          This tool has no personal sign-in, so inherited permissions grant no access in open
+          source.
         </p>
       )}
       {ready && tool.oauthAvailable && (

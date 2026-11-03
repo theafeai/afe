@@ -12,10 +12,9 @@ import {
   getCredential,
   getCredentialMetadata,
   getUserToolPolicy,
-  setUserToolPolicy,
   upsertConnection,
 } from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { buildAfe, loadConfig, type AfeApp } from "../src/index.ts";
 import { argocdOidcJobs } from "../src/auth/argocd-oidc.ts";
 let pool: pg.Pool,
@@ -153,7 +152,7 @@ beforeEach(async () => {
   const u = await createLocalUser(pool, "default", "alice");
   userId = u.user.id;
   userToken = u.token;
-  await setUserToolPolicy(pool, "default", userId, "argocd", { mode: "source", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", userId, "argocd", { mode: "source", custom: [] });
   afe = await buildAfe({
     pool,
     keys,
@@ -358,8 +357,8 @@ it("stores confidential client secrets write-only and supports Basic and POST ex
   expect(logs).not.toContain(Buffer.from("afe-client:operator-client-secret").toString("base64"));
 });
 it("denies none/custom policies, unconfigured connections, unsafe discovery and rejected provider calls", async () => {
-  for (const mode of ["none", "custom"] as const) {
-    await setUserToolPolicy(pool, "default", userId, "argocd", { mode, custom: [] });
+  for (const mode of ["none", "custom", "source + custom"] as const) {
+    await seedLegacyToolPolicy(pool, "default", userId, "argocd", { mode, custom: [] });
     expect(
       (
         await afe.app.inject({
@@ -373,11 +372,11 @@ it("denies none/custom policies, unconfigured connections, unsafe discovery and 
     const profile = await afe.app.inject({ url: "/api/profile", headers: { cookie } });
     expect(profile.body).not.toContain("Production");
   }
-  await setUserToolPolicy(pool, "default", userId, "argocd", {
-    mode: "source + custom",
+  await seedLegacyToolPolicy(pool, "default", userId, "argocd", {
+    mode: "source",
     custom: [],
   });
-  expect((await getUserToolPolicy(pool, "default", userId, "argocd")).mode).toBe("source + custom");
+  expect((await getUserToolPolicy(pool, "default", userId, "argocd")).mode).toBe("source");
   expect(
     (
       await afe.app.inject({
@@ -426,7 +425,7 @@ it("rejects other users/tenants and drops SSO grants on expiry or configuration 
   await pool.query("INSERT INTO tenants(id,name)VALUES('other','Other')");
   for (const tid of ["default", "other"]) {
     const other = await createLocalUser(pool, tid, "bob");
-    await setUserToolPolicy(pool, tid, other.user.id, "argocd", { mode: "source", custom: [] });
+    await seedLegacyToolPolicy(pool, tid, other.user.id, "argocd", { mode: "source", custom: [] });
     const login = await afe.app.inject({
       method: "POST",
       url: "/api/session",

@@ -87,7 +87,7 @@ export async function setUserToolPolicy(
   policy: ToolPolicy,
 ) {
   if (
-    !TOOL_PERMISSION_MODES.includes(policy.mode) ||
+    !(TOOL_PERMISSION_MODES as readonly string[]).includes(policy.mode) ||
     !tool ||
     tool.length > 100 ||
     (policy.denied !== undefined &&
@@ -101,10 +101,7 @@ export async function setUserToolPolicy(
             !g.action,
         ))) ||
     !Array.isArray(policy.custom) ||
-    policy.custom.some(
-      (g) =>
-        typeof g.resource !== "string" || !g.resource || typeof g.action !== "string" || !g.action,
-    )
+    policy.custom.length !== 0
   ) {
     throw new Error("invalid tool policy");
   }

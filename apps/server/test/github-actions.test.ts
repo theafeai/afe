@@ -1,14 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import type pg from "pg";
-import { createTestPool } from "@afe/db/testing";
-import {
-  createLocalUser,
-  upsertConnection,
-  ingestEvent,
-  setUserToolPolicy,
-  storeCredential,
-} from "@afe/db";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
+import { createLocalUser, upsertConnection, ingestEvent, storeCredential } from "@afe/db";
 import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe, type AfeApp } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
@@ -23,14 +17,11 @@ let requests: { method: string; path: string }[];
 const admin = "a".repeat(40);
 const url = () => `/api/actions/github/events/${eventId}`;
 const headers = () => ({ authorization: `Bearer ${user.token}` });
-async function policy(mode: "none" | "source" | "source + custom" = "source + custom") {
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+async function policy(mode: "none" | "source" | "source + custom" = "source") {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode,
     denied: [],
-    custom: ["github.cancel", "github.rerun", "github.rerun_failed"].map((action) => ({
-      resource: "repository:acme/app",
-      action,
-    })),
+    custom: [],
   });
 }
 function post(
@@ -254,7 +245,7 @@ it("requires CSRF for cookie requests and denies foreign origins", async () => {
   expect(requests).toHaveLength(0);
 });
 it("does not treat read or wrong-repository grants as action permission", async () => {
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode: "source + custom",
     custom: [
       { resource: "repository:acme/app", action: "read" },
@@ -287,7 +278,7 @@ it("allows an action on the new attempt without reusing the old receipt", async 
   ).toBe(202);
   expect(requests.filter((r) => r.method === "POST")).toHaveLength(2);
 });
-it("accepts exact GitHub action grants through admin policy API and rejects broad or cross-tool grants", async () => {
+it("rejects custom permission modes and grants through admin policy API", async () => {
   const target = `/api/admin/users/${user.user.id}/permissions/`;
   const policy = {
     mode: "source + custom",
@@ -302,7 +293,7 @@ it("accepts exact GitHub action grants through admin policy API and rejects broa
         payload: policy,
       })
     ).statusCode,
-  ).toBe(200);
+  ).toBe(400);
   for (const [tool, resource] of [
     ["vercel", "repository:acme/app"],
     ["github", "connection:c"],
@@ -327,7 +318,7 @@ it("denies revoked credentials and revoked action grants even when replaying a s
     confirmed: true,
   };
   expect((await post(payload)).statusCode).toBe(202);
-  await setUserToolPolicy(pool, "default", user.user.id, "github", {
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
     mode: "source",
     custom: [],
     denied: [{ resource: "repository:acme/app", action: "github.rerun" }],

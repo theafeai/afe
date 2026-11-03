@@ -4,6 +4,11 @@
 - Date: 2026-11-01
 - Amends: ADR 0011 and ADR 0012 administrator GitHub linking
 
+> Permission edition boundary superseded by [ADR 0015](0015-open-source-inherited-permissions.md):
+> open source allows Source or None only. Legacy Custom and Source + custom are
+> blocked pending explicit administrator review. Historical custom-mode behavior
+> below no longer applies to the open-source edition.
+
 ## Decision
 
 GitHub **Source** mode inherits all supported operations from the linked personal

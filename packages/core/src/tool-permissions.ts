@@ -1,8 +1,10 @@
 import type { GitHubOperation } from "./github-operations.ts";
 
 /** Per-tool policy. Source grants must come from a verified, current upstream account. */
-export const TOOL_PERMISSION_MODES = ["none", "source", "custom", "source + custom"] as const;
-export type ToolPermissionMode = (typeof TOOL_PERMISSION_MODES)[number];
+export const TOOL_PERMISSION_MODES = ["none", "source"] as const;
+/** Legacy modes remain readable for review, but never authorize access in open source. */
+export type ToolPermissionMode =
+  (typeof TOOL_PERMISSION_MODES)[number] | "custom" | "source + custom";
 
 /** Exact upstream resource identifiers and actions; no implicit wildcard grants. */
 export interface ToolGrant {
@@ -11,8 +13,9 @@ export interface ToolGrant {
 }
 export interface ToolPolicy {
   mode: ToolPermissionMode;
+  /** Retained legacy grants for review; ignored by open-source authorization. New writes require []. */
   custom: readonly ToolGrant[];
-  /** Optional exact GitHub action restrictions. Deny takes precedence over inheritance/allowlists. */
+  /** Optional exact GitHub action restrictions. Deny takes precedence over inherited access. */
   denied?: readonly ToolGrant[];
 }
 
@@ -24,19 +27,13 @@ export function permitsToolAction(
 ): boolean {
   if (
     !policy ||
-    policy.mode === "none" ||
+    policy.mode !== "source" ||
     policy.denied?.some((g) => g.resource === requested.resource && g.action === requested.action)
   )
     return false;
   const includes = (grants: readonly ToolGrant[]) =>
     grants.some((g) => g.resource === requested.resource && g.action === requested.action);
-  const fromSource =
-    (policy.mode === "source" || policy.mode === "source + custom") &&
-    source?.verified === true &&
-    includes(source.grants);
-  const fromCustom =
-    (policy.mode === "custom" || policy.mode === "source + custom") && includes(policy.custom);
-  return fromSource || fromCustom;
+  return source?.verified === true && includes(source.grants);
 }
 
 /** Afe's GitHub action gate only; callers must also enforce current upstream permission. */
@@ -47,9 +44,7 @@ export function permitsGitHubAction(
 ) {
   const resource = `repository:${repository.toLowerCase()}`;
   const matches = (g: ToolGrant) => g.resource === resource && g.action === action;
-  if (policy.mode === "none" || policy.denied?.some(matches)) return false;
-  // Keep custom and source + custom as explicit allowlists for existing installations.
-  return policy.mode === "source" || policy.custom.some(matches);
+  return policy.mode === "source" && !policy.denied?.some(matches);
 }
 
 export interface EventAccessRule {
