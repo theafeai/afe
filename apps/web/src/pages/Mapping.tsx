@@ -4,7 +4,7 @@ import { useAccess } from "../access.tsx";
  * events to them, built-in defaults, a live preview of how recent
  * deployments classify, and raw values no rule maps yet.
  */
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   mappingApi,
   ruleBody,
@@ -163,23 +163,25 @@ function EditableMappingPage() {
               act={act}
               onEdit={(r) => setDraft({ ...r })}
               onAdd={() => setDraft(emptyDraft(kind, state.data!))}
-            />
+            >
+              {draft?.kind === kind && (
+                <RuleForm
+                  key={draft.id ?? "new"}
+                  state={state.data!}
+                  initial={draft}
+                  onKindChange={setDraft}
+                  onCancel={() => setDraft(null)}
+                  onSave={async (d) => {
+                    const ok = await act(
+                      () => (d.id ? mappingApi.updateRule(d.id, d) : mappingApi.createRule(d)),
+                      d.id ? "Rule saved." : "Rule added.",
+                    );
+                    if (ok) setDraft(null);
+                  }}
+                />
+              )}
+            </RulesTable>
           ))}
-          {draft && (
-            <RuleForm
-              key={draft.id ?? "new"}
-              state={state.data}
-              initial={draft}
-              onCancel={() => setDraft(null)}
-              onSave={async (d) => {
-                const ok = await act(
-                  () => (d.id ? mappingApi.updateRule(d.id, d) : mappingApi.createRule(d)),
-                  d.id ? "Rule saved." : "Rule added.",
-                );
-                if (ok) setDraft(null);
-              }}
-            />
-          )}
           <BuiltinRules state={state.data} act={act} />
           <UnmappedValues
             data={unmapped.data?.values ?? null}
@@ -385,12 +387,14 @@ function RulesTable({
   act,
   onEdit,
   onAdd,
+  children,
 }: {
   kind: RuleKind;
   state: MappingState;
   act: Act;
   onEdit: (r: RuleView) => void;
   onAdd: () => void;
+  children: ReactNode;
 }) {
   const rules = state.rules.filter((r) => r.kind === kind);
   const title = kind === "service" ? "Service rules" : "Environment rules";
@@ -484,6 +488,7 @@ function RulesTable({
           </table>
         </div>
       )}
+      {children}
     </section>
   );
 }
@@ -498,11 +503,13 @@ function splitField(field: string): { choice: string; labelKey: string } {
 function RuleForm({
   state,
   initial,
+  onKindChange,
   onSave,
   onCancel,
 }: {
   state: MappingState;
   initial: RuleDraft;
+  onKindChange: (draft: RuleDraft) => void;
   onSave: (d: RuleDraft) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -554,8 +561,8 @@ function RuleForm({
   }, [previewKey]);
 
   return (
-    <section className="card" aria-labelledby="rule-form-h">
-      <h2 id="rule-form-h">{d.id ? "Edit rule" : "New rule"}</h2>
+    <section aria-labelledby="rule-form-h">
+      <h3 id="rule-form-h">{d.id ? "Edit rule" : "New rule"}</h3>
       <form
         className="form"
         onSubmit={(e) => {
@@ -571,7 +578,7 @@ function RuleForm({
             onChange={(e) => {
               const kind = e.target.value as RuleKind;
               const list = kind === "service" ? state.services : state.environments;
-              set({ kind, targetId: list[0]?.id ?? "" });
+              onKindChange({ ...effective, kind, targetId: list[0]?.id ?? "" });
             }}
           >
             <option value="service">a service</option>

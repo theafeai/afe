@@ -220,6 +220,90 @@ describe("Mapping settings page", () => {
     await waitFor(() => expect(screen.queryByRole("heading", { name: "New rule" })).toBeNull());
   });
 
+  it.each(["service", "environment"] as const)(
+    "creates and cancels a %s rule inside its section",
+    async (kind) => {
+      render(<App />);
+      await screen.findByText("acme/api");
+      const title = kind === "service" ? "Service rules" : "Environment rules";
+      const section = screen.getByRole("region", { name: title });
+      fireEvent.click(within(section).getByRole("button", { name: `Add ${kind} rule` }));
+      const form = within(section).getByRole("region", { name: "New rule" });
+      expect(form.closest(".card")).toBe(section);
+      expect((within(form).getByLabelText("Assigns") as HTMLSelectElement).value).toBe(kind);
+      expect((within(form).getByLabelText("Field") as HTMLSelectElement).value).toBe(
+        kind === "service" ? "github.repository" : "github.environment",
+      );
+      const save = within(form).getByRole("button", { name: "Save rule" });
+      expect((save as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.change(within(form).getByLabelText("Pattern"), {
+        target: { value: "new-pattern" },
+      });
+      fireEvent.click(within(form).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("region", { name: "New rule" })).toBeNull();
+      expect(calls.some((c) => c.method === "POST" && c.url === "/api/mapping/rules")).toBe(false);
+
+      fireEvent.click(within(section).getByRole("button", { name: `Add ${kind} rule` }));
+      expect((screen.getByLabelText("Pattern") as HTMLInputElement).value).toBe("");
+      fireEvent.change(screen.getByLabelText("Pattern"), { target: { value: "saved-pattern" } });
+      fireEvent.click(within(section).getByRole("button", { name: "Save rule" }));
+      await screen.findByText("Rule added.");
+      expect(
+        calls.find((c) => c.method === "POST" && c.url === "/api/mapping/rules")?.body,
+      ).toMatchObject({
+        kind,
+        pattern: "saved-pattern",
+        targetId: kind === "service" ? "web" : "production",
+      });
+      expect(await within(section).findByText("saved-pattern")).toBeTruthy();
+      expect(screen.queryByRole("region", { name: "New rule" })).toBeNull();
+    },
+  );
+
+  it("opens edits inline and resets the form when switching Add sections", async () => {
+    render(<App />);
+    await screen.findByText("acme/api");
+    const service = screen.getByRole("region", { name: "Service rules" });
+    const environment = screen.getByRole("region", { name: "Environment rules" });
+    fireEvent.click(within(service).getByRole("button", { name: "Edit rule acme/api" }));
+    expect(within(service).getByRole("region", { name: "Edit rule" })).toBeTruthy();
+    fireEvent.click(within(environment).getByRole("button", { name: "Add environment rule" }));
+    expect(screen.queryByRole("region", { name: "Edit rule" })).toBeNull();
+    expect(within(environment).getByRole("region", { name: "New rule" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Pattern"), { target: { value: "discard-me" } });
+    fireEvent.click(within(service).getByRole("button", { name: "Add service rule" }));
+    expect(within(environment).queryByRole("region", { name: "New rule" })).toBeNull();
+    expect((within(service).getByLabelText("Pattern") as HTMLInputElement).value).toBe("");
+  });
+
+  it("moves the draft to the matching section when Assigns changes, preserving fields", async () => {
+    render(<App />);
+    await screen.findByText("acme/api");
+    fireEvent.click(screen.getByRole("button", { name: "Add service rule" }));
+    fireEvent.change(screen.getByLabelText("Field"), { target: { value: "argocd.label:<key>" } });
+    fireEvent.change(screen.getByLabelText("Label key"), { target: { value: "team" } });
+    fireEvent.change(screen.getByLabelText("Pattern"), { target: { value: "payments" } });
+    fireEvent.change(screen.getByLabelText("Assigns"), { target: { value: "environment" } });
+    const environment = screen.getByRole("region", { name: "Environment rules" });
+    expect(within(environment).getByRole("region", { name: "New rule" })).toBeTruthy();
+    expect((within(environment).getByLabelText("Label key") as HTMLInputElement).value).toBe(
+      "team",
+    );
+    expect((within(environment).getByLabelText("Pattern") as HTMLInputElement).value).toBe(
+      "payments",
+    );
+    fireEvent.click(within(environment).getByRole("button", { name: "Save rule" }));
+    await screen.findByText("Rule added.");
+    expect(
+      calls.find((c) => c.method === "POST" && c.url === "/api/mapping/rules")?.body,
+    ).toMatchObject({
+      kind: "environment",
+      field: "argocd.label:team",
+      pattern: "payments",
+      targetId: "production",
+    });
+  });
+
   it("reorders and deletes rules", async () => {
     render(<App />);
     await screen.findByText("acme/api");
@@ -242,7 +326,11 @@ describe("Mapping settings page", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Create rule from argocd.application payments" }),
     );
-    expect(screen.getByRole("heading", { name: "New rule" })).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Service rules" })).getByRole("heading", {
+        name: "New rule",
+      }),
+    ).toBeTruthy();
     expect((screen.getByLabelText("Pattern") as HTMLInputElement).value).toBe("payments");
     expect((screen.getByLabelText("Assigns") as HTMLSelectElement).value).toBe("service");
   });
