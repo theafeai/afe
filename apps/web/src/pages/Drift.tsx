@@ -195,7 +195,7 @@ export function DriftPage() {
               </thead>
               <tbody>
                 {items.map((f) => (
-                  <tr key={f.id} className={`tool-row tool-${f.target.source}`}>
+                  <tr key={f.id} className={`tool-${f.target.source}`}>
                     <td>
                       <SeverityBadge severity={f.severity} />
                     </td>

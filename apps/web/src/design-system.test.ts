@@ -230,6 +230,16 @@ describe(`design system (${DOC})`, () => {
     );
   });
 
+  it("rule 4: the in-app dark theme uses exactly the OS dark theme's tokens", () => {
+    const media = tokenMap(rootBlock(stylesCss, stylesCss.indexOf("prefers-color-scheme: dark")));
+    const chosen = tokenMap(rootBlock(stylesCss, stylesCss.indexOf(':root[data-theme="dark"]')));
+    expect(chosen.size, 'styles.css needs a :root[data-theme="dark"] block').toBeGreaterThan(0);
+    expect(
+      Object.fromEntries(chosen),
+      `Keep the two dark blocks identical (${DOC}, rule 4)`,
+    ).toEqual(Object.fromEntries(media));
+  });
+
   describe("rule 8: text tokens meet WCAG AA in both themes", () => {
     const light = tokenMap(rootBlock(stylesCss));
     const dark = tokenMap(rootBlock(stylesCss, stylesCss.indexOf("prefers-color-scheme: dark")));

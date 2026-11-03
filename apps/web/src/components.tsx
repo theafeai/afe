@@ -270,3 +270,31 @@ export function KeyValue({ items }: { items: [string, ReactNode][] }) {
     </dl>
   );
 }
+
+/** Section title with a count and the section's creation action on the right. */
+export function SectionHead({
+  id,
+  title,
+  count,
+  hint,
+  action,
+}: {
+  id: string;
+  title: string;
+  count?: number;
+  hint?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="section-head">
+      <div>
+        <div className="section-title">
+          <h2 id={id}>{title}</h2>
+          {count !== undefined && <span className="count">{count}</span>}
+        </div>
+        {hint && <p className="muted small">{hint}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}

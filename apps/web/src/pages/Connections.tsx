@@ -105,7 +105,7 @@ export function Connections() {
                   {data.connections.map((c) => (
                     <tr
                       key={c.id}
-                      className={`tool-row tool-${c.source}${c.health.openGap ? " row-has-gap" : ""}`}
+                      className={`tool-${c.source}${c.health.openGap ? " row-has-gap" : ""}`}
                     >
                       <td>
                         <ToolBadge source={c.source} />{" "}

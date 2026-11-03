@@ -1,6 +1,7 @@
 # ADR 0012: Readable type scale
 
-- Status: Accepted
+- Status: Accepted; title sizes and uppercase table heads superseded by
+  [ADR 0015](0015-ink-design-language.md)
 - Date: 2026-11-01
 - Linear: AFE-65
 - Supersedes: the type sizes and control height in [ADR 0009](0009-web-ui-design-system.md)

@@ -1,14 +1,17 @@
 import type { ReactNode } from "react";
 
-/** 16px line icons for the app shell. Decorative: always aria-hidden. */
+/**
+ * Line icons for the app shell and pages, from Lucide (ISC licence, see NOTICE),
+ * drawn at 16px. Decorative: always aria-hidden; label the control instead.
+ */
 function Icon({ children }: { children: ReactNode }) {
   return (
     <svg
       className="icon"
-      viewBox="0 0 16 16"
+      viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -22,107 +25,217 @@ function Icon({ children }: { children: ReactNode }) {
 export const icons = {
   environments: (
     <Icon>
-      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
-      <path d="M2 6.5h12M6.5 6.5v7" />
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="14" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
     </Icon>
   ),
   events: (
     <Icon>
-      <path d="M1.75 8h2.5l1.75-4.5 3.5 9L11.25 8h3" />
+      <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
+    </Icon>
+  ),
+  actions: (
+    <Icon>
+      <rect width="8" height="8" x="3" y="3" rx="2" />
+      <path d="M7 11v4a2 2 0 0 0 2 2h4" />
+      <rect width="8" height="8" x="13" y="13" rx="2" />
     </Icon>
   ),
   deployments: (
     <Icon>
-      <path d="M8 13.5V3M4 6.75 8 2.75l4 4M3 13.5h10" />
+      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
     </Icon>
   ),
   drift: (
     <Icon>
-      <circle cx="4" cy="4" r="1.75" />
-      <circle cx="12" cy="12" r="1.75" />
-      <path d="M4 5.75v2.5A2.75 2.75 0 0 0 6.75 11H10M12 10.25v-2.5A2.75 2.75 0 0 0 9.25 5H6" />
+      <circle cx="5" cy="6" r="3" />
+      <path d="M12 6h5a2 2 0 0 1 2 2v7" />
+      <path d="m15 9-3-3 3-3" />
+      <circle cx="19" cy="18" r="3" />
+      <path d="M12 18H7a2 2 0 0 1-2-2V9" />
+      <path d="m9 15 3 3-3 3" />
     </Icon>
   ),
   connections: (
     <Icon>
-      <path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0V5ZM8 11v3" />
+      <path d="M12 22v-5" />
+      <path d="M9 8V2" />
+      <path d="M15 8V2" />
+      <path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" />
     </Icon>
   ),
   mapping: (
     <Icon>
-      <rect x="1.75" y="2" width="4.5" height="3.5" rx="1" />
-      <rect x="9.75" y="2" width="4.5" height="3.5" rx="1" />
-      <rect x="5.75" y="10.5" width="4.5" height="3.5" rx="1" />
-      <path d="M4 5.5v1.75c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V5.5M8 8.25v2.25" />
+      <rect x="16" y="16" width="6" height="6" rx="1" />
+      <rect x="2" y="16" width="6" height="6" rx="1" />
+      <rect x="9" y="2" width="6" height="6" rx="1" />
+      <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" />
+      <path d="M12 12V8" />
     </Icon>
   ),
   profile: (
     <Icon>
-      <circle cx="8" cy="5.5" r="2.75" />
-      <path d="M2.75 14a5.25 5.25 0 0 1 10.5 0" />
+      <circle cx="12" cy="8" r="5" />
+      <path d="M20 21a8 8 0 0 0-16 0" />
     </Icon>
   ),
   users: (
     <Icon>
-      <circle cx="6" cy="5.5" r="2.5" />
-      <path d="M1.5 13.5a4.5 4.5 0 0 1 9 0M10.5 3.2a2.5 2.5 0 0 1 0 4.6M12.5 9.6a4.5 4.5 0 0 1 2 3.9" />
+      <path d="M18 21a8 8 0 0 0-16 0" />
+      <circle cx="10" cy="8" r="5" />
+      <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3" />
     </Icon>
   ),
   signOut: (
     <Icon>
-      <path d="M6 2.5H3.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1H6M10.5 11 13.5 8l-3-3M13.25 8H6" />
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" x2="9" y1="12" y2="12" />
     </Icon>
   ),
   menu: (
     <Icon>
-      <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" />
+      <line x1="4" x2="20" y1="12" y2="12" />
+      <line x1="4" x2="20" y1="6" y2="6" />
+      <line x1="4" x2="20" y1="18" y2="18" />
     </Icon>
   ),
   check: (
     <Icon>
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="m5.25 8.25 1.9 1.9 3.6-3.9" />
+      <circle cx="12" cy="12" r="10" />
+      <path d="m9 12 2 2 4-4" />
     </Icon>
   ),
   info: (
     <Icon>
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M8 7.25v3.75M8 4.9v.1" />
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
     </Icon>
   ),
   alert: (
     <Icon>
-      <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.5 9.75a1 1 0 0 1-.87 1.5H2.5a1 1 0 0 1-.87-1.5Z" />
-      <path d="M8 6.25v3M8 11.4v.1" />
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
     </Icon>
   ),
   close: (
     <Icon>
-      <path d="m4 4 8 8M12 4l-8 8" />
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Icon>
+  ),
+  plus: (
+    <Icon>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </Icon>
+  ),
+  edit: (
+    <Icon>
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
+    </Icon>
+  ),
+  trash: (
+    <Icon>
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </Icon>
+  ),
+  up: (
+    <Icon>
+      <path d="m5 12 7-7 7 7" />
+      <path d="M12 19V5" />
+    </Icon>
+  ),
+  down: (
+    <Icon>
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </Icon>
+  ),
+  search: (
+    <Icon>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </Icon>
+  ),
+  pin: (
+    <Icon>
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </Icon>
+  ),
+  chevrons: (
+    <Icon>
+      <path d="m7 15 5 5 5-5" />
+      <path d="m7 9 5-5 5 5" />
+    </Icon>
+  ),
+  sun: (
+    <Icon>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.93 4.93 1.41 1.41" />
+      <path d="m17.66 17.66 1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.34 17.66-1.41 1.41" />
+      <path d="m19.07 4.93-1.41 1.41" />
+    </Icon>
+  ),
+  moon: (
+    <Icon>
+      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+    </Icon>
+  ),
+  system: (
+    <Icon>
+      <rect width="20" height="14" x="2" y="3" rx="2" />
+      <line x1="8" x2="16" y1="21" y2="21" />
+      <line x1="12" x2="12" y1="17" y2="21" />
+    </Icon>
+  ),
+  box: (
+    <Icon>
+      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+      <path d="m3.3 7 8.7 5 8.7-5" />
+      <path d="M12 22V12" />
+    </Icon>
+  ),
+  layers: (
+    <Icon>
+      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
+      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
+      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
     </Icon>
   ),
 };
 
+/** Outline of "afe" in Instrument Sans at weight 650 (OFL-1.1), for the wordmark. */
+const WORDMARK =
+  "M344.5 730Q338.8 708.8 336.5 684.3Q334.2 659.8 334.2 626.7H330V385.2Q330 349.7 308.5 330.5Q287 311.3 243.8 311.3Q202.5 311.3 178 326.1Q153.5 340.8 147 368.8H15Q24.2 299 84.5 254.5Q144.8 210 248.5 210Q356 210 412 258.3Q468 306.7 468 398.3V626.7Q468 651.2 471.4 676.3Q474.8 701.5 482.3 730ZM167 740Q90.5 740 45.3 701.5Q0 663 0 598.5Q0 528.2 52.2 485.8Q104.5 443.3 199.2 430L353 407.5V491L222 511.2Q179.3 517.7 158.7 534.5Q138 551.3 138 581.3Q138 608.7 157.4 622.8Q176.8 637 210.5 637Q260.8 637 295.4 610.7Q330 584.3 330 547.8L343.8 626.3Q322.8 682.3 277.6 711.2Q232.3 740 167 740ZM629.3 730V179.7Q629.3 91.3 677.8 45.7Q726.2 0 821.7 0Q842.5 0 857.3 2Q872.2 4 886 8.7V115Q879 112.2 868.6 110.6Q858.2 109 844.2 109Q804.8 109 786.2 127.8Q767.7 146.7 767.7 182V730ZM541 326.3V220H875V326.3ZM1198.7 740Q1115.7 740 1053.8 706.3Q992 672.7 957.9 612.7Q923.8 552.7 923.8 474.7Q923.8 395.8 957.8 336.3Q991.8 276.8 1053 243.4Q1114.2 210 1194.8 210Q1272.5 210 1329.6 241.8Q1386.7 273.7 1418.1 330.5Q1449.5 387.3 1449.5 464.2Q1449.5 479.2 1448.6 491.9Q1447.7 504.7 1445.7 516.5H1007.2V422.8H1336.7L1310.7 444Q1310.7 377 1279.3 344.2Q1248 311.3 1193.2 311.3Q1131.3 311.3 1096.5 353.4Q1061.7 395.5 1061.7 477Q1061.7 557.2 1096.5 597.9Q1131.3 638.7 1198.5 638.7Q1236.7 638.7 1264.5 625.1Q1292.3 611.5 1306 582.3H1436.2Q1411.2 655.7 1351 697.8Q1290.8 740 1198.7 740Z";
+
 /**
- * The Afe mark: three stages joined by a path (commit → artifact → live),
- * on an indigo tile.
+ * The Afe wordmark (ADR 0015): "afe" plus a solid dot, like a live indicator.
+ * Drawn in currentColor so it is ink on light and white on dark.
  */
 export function BrandMark() {
   return (
-    <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <rect width="24" height="24" rx="6" fill="var(--accent-solid)" />
-      <path
-        d="M6 16.5 12 7.5l6 9"
-        fill="none"
-        stroke="#fff"
-        strokeOpacity="0.55"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="6" cy="16.5" r="2" fill="#fff" fillOpacity="0.8" />
-      <circle cx="12" cy="7.5" r="2" fill="#fff" fillOpacity="0.9" />
-      <circle cx="18" cy="16.5" r="2.4" fill="#fff" />
+    <svg className="brand-mark" viewBox="0 0 1660 740" aria-hidden="true" focusable="false">
+      <path d={WORDMARK} />
+      <circle cx="1578" cy="652" r="78" />
     </svg>
   );
 }
@@ -142,20 +255,17 @@ const TOOL_PATHS: Record<string, string> = {
     "M1.44 0v7.575l6.561 3.79V3.787zm21.12 4.227l-6.561 3.791v7.574l6.56-3.787zM8.72 4.23v7.575l6.561 3.787V8.018zm0 8.405v7.575L15.28 24v-7.578z",
 };
 
+/** Lowercase "a" of the wordmark, for the Afe tool mark and the favicon. */
+const GLYPH_A =
+  "M344.5 520Q338.8 498.8 336.5 474.3Q334.2 449.8 334.2 416.7H330V175.2Q330 139.7 308.5 120.5Q287 101.3 243.8 101.3Q202.5 101.3 178 116.1Q153.5 130.8 147 158.8H15Q24.2 89 84.5 44.5Q144.8 0 248.5 0Q356 0 412 48.3Q468 96.7 468 188.3V416.7Q468 441.2 471.4 466.3Q474.8 491.5 482.3 520ZM167 530Q90.5 530 45.3 491.5Q0 453 0 388.5Q0 318.2 52.2 275.8Q104.5 233.3 199.2 220L353 197.5V281L222 301.2Q179.3 307.7 158.7 324.5Q138 341.3 138 371.3Q138 398.7 157.4 412.8Q176.8 427 210.5 427Q260.8 427 295.4 400.7Q330 374.3 330 337.8L343.8 416.3Q322.8 472.3 277.6 501.2Q232.3 530 167 530Z";
+
 /** The tool's logo, or a small square for a tool without one. Decorative. */
 export function ToolMark({ source }: { source: string }) {
   if (source === "afe")
     return (
       <svg className="tool-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <rect width="24" height="24" rx="6" />
-        <path
-          d="M6 16.5 12 7.5l6 9"
-          fill="none"
-          stroke="var(--surface)"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        <path fill="var(--surface)" transform="translate(6.08 5.50) scale(0.02453)" d={GLYPH_A} />
       </svg>
     );
   const d = TOOL_PATHS[source];

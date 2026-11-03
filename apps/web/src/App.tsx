@@ -26,6 +26,7 @@ import { MappingPage } from "./pages/Mapping.tsx";
 import { Timeline } from "./pages/Timeline.tsx";
 import { Link, matchPath, Router, useLocation, useNavigate } from "./router.tsx";
 import { ToastProvider } from "./toast.tsx";
+import { useTheme, type ThemeChoice } from "./theme.ts";
 
 /**
  * Client routes. The server serves index.html for every path under these
@@ -74,7 +75,7 @@ export function Routes() {
 const NAV = [
   { to: "/", label: "Environments", icon: icons.environments, group: "observe" },
   { to: "/events", label: "Events", icon: icons.events, group: "observe" },
-  { to: "/github", label: "GitHub Actions", icon: icons.deployments, group: "observe" },
+  { to: "/github", label: "GitHub Actions", icon: icons.actions, group: "observe" },
   { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },
   { to: "/drift", label: "Drift", icon: icons.drift, group: "observe" },
   { to: "/connections", label: "Connections", icon: icons.connections, group: "setup" },
@@ -99,6 +100,33 @@ function NavLink({ to, label, icon }: { to: string; label: string; icon: ReactNo
   );
 }
 
+const THEMES: { value: ThemeChoice; label: string; icon: ReactNode }[] = [
+  { value: "system", label: "System", icon: icons.system },
+  { value: "light", label: "Light", icon: icons.sun },
+  { value: "dark", label: "Dark", icon: icons.moon },
+];
+
+/** System / Light / Dark, remembered in this browser (theme.ts). */
+function ThemeSwitch() {
+  const [theme, setTheme] = useTheme();
+  return (
+    <div className="theme-switch" role="group" aria-label="Theme">
+      {THEMES.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          aria-pressed={theme === t.value}
+          onClick={() => setTheme(t.value)}
+          title={`${t.label} theme`}
+        >
+          {t.icon}
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () => void }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
@@ -113,7 +141,6 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       <div className="sidebar-top">
         <Link to="/" className="brand" aria-label="Afe home">
           <BrandMark />
-          afe
         </Link>
         <button
           type="button"
@@ -155,26 +182,29 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       </nav>
       {session && (
         <div className="session">
-          <span className="avatar" aria-hidden="true">
-            {name.slice(0, 1).toUpperCase()}
-          </span>
-          <span className="session-who">
-            <span className="session-name">{name}</span>
-            <span className="session-role">
-              {admin ? "Admin" : session.principal.managedUser ? "Member" : "Viewer (read-only)"}
+          <ThemeSwitch />
+          <div className="session-row">
+            <span className="avatar" aria-hidden="true">
+              {name.slice(0, 1).toUpperCase()}
             </span>
-          </span>
-          {session.principal.kind === "session" && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-icon"
-              onClick={onLogout}
-              aria-label="Sign out"
-              title="Sign out"
-            >
-              {icons.signOut}
-            </button>
-          )}
+            <span className="session-who">
+              <span className="session-name">{name}</span>
+              <span className="session-role">
+                {admin ? "Admin" : session.principal.managedUser ? "Member" : "Viewer (read-only)"}
+              </span>
+            </span>
+            {session.principal.kind === "session" && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                onClick={onLogout}
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                {icons.signOut}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </header>
