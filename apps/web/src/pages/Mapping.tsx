@@ -4,7 +4,7 @@ import { useAccess } from "../access.tsx";
  * events to them, built-in defaults, a live preview of how recent
  * deployments classify, and raw values no rule maps yet.
  */
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   mappingApi,
   ruleBody,
@@ -211,7 +211,89 @@ function EditableMappingPage() {
 
 type Act = (what: () => Promise<unknown>, done: string) => Promise<boolean>;
 
+const MAPPING_PAGE_SIZE = 5;
+
+function useMappingList<T>(items: T[], searchText: (item: T) => string) {
+  const [query, setQuery] = useState("");
+  const [requestedPage, setPage] = useState(0);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = items.filter((item) => searchText(item).toLowerCase().includes(normalizedQuery));
+  const pages = Math.max(1, Math.ceil(filtered.length / MAPPING_PAGE_SIZE));
+  const page = Math.min(requestedPage, pages - 1);
+  const containerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+  }, [page, query]);
+  return {
+    query,
+    listRef: (element: HTMLElement | null) => {
+      containerRef.current = element;
+    },
+    setQuery: (value: string) => {
+      setQuery(value);
+      setPage(0);
+    },
+    page,
+    pages,
+    setPage,
+    total: items.length,
+    matches: filtered.length,
+    items: filtered.slice(page * MAPPING_PAGE_SIZE, (page + 1) * MAPPING_PAGE_SIZE),
+  };
+}
+
+type MappingListControls = Omit<ReturnType<typeof useMappingList>, "items" | "listRef">;
+
+function MappingSearch({ list, kind }: { list: MappingListControls; kind: string }) {
+  return (
+    <div className="field">
+      <label htmlFor={`mapping-search-${kind}`}>Search {kind}</label>
+      <input
+        id={`mapping-search-${kind}`}
+        type="search"
+        value={list.query}
+        onChange={(event) => list.setQuery(event.target.value)}
+        placeholder="Search names, identifiers and details"
+      />
+    </div>
+  );
+}
+
+function MappingPagination({ list, kind }: { list: MappingListControls; kind: string }) {
+  const start = list.matches === 0 ? 0 : list.page * MAPPING_PAGE_SIZE + 1;
+  const end = Math.min((list.page + 1) * MAPPING_PAGE_SIZE, list.matches);
+  return (
+    <div className="mapping-pagination">
+      <span className="small muted" role="status">
+        {start}–{end} of {list.matches} {kind}
+        {list.query.trim() ? ` (${list.total} total)` : ""}
+      </span>
+      {list.pages > 1 && (
+        <nav className="button-row" aria-label={`${kind} pages`}>
+          <button
+            className="btn"
+            type="button"
+            disabled={list.page === 0}
+            onClick={() => list.setPage(list.page - 1)}
+          >
+            Previous
+          </button>
+          <button
+            className="btn"
+            type="button"
+            disabled={list.page === list.pages - 1}
+            onClick={() => list.setPage(list.page + 1)}
+          >
+            Next
+          </button>
+        </nav>
+      )}
+    </div>
+  );
+}
+
 function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
+  const list = useMappingList(state.services, (s) => `${s.name} ${s.id} ${s.description ?? ""}`);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const submit = async (e: FormEvent) => {
@@ -229,12 +311,18 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
   };
   return (
     <section className="card" aria-labelledby="services-h">
-      <h2 id="services-h">Services</h2>
+      <h2 id="services-h">
+        Services{" "}
+        <span aria-hidden="true" className="small muted">
+          ({state.services.length})
+        </span>
+      </h2>
+      <MappingSearch list={list} kind="services" />
       {state.services.length === 0 ? (
         <p className="muted">No services yet. Every deployment shows as “unmapped service”.</p>
       ) : (
-        <ul className="mapping-items" aria-label="Existing services">
-          {state.services.map((s) => (
+        <ul ref={list.listRef} className="mapping-items" aria-label="Existing services">
+          {list.items.map((s) => (
             <li key={s.id} className="mapping-item">
               <div className="mapping-item-details">
                 <strong>{s.name}</strong>
@@ -257,29 +345,36 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
           ))}
         </ul>
       )}
-      <form className="form mapping-create" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="svc-name">Service name</label>
-          <input
-            id="svc-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={128}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="svc-desc">Description (optional)</label>
-          <input
-            id="svc-desc"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={1024}
-          />
-        </div>
-        <button type="submit" className="btn" disabled={!name.trim()}>
-          Add service
-        </button>
-      </form>
+      {list.matches === 0 && list.total > 0 && (
+        <p className="muted">No matches. Try another search.</p>
+      )}
+      <MappingPagination list={list} kind="services" />
+      <details className="mapping-create">
+        <summary>Create service</summary>
+        <form className="form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="svc-name">Service name</label>
+            <input
+              id="svc-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={128}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="svc-desc">Description (optional)</label>
+            <input
+              id="svc-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={1024}
+            />
+          </div>
+          <button type="submit" className="btn" disabled={!name.trim()}>
+            Add service
+          </button>
+        </form>
+      </details>
     </section>
   );
 }
@@ -288,6 +383,7 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<EnvironmentKind>("other");
   const envs = state.environments;
+  const list = useMappingList(envs, (e) => `${e.name} ${e.id} ${e.kind}`);
   const move = (i: number, by: number) => {
     const a = envs[i]!;
     const b = envs[i + by]!;
@@ -307,85 +403,104 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
   };
   return (
     <section className="card" aria-labelledby="envs-h">
-      <h2 id="envs-h">Environments</h2>
+      <h2 id="envs-h">
+        Environments{" "}
+        <span aria-hidden="true" className="small muted">
+          ({envs.length})
+        </span>
+      </h2>
+      <MappingSearch list={list} kind="environments" />
+      <p className="small muted">
+        Arrows change the full column order, including items outside this view.
+      </p>
       {!state.customised && (
         <p className="muted small">Built-in defaults; your first change makes them your own.</p>
       )}
       {envs.length === 0 && (
         <p className="muted">No environments yet. Add one below to group deployments.</p>
       )}
-      <ol className="mapping-items" aria-label="Existing environments">
-        {envs.map((e, i) => (
-          <li key={e.id} className="mapping-item">
-            <div className="mapping-item-details">
-              <strong>{e.name}</strong>
-              <code className="small muted">{e.id}</code>
-              <span className="badge">{e.kind}</span>
-            </div>
-            <div className="mapping-item-actions">
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon"
-                aria-label={`Move environment ${e.name} left`}
-                disabled={i === 0}
-                onClick={() => move(i, -1)}
-              >
-                ←
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-icon"
-                aria-label={`Move environment ${e.name} right`}
-                disabled={i === envs.length - 1}
-                onClick={() => move(i, 1)}
-              >
-                →
-              </button>{" "}
-              <button
-                type="button"
-                className="btn btn-danger"
-                aria-label={`Delete environment ${e.name}`}
-                onClick={() =>
-                  void act(
-                    () => mappingApi.deleteEnvironment(e.id),
-                    `Environment “${e.name}” deleted.`,
-                  )
-                }
-              >
-                Delete
-              </button>
-            </div>
-          </li>
-        ))}
+      <ol ref={list.listRef} className="mapping-items" aria-label="Existing environments">
+        {list.items.map((e) => {
+          const i = envs.findIndex((item) => item.id === e.id);
+          return (
+            <li key={e.id} className="mapping-item">
+              <div className="mapping-item-details">
+                <strong>{e.name}</strong>
+                <code className="small muted">{e.id}</code>
+                <span className="badge">{e.kind}</span>
+              </div>
+              <div className="mapping-item-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  aria-label={`Move environment ${e.name} left`}
+                  disabled={i === 0}
+                  onClick={() => move(i, -1)}
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  aria-label={`Move environment ${e.name} right`}
+                  disabled={i === envs.length - 1}
+                  onClick={() => move(i, 1)}
+                >
+                  →
+                </button>{" "}
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  aria-label={`Delete environment ${e.name}`}
+                  onClick={() =>
+                    void act(
+                      () => mappingApi.deleteEnvironment(e.id),
+                      `Environment “${e.name}” deleted.`,
+                    )
+                  }
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ol>
-      <form className="form mapping-create" onSubmit={submit}>
-        <div className="field">
-          <label htmlFor="env-name">Environment name</label>
-          <input
-            id="env-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={128}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="env-kind">Kind</label>
-          <select
-            id="env-kind"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as EnvironmentKind)}
-          >
-            {state.environmentKinds.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button type="submit" className="btn" disabled={!name.trim()}>
-          Add environment
-        </button>
-      </form>
+      {list.matches === 0 && list.total > 0 && (
+        <p className="muted">No matches. Try another search.</p>
+      )}
+      <MappingPagination list={list} kind="environments" />
+      <details className="mapping-create">
+        <summary>Create environment</summary>
+        <form className="form" onSubmit={submit}>
+          <div className="field">
+            <label htmlFor="env-name">Environment name</label>
+            <input
+              id="env-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={128}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="env-kind">Kind</label>
+            <select
+              id="env-kind"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as EnvironmentKind)}
+            >
+              {state.environmentKinds.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" className="btn" disabled={!name.trim()}>
+            Add environment
+          </button>
+        </form>
+      </details>
     </section>
   );
 }
