@@ -22,6 +22,7 @@ import { Empty, ErrorBox, Loading, ToolBadge, useAsync, useDocumentTitle } from 
 import { formatDateTime } from "../format.ts";
 import { Link } from "../router.tsx";
 import { useToast } from "../toast.tsx";
+import "./Mapping.css";
 
 const LABEL_FIELD = "argocd.label:<key>";
 const MATCH_LABEL: Record<MatchType, string> = {
@@ -232,26 +233,31 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
       {state.services.length === 0 ? (
         <p className="muted">No services yet. Every deployment shows as “unmapped service”.</p>
       ) : (
-        <ul className="plain">
+        <ul className="mapping-items" aria-label="Existing services">
           {state.services.map((s) => (
-            <li key={s.id}>
-              <strong>{s.name}</strong> <code className="small">{s.id}</code>
-              {s.description && <span className="muted"> — {s.description}</span>}{" "}
-              <button
-                type="button"
-                className="btn-link"
-                aria-label={`Delete service ${s.name}`}
-                onClick={() =>
-                  void act(() => mappingApi.deleteService(s.id), `Service “${s.name}” deleted.`)
-                }
-              >
-                Delete
-              </button>
+            <li key={s.id} className="mapping-item">
+              <div className="mapping-item-details">
+                <strong>{s.name}</strong>
+                <code className="small muted">{s.id}</code>
+                {s.description && <span className="small muted">{s.description}</span>}
+              </div>
+              <div className="mapping-item-actions">
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  aria-label={`Delete service ${s.name}`}
+                  onClick={() =>
+                    void act(() => mappingApi.deleteService(s.id), `Service “${s.name}” deleted.`)
+                  }
+                >
+                  Delete
+                </button>
+              </div>
             </li>
           ))}
         </ul>
       )}
-      <form className="form" onSubmit={submit}>
+      <form className="form mapping-create" onSubmit={submit}>
         <div className="field">
           <label htmlFor="svc-name">Service name</label>
           <input
@@ -305,46 +311,54 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
       {!state.customised && (
         <p className="muted small">Built-in defaults; your first change makes them your own.</p>
       )}
-      <ol className="plain">
+      {envs.length === 0 && (
+        <p className="muted">No environments yet. Add one below to group deployments.</p>
+      )}
+      <ol className="mapping-items" aria-label="Existing environments">
         {envs.map((e, i) => (
-          <li key={e.id}>
-            <strong>{e.name}</strong> <code className="small">{e.id}</code>{" "}
-            <span className="muted">({e.kind})</span>{" "}
-            <button
-              type="button"
-              className="btn-link"
-              aria-label={`Move environment ${e.name} left`}
-              disabled={i === 0}
-              onClick={() => move(i, -1)}
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              className="btn-link"
-              aria-label={`Move environment ${e.name} right`}
-              disabled={i === envs.length - 1}
-              onClick={() => move(i, 1)}
-            >
-              →
-            </button>{" "}
-            <button
-              type="button"
-              className="btn-link"
-              aria-label={`Delete environment ${e.name}`}
-              onClick={() =>
-                void act(
-                  () => mappingApi.deleteEnvironment(e.id),
-                  `Environment “${e.name}” deleted.`,
-                )
-              }
-            >
-              Delete
-            </button>
+          <li key={e.id} className="mapping-item">
+            <div className="mapping-item-details">
+              <strong>{e.name}</strong>
+              <code className="small muted">{e.id}</code>
+              <span className="badge">{e.kind}</span>
+            </div>
+            <div className="mapping-item-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                aria-label={`Move environment ${e.name} left`}
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon"
+                aria-label={`Move environment ${e.name} right`}
+                disabled={i === envs.length - 1}
+                onClick={() => move(i, 1)}
+              >
+                →
+              </button>{" "}
+              <button
+                type="button"
+                className="btn btn-danger"
+                aria-label={`Delete environment ${e.name}`}
+                onClick={() =>
+                  void act(
+                    () => mappingApi.deleteEnvironment(e.id),
+                    `Environment “${e.name}” deleted.`,
+                  )
+                }
+              >
+                Delete
+              </button>
+            </div>
           </li>
         ))}
       </ol>
-      <form className="form" onSubmit={submit}>
+      <form className="form mapping-create" onSubmit={submit}>
         <div className="field">
           <label htmlFor="env-name">Environment name</label>
           <input
