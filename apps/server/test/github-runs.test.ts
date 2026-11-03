@@ -3,14 +3,8 @@ import { Writable } from "node:stream";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type pg from "pg";
 import { EnvKeyProvider, Secret } from "@afe/core/security";
-import {
-  createLocalUser,
-  ingestEvent,
-  setUserToolPolicy,
-  setConnectionStatus,
-  upsertConnection,
-} from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createLocalUser, ingestEvent, setConnectionStatus, upsertConnection } from "@afe/db";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { connectionConfig, workflowRunEvent, type GitHubWorkflowRun } from "@afe/connector-github";
 import {
   fakeGitHub,
@@ -245,13 +239,16 @@ describe("GitHub live progress and completed job logs", () => {
     expect((await get(base(), "other")).statusCode).toBe(404);
     expect((await get(base(), user.token)).statusCode).toBe(404);
     expect(api.requests).toHaveLength(0);
-    await setUserToolPolicy(pool, "default", user.user.id, "github", {
+    await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
       mode: "custom",
       custom: [{ resource: "repository:acme/api", action: "read" }],
     });
-    expect((await get(base(), user.token)).statusCode).toBe(200);
+    expect((await get(base(), user.token)).statusCode).toBe(404);
     const calls = api.requests.length;
-    await setUserToolPolicy(pool, "default", user.user.id, "github", { mode: "none", custom: [] });
+    await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
+      mode: "none",
+      custom: [],
+    });
     expect((await get(base(), user.token)).statusCode).toBe(404);
     expect((await get(`${base()}/jobs/200/log`, user.token)).statusCode).toBe(404);
     expect(api.requests).toHaveLength(calls);

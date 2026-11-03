@@ -27,13 +27,15 @@ operates existing workflows; the GitHub Actions UI does not create workflow file
 
    These actions are blocked on top of inherited GitHub access. Leave restrictions
    empty for no additional blocks. Restrictions take precedence in every mode.
-   Existing Custom and Source + custom policies remain explicit action allowlists;
-   switch to Source intentionally to enable inheritance. See
-   [ADR 0014](decisions/0014-github-source-permissions.md) for precedence and upgrade behavior.
+   Existing Custom and Source + custom policies are blocked in full until an
+   administrator reviews and explicitly changes them to Source or None. Custom
+   permissions are planned for Afe Cloud only. See the
+   [upgrade procedure](user-management.md#upgrade-from-custom-policies) and
+   [ADR 0015](decisions/0015-open-source-inherited-permissions.md).
 
 3. In Profile, link a personal **fine-grained token** restricted to the intended
    repositories, or sign in with GitHub OAuth. Tokens remain encrypted and are
-   never returned to the browser. Custom-only users can link an identity too.
+   never returned to the browser. Only Source policies permit linking.
 4. The user must also have the current GitHub source role and token permissions:
 
    | Operation                                            | Fine-grained token permissions    | Source role / extra rules                                                  |
@@ -209,8 +211,8 @@ The repository workspace uses the personal GitHub identity linked in **Profile**
 (OAuth or a fine-grained PAT), including when the selected connection is backed by
 a GitHub App. The PAT needs repository access and **Actions: read**; the Afe user
 needs resource read access and Afe policy permission for `github.logs_download`:
-Source inherits it unless restricted; Custom and Source + custom need an explicit
-allowlist entry in **Users**. A GitHub App installation alone does not replace the workspace's
+Source inherits it unless restricted. Legacy Custom and Source + custom policies
+are blocked until explicit administrator review (ADR 0015). A GitHub App installation alone does not replace the workspace's
 personal identity. The event-detail progress panel continues to use the App's
 read-only installation token.
 

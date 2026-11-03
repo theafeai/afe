@@ -7,9 +7,8 @@ import {
   getGitHubAdminIdentity,
   getUserToolPolicy,
   setLocalUserDisabled,
-  setUserToolPolicy,
 } from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { EnvKeyProvider } from "@afe/core/security";
 import { buildAfe, loadConfig, type AfeApp } from "../src/index.ts";
 import { toolAccounts } from "../src/auth/tool-accounts.ts";
@@ -118,10 +117,11 @@ it("replaces and disconnects encrypted credentials without replacing grants", as
   expect((await link()).statusCode).toBe(200);
   const uid = await adminUser();
   const policy = {
-    mode: "source + custom" as const,
-    custom: [{ resource: "repository:acme/app", action: "github.rerun" }],
+    mode: "source" as const,
+    custom: [],
+    denied: [{ resource: "repository:acme/app", action: "github.rerun" }],
   };
-  await setUserToolPolicy(pool, "default", uid, "github", policy);
+  await seedLegacyToolPolicy(pool, "default", uid, "github", policy);
   const first = (await toolAccounts(afe.context, "default", uid))[0]!;
   upstream = 401;
   expect((await link("expired-test-token")).statusCode).toBe(403);
@@ -191,7 +191,7 @@ it("keeps static viewers and unauthenticated requests out of administrator linki
 it("does not restore disabled identities or none policies during relinking", async () => {
   await link();
   const uid = await adminUser();
-  await setUserToolPolicy(pool, "default", uid, "github", { mode: "none", custom: [] });
+  await seedLegacyToolPolicy(pool, "default", uid, "github", { mode: "none", custom: [] });
   expect((await link()).statusCode).toBe(403);
   await setLocalUserDisabled(pool, "default", uid, true);
   expect((await link()).statusCode).toBe(403);

@@ -18,30 +18,55 @@ it can compose `withLocalUsers` if it wants local credentials as well.
 
 ## Permission modes
 
-Each user has a separate setting for GitHub, Vercel, ArgoCD and Terraform:
+Open source supports inherited permissions only. Each user has a separate setting
+for GitHub, Vercel, ArgoCD and Terraform:
 
-| Mode            | Access                                                          |
-| --------------- | --------------------------------------------------------------- |
-| none            | No access; omitted settings also mean none. The tool is hidden. |
-| source          | The user's own linked tool account determines resource access.  |
-| custom          | Only resources explicitly granted by the Afe administrator.     |
-| source + custom | Union of current source access and administrator grants.        |
+| Mode   | Access                                                                 |
+| ------ | ---------------------------------------------------------------------- |
+| none   | No access; missing settings also deny access and hide the tool.        |
+| source | The user's own linked tool account determines current resource access. |
 
-The current product is read-only. Custom grants therefore specify `read` and
-one exact resource identifier per line:
+Afe-managed custom permissions are planned for **Afe Cloud only**, and are not
+available through the open-source UI, API or policy writer. GitHub's optional
+deny-only action restrictions remain available to narrow inherited operations;
+they never grant resource or action access.
 
-- GitHub repository: `repository:owner/name` (case-insensitive).
-- Vercel project: `project:prj_…` (project ID, not its display name).
-- ArgoCD application: `application:app-name`.
-- Whole Afe connection: `connection:<UUID>` (all that connection's events and
-  connection health; choose this only when the whole connection is intended).
-
-There are no wildcard grants. Sources are isolated, and correlated resources
-do not independently confer access to an event. Event lists apply authorization
-in SQL before pagination, and event details recheck the same rules. Upstream
-ArgoCD grants also bind the application to its specific Afe connection.
-A source grant to a repository/project/application does not expose whole
+Sources are isolated, and correlated resources do not independently confer access
+to an event. Event lists apply authorization in SQL before pagination, and event
+details recheck the same rules. ArgoCD access binds the application to its specific
+Afe connection. Repository/project/application access does not expose whole
 connection health, configuration or other resources on that connection.
+
+### Upgrade from custom policies
+
+Existing `custom` and `source + custom` policies are **blocked in full**, including
+the source component of combined policies. Stored policy data is kept for review;
+there is no automatic conversion, deletion or new inherited access. Existing
+`source` policies continue to inherit access and `none` stays disabled. Relinking
+an account does not replace its policy. No data migration is needed for this change;
+run all existing migrations normally before starting the server.
+
+Administrators must review each affected account in **Users** (or read
+`GET /api/admin/users/:id/permissions`). The warning requires an explicit choice:
+
+1. Compare retained grants and restrictions with the linked source identity's
+   actual resource access, roles and token scopes. Narrow that identity upstream
+   first if required. Switching to Source can grant different or broader access
+   than an old allowlist.
+2. Choose **No access** to keep the tool disabled, or **Linked tool account** to
+   deliberately inherit the reviewed source permissions. Save each tool separately.
+3. API clients send `{ "mode": "none", "custom": [] }` or
+   `{ "mode": "source", "custom": [] }` to the existing permission PUT endpoint.
+   Custom modes and nonempty custom arrays return `400 invalid_policy` without
+   changing the stored row. Omit `denied` to preserve existing GitHub restrictions;
+   only an explicit `denied: []` clears them.
+4. Saving replaces the obsolete custom grants with an empty array. Back up the
+   tenant/user/tool policy records first if their contents are needed for review
+   or a future cloud transition. Credentials, disabled users and tenant bindings
+   are unaffected. Verify access with the affected user after the change.
+
+See [ADR 0015](decisions/0015-open-source-inherited-permissions.md) for the edition
+boundary and cloud implementation follow-up.
 
 Managed users can use environment, journey, drift and read-only mapping views.
 Graphs are built only from authorized events, independently of the tenant-wide
@@ -64,12 +89,11 @@ Standalone open-source Afe does not provide audit exports.
 ## Linking personal tool accounts
 
 Afe sign-in and tool sign-in are separate. Users open **Profile** to link their
-own upstream accounts for tools whose mode includes source access. Credentials
+own upstream accounts for tools in Source mode. Credentials
 are encrypted using Afe's existing key provider. Unlinking destroys their local
 ciphertext. Afe never substitutes the administrator's integration credentials.
 Source access is revalidated upstream when querying data; expiry, revocation,
-network errors or rate limits fail closed for source access, while independent
-custom grants still work. Large GitHub accounts are bounded to 5,000 repositories
+network errors or rate limits fail closed. Large GitHub accounts are bounded to 5,000 repositories
 per authorization check; exceeding this fails closed.
 
 ### Administrator GitHub linking
@@ -77,10 +101,9 @@ per authorization check; exceeding this fails closed.
 Administrators can link a personal GitHub account directly in **Profile** without
 creating or signing in as a separate user. The first link creates a
 `github-admin-…` account for encrypted token storage and permissions. Profile
-identifies that account in **Users**. It starts with GitHub source access; select
-**source + custom** and add exact repository/action grants to enable operations.
-Administrator authority does not replace GitHub operation grants or source roles.
-See [GitHub operations](github-actions.md) for token permissions and grants.
+identifies that account in **Users**. It starts with GitHub source access, inheriting supported operations.
+Administrator authority does not replace current GitHub roles or token permissions.
+See [GitHub operations](github-actions.md) for token permissions and restrictions.
 
 Apply migration `0034_github_admin_identities.sql` before using administrator
 linking. Managed-user linking and hosted `githubUserId` mappings are preserved.
@@ -133,8 +156,9 @@ sign-in is not treated as proof of GitHub, Vercel or ArgoCD resource access.
 Google can be added as a tool when a Google integration defines its resources.
 
 Terraform CLI reports have no personal upstream identity. Its source mode
-therefore grants no access; use custom connection, repository or
-`project:<workspace-name>` grants. Combined mode retains these custom grants.
+therefore grants managed users no access in open source. Administrators retain
+their existing tenant-wide observation access. A verified Terraform identity
+resolver would be needed before inherited user access could be supported.
 
 SMTP and transactional email are optional and are not required for manual
 provisioning or sign-in.

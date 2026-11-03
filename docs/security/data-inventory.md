@@ -12,7 +12,8 @@ a limited time (see "Retention and deletion").
 `user_tool_permissions.denied_grants` stores administrator-selected repository
 identifiers and supported GitHub action names, scoped by tenant/user/tool. It
 contains no credentials or source content and remains until the policy is changed
-or the user is deleted. Existing custom grants and modes remain intact.
+or the user is deleted. Existing custom grants and modes remain stored for administrator review, but
+custom and combined policies are blocked in open source (ADR 0015).
 
 ## Transient GitHub workflow reads (AFE-52)
 

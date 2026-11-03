@@ -102,7 +102,7 @@ export class GitHubOperations {
       uid = await githubUserId(this.ctx, req);
     if (!uid) throw fail(403, "Link your GitHub identity in Profile to use GitHub operations.");
     const policy = await getUserToolPolicy(this.ctx.pool, tid, uid, "github");
-    if (policy.mode === "none") throw fail(403, "GitHub access is disabled for this account.");
+    if (policy.mode !== "source") throw fail(403, "GitHub access is disabled for this account.");
     const account = (await toolAccounts(this.ctx, tid, uid)).find((a) => a.tool === "github");
     const token =
       account && (await getCredential(this.ctx.pool, this.ctx.keys, tid, account.credential_id));
@@ -138,17 +138,6 @@ export class GitHubOperations {
     )
       throw fail(400, "Select a connection and a valid lowercase owner/repository.");
     const { tid, uid, policy, token } = await this.identity(req);
-    const custom = policy.mode === "custom" || policy.mode === "source + custom";
-    const read =
-      policy.mode === "source" ||
-      policy.mode === "source + custom" ||
-      (custom &&
-        policy.custom.some(
-          (g) =>
-            g.action === "read" &&
-            [`repository:${repo}`, `connection:${connectionId}`].includes(g.resource),
-        ));
-    if (!read) throw fail(404, "Repository not found.");
     const connection = await getConnection(this.ctx.pool, tid, connectionId);
     if (!connection || connection.source !== "github") throw fail(404, "Repository not found.");
     if (connection.status !== "active") throw fail(409, "The GitHub connection is inactive.");
@@ -849,18 +838,6 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
           const name = repo.full_name?.toLowerCase();
           if (!name || !repository.test(name)) continue;
           for (const connection of connections) {
-            const custom =
-              identity.policy.mode === "custom" || identity.policy.mode === "source + custom";
-            if (
-              custom &&
-              identity.policy.mode === "custom" &&
-              !identity.policy.custom.some(
-                (g) =>
-                  g.action === "read" &&
-                  [`repository:${name}`, `connection:${connection.id}`].includes(g.resource),
-              )
-            )
-              continue;
             const conf = connection.config;
             let bound =
               Array.isArray(conf.repositories) &&

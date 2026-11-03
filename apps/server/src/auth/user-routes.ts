@@ -121,7 +121,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
       if (
         !(USER_TOOLS as readonly string[]).includes(req.params.tool) ||
         !p ||
-        !TOOL_PERMISSION_MODES.includes(p.mode) ||
+        !(TOOL_PERMISSION_MODES as readonly string[]).includes(p.mode) ||
         (p.denied !== undefined &&
           (!Array.isArray(p.denied) ||
             p.denied.length > 200 ||
@@ -135,25 +135,12 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
                 !GITHUB_OPERATION_NAMES.includes(g.action as GitHubOperation),
             ))) ||
         !Array.isArray(p.custom) ||
-        p.custom.length > 200 ||
-        p.custom.some(
-          (g) =>
-            !g ||
-            typeof g.resource !== "string" ||
-            g.resource.length > 512 ||
-            !/^(connection|repository|project|application):.+$/.test(g.resource) ||
-            (g.action !== "read" &&
-              !(
-                req.params.tool === "github" &&
-                /^repository:[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(g.resource) &&
-                GITHUB_OPERATION_NAMES.includes(g.action as GitHubOperation)
-              )),
-        )
+        p.custom.length !== 0
       )
         return reply.code(400).send({
           error: "invalid_policy",
           message:
-            "Use read grants for resources; GitHub action grants and restrictions require a supported action and an exact lowercase repository:owner/name resource.",
+            "Open source supports only none or source with an empty custom array. Existing custom policies are blocked until reviewed. GitHub deny-only restrictions require a supported action and an exact lowercase repository:owner/name resource.",
         });
       await setUserToolPolicy(pool, tid, req.params.id, req.params.tool, p);
       return { ok: true };

@@ -4,6 +4,11 @@
 - Date: 2026-10-28
 - Issues: AFE-56, AFE-57
 
+> Permission edition boundary superseded by [ADR 0015](0015-open-source-inherited-permissions.md):
+> open source allows Source or None only. Legacy Custom and Source + custom are
+> blocked pending explicit administrator review. Historical custom-mode behavior
+> below no longer applies to the open-source edition.
+
 ## Decision
 
 Afe supports delivery operations as well as observation. This supersedes R1's

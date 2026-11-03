@@ -2,7 +2,6 @@ import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import {
-  Empty,
   ErrorBox,
   Loading,
   ToolBadge,
@@ -19,26 +18,12 @@ const TOOLS = ["github", "vercel", "argocd", "terraform"];
 const MODES: Record<string, { label: string; help: string }> = {
   none: {
     label: "No access",
-    help: "This tool is unavailable to the user. Custom grants are kept but do not apply.",
+    help: "This tool is unavailable to the user.",
   },
   source: {
     label: "Linked tool account",
-    help: "Read access follows the user’s linked tool account. Custom grants are kept but do not apply.",
+    help: "Read access follows the user’s linked tool account.",
   },
-  custom: {
-    label: "Custom grants",
-    help: "Only the resource grants below apply. Source access is not included.",
-  },
-  "source + custom": {
-    label: "Linked tool account + custom grants",
-    help: "Combines read access from the linked tool account with the resource grants below.",
-  },
-};
-const EXAMPLES: Record<string, string> = {
-  github: "repository:theafeai/afe",
-  vercel: "project:project-id",
-  argocd: "application:app-name",
-  terraform: "connection:connection-id",
 };
 type Policy = {
   mode: string;
@@ -117,6 +102,10 @@ export function UsersPage() {
   return (
     <div className="page">
       <h1>Users</h1>
+      <p>
+        Open source inherits source permissions. Afe-managed custom permissions are planned for Afe
+        Cloud only.
+      </p>
       <p>
         Create a user and share their generated access credential directly. Email is not required.
         New users start with no tool access. Invitations are available when email is configured.
@@ -375,18 +364,14 @@ function ToolPermissionEditor({
 }) {
   const name = toolLabel(tool);
   const [mode, setMode] = useState(policy.mode);
-  const [grants, setGrants] = useState(
-    policy.custom
-      .map((g) => (g.action === "read" ? g.resource : `${g.resource} ${g.action}`))
-      .join("\n"),
-  );
+  const [reviewed, setReviewed] = useState(false);
   const [restrictions, setRestrictions] = useState(
     (policy.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
   );
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const [error, setError] = useState<Error | null>(null);
-  const custom = ["custom", "source + custom"].includes(mode);
+  const legacy = !Object.hasOwn(MODES, policy.mode) && !reviewed;
   async function save(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -406,15 +391,9 @@ function ToolPermissionEditor({
                 }),
             }
           : {}),
-        custom: grants
-          .split("\n")
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .map((line) => {
-            const [resource, action = "read"] = line.split(/\s+/);
-            return { resource, action };
-          }),
+        custom: [],
       });
+      setReviewed(true);
       toast(`Saved ${name} permissions.`);
     } catch (e) {
       setError(e instanceof Error ? e : new Error("Request failed"));
@@ -431,6 +410,32 @@ function ToolPermissionEditor({
       <h4>
         <ToolBadge source={tool} />
       </h4>
+      {legacy && (
+        <div className="callout callout-error" role="alert">
+          Existing {policy.mode} policy is blocked in open source. Review the linked account’s
+          permissions before explicitly choosing inherited access, which may grant different or
+          broader access. Choose No access to keep this tool disabled. Custom permissions are
+          planned for Afe Cloud only.
+        </div>
+      )}
+      {legacy && (
+        <details>
+          <summary>Stored grants (inactive)</summary>
+          {policy.custom.length ? (
+            <ul className="plain">
+              {policy.custom.map((grant, index) => (
+                <li key={index}>
+                  <code>
+                    {grant.resource} {grant.action}
+                  </code>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No stored grants.</p>
+          )}
+        </details>
+      )}
       <fieldset className="form users-permission-fields" disabled={disabled || saving}>
         <legend className="sr-only">{name} permissions</legend>
         <div className="field">
@@ -443,6 +448,11 @@ function ToolPermissionEditor({
               setMode(e.target.value);
             }}
           >
+            {legacy && (
+              <option value={policy.mode} disabled>
+                Blocked legacy policy — review required
+              </option>
+            )}
             {Object.entries(MODES).map(([value, { label }]) => (
               <option key={value} value={value}>
                 {label}
@@ -451,46 +461,16 @@ function ToolPermissionEditor({
           </select>
           <p className="small muted" id={`mode-help-${tool}`}>
             {tool === "github" && mode === "source"
-              ? "Read access and supported GitHub operations follow the user’s linked account, except restricted actions. Custom grants are kept but do not apply."
+              ? "Read access and supported GitHub operations follow the user’s linked account, except restricted actions."
               : MODES[mode]?.help}
           </p>
         </div>
-        {custom && (
-          <>
-            <div className="field">
-              <label htmlFor={`grants-${tool}`}>Resource grants</label>
-              <textarea
-                id={`grants-${tool}`}
-                rows={4}
-                value={grants}
-                spellCheck={false}
-                autoCapitalize="none"
-                aria-describedby={`grants-help-${tool}`}
-                placeholder={EXAMPLES[tool]}
-                onChange={(e) => {
-                  setGrants(e.target.value);
-                }}
-              />
-              <p className="small muted" id={`grants-help-${tool}`}>
-                One grant per line. A resource alone grants read access, for example{" "}
-                <code>{EXAMPLES[tool]}</code>. A <code>connection:connection-id</code> grant
-                includes all events from that connection.
-              </p>
-            </div>
-            {!grants.trim() && (
-              <Empty title="No custom grants">
-                <p>Add a resource above to grant access. An empty list adds no custom access.</p>
-              </Empty>
-            )}
-          </>
-        )}
         {tool === "github" && (
           <>
             <div className="callout small">
-              Source inherits supported operations from the linked GitHub account. Custom and Source
-              + custom require an exact lowercase repository and action on each line, for example{" "}
-              <code>repository:theafeai/afe github.logs_download</code>. Each action needs its own
-              grant; wildcards are not supported. GitHub permissions still apply in every mode.
+              Source inherits supported operations from the linked GitHub account. GitHub checks
+              current repository access and operation permissions on every request. Deny-only
+              restrictions below can narrow access; they never grant access.
             </div>
             <div className="field">
               <label htmlFor="github-restrictions">GitHub action restrictions (optional)</label>
@@ -510,12 +490,11 @@ function ToolPermissionEditor({
               <p className="small muted" id="github-restrictions-help">
                 Block one repository/action per line, for example{" "}
                 <code>repository:owner/name github.delete_run</code>. Leave empty to apply no
-                additional action restrictions. Restrictions override inherited access and
-                allowlists in every mode.
+                additional action restrictions. Restrictions override inherited access.
               </p>
             </div>
             <details>
-              <summary>Supported GitHub operation grants</summary>
+              <summary>Supported GitHub operations</summary>
               <ul className="users-permission-catalog">
                 {GITHUB_OPERATIONS.map(([action, label, , , level]) => (
                   <li key={action}>
@@ -527,7 +506,7 @@ function ToolPermissionEditor({
           </>
         )}
         <div className="button-row">
-          <button className="btn">
+          <button className="btn" disabled={!Object.hasOwn(MODES, mode)}>
             {saving ? `Saving ${name} permissions…` : `Save ${name} permissions`}
           </button>
         </div>

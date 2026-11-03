@@ -1,16 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import type pg from "pg";
-import type { CanonicalEvent } from "@afe/core";
+import type { CanonicalEvent, EventAccessRule } from "@afe/core";
 import { EnvKeyProvider } from "@afe/core/security";
-import {
-  createLocalUser,
-  ingestEvent,
-  insertDriftFinding,
-  setUserToolPolicy,
-  type DriftFindingWrite,
-} from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createLocalUser, ingestEvent, insertDriftFinding, type DriftFindingWrite } from "@afe/db";
+import * as toolAccess from "../src/auth/tool-accounts.ts";
+import type { ToolAccount } from "../src/auth/tool-accounts.ts";
+import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { buildAfe, loadConfig, type AfeApp } from "../src/index.ts";
 import { createMappingModule } from "../src/mapping/index.ts";
 import { createCorrelationModule } from "../src/correlation/index.ts";
@@ -37,14 +33,41 @@ async function grant(
   tool: string,
   resources: string[],
   tokenUser = alice,
-  mode: "custom" | "none" | "source" | "source + custom" = "custom",
+  mode: "custom" | "none" | "source" | "source + custom" = "source",
+  fakeSource = true,
 ) {
-  await setUserToolPolicy(pool, "default", tokenUser.user.id, tool, {
+  await seedLegacyToolPolicy(pool, "default", tokenUser.user.id, tool, {
     mode,
-    custom: resources.map((resource) => ({ resource, action: "read" })),
+    custom: [],
   });
+  if (fakeSource) {
+    const key = `${tokenUser.user.id}:${tool}`;
+    sourceRules.set(
+      key,
+      resources.map((resource) => ({ source: tool, resource })),
+    );
+    vi.spyOn(toolAccess, "toolAccounts").mockImplementation(async (_ctx, _tid, uid) =>
+      [...sourceRules.keys()]
+        .filter((k) => k.startsWith(`${uid}:`))
+        .map(
+          (k) =>
+            ({
+              tool: k.split(":")[1],
+              account_name: uid,
+              credential_id: k,
+              context: {},
+            }) as ToolAccount,
+        ),
+    );
+    vi.spyOn(toolAccess, "sourceAccess").mockImplementation(
+      async (_ctx, _tid, account) =>
+        sourceRules.get(`${account.account_name}:${account.tool}`) ?? [],
+    );
+  }
 }
+const sourceRules = new Map<string, EventAccessRule[]>();
 beforeEach(async () => {
+  sourceRules.clear();
   pool = await createTestPool();
   events = [];
   for (const { id: _id, ...input } of syntheticInputs) {
@@ -181,7 +204,7 @@ it("does not reuse another user's graph or stale permissions, including history 
   );
   expect((await get("/api/environments/state", bob.token)).json().cells.length).toBeGreaterThan(0);
 });
-it("revalidates source accounts on each derived view read while preserving combined custom grants", async () => {
+it("revalidates source accounts on each derived view read and blocks legacy combined policies", async () => {
   let projects = [{ id: "web", name: "web" }];
   vi.stubGlobal(
     "fetch",
@@ -196,7 +219,7 @@ it("revalidates source accounts on each derived view read while preserving combi
         ),
     ),
   );
-  await grant("vercel", ["project:web"], alice, "source");
+  await grant("vercel", ["project:web"], alice, "source", false);
   expect(
     (await post("/api/profile/tools/vercel/token", { token: "personal-vercel" }, alice.token))
       .statusCode,
@@ -205,8 +228,8 @@ it("revalidates source accounts on each derived view read while preserving combi
   projects = [];
   expect((await get("/api/environments/state")).json().cells).toEqual([]);
   expect((await get("/api/mapping")).json().services).toEqual([]);
-  await grant("vercel", ["project:web"], alice, "source + custom");
-  expect((await get("/api/environments/state")).json().cells.length).toBeGreaterThan(0);
+  await grant("vercel", ["project:web"], alice, "source + custom", false);
+  expect((await get("/api/environments/state")).json().cells).toEqual([]);
 });
 it("requires all drift evidence before list/count pagination and hides missing or omitted evidence", async () => {
   vi.spyOn(drift.service(afe.context), "ensureFresh").mockResolvedValue(null);
@@ -305,7 +328,7 @@ it("hidden commits cannot make an authorized journey prefix ambiguous or displac
 it("identical resource grants in another tenant never expose default-tenant derived records", async () => {
   await pool.query("INSERT INTO tenants(id,name) VALUES ('other','Other')");
   const outsider = await createLocalUser(pool, "other", "outsider");
-  await setUserToolPolicy(pool, "other", outsider.user.id, "vercel", {
+  await seedLegacyToolPolicy(pool, "other", outsider.user.id, "vercel", {
     mode: "custom",
     custom: [{ resource: "project:web", action: "read" }],
   });

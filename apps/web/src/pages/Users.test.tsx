@@ -159,7 +159,7 @@ const initialTools = () =>
     ]),
   );
 
-it("preserves hidden grants when changing mode and confirms saves through shared toasts", async () => {
+it("requires explicit review of blocked legacy policies and saves only inherited access", async () => {
   const writes: unknown[] = [];
   setFetch(async (url, init) => {
     if (url === "/api/session")
@@ -178,12 +178,14 @@ it("preserves hidden grants when changing mode and confirms saves through shared
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "alice" }));
   const mode = await screen.findByLabelText("Permission mode", { selector: "#mode-github" });
-  const grants = screen.getByLabelText("Resource grants", {
-    selector: "#grants-github",
-  }) as HTMLTextAreaElement;
-  expect(grants.value).toBe(
-    "repository:theafeai/afe\nrepository:theafeai/afe github.logs_download",
-  );
+  expect(screen.queryByLabelText("Resource grants")).toBeNull();
+  expect(screen.getByText(/Existing source \+ custom policy is blocked/)).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Save GitHub permissions" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(
+    [...(mode as HTMLSelectElement).options].filter((o) => !o.disabled).map((o) => o.value),
+  ).toEqual(["none", "source"]);
   fireEvent.change(mode, { target: { value: "source" } });
   expect(screen.queryByLabelText("Resource grants", { selector: "#grants-github" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
@@ -191,7 +193,7 @@ it("preserves hidden grants when changing mode and confirms saves through shared
   expect(writes).toEqual([
     {
       mode: "source",
-      custom: initialTools().github!.custom,
+      custom: [],
       denied: initialTools().github!.denied,
     },
   ]);
@@ -199,15 +201,6 @@ it("preserves hidden grants when changing mode and confirms saves through shared
     "Saved GitHub permissions.",
   );
   fireEvent.click(screen.getByRole("button", { name: "Dismiss notification" }));
-  fireEvent.change(mode, { target: { value: "custom" } });
-  expect(screen.queryByText("Saved GitHub permissions.")).toBeNull();
-  expect(
-    (
-      screen.getByLabelText("Resource grants", {
-        selector: "#grants-github",
-      }) as HTMLTextAreaElement
-    ).value,
-  ).toBe(grants.value);
 });
 
 it("shows permission loading and retry, keeps failed drafts, and disables controls while saving", async () => {
@@ -238,9 +231,12 @@ it("shows permission loading and retry, keeps failed drafts, and disables contro
   expect(screen.getByText("Loading tool permissions…")).toBeTruthy();
   await screen.findByText("Tool permissions could not be loaded (HTTP 500)");
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-  const grants = (await screen.findByLabelText("Resource grants", {
-    selector: "#grants-github",
-  })) as HTMLTextAreaElement;
+  const grants = (await screen.findByLabelText(
+    "GitHub action restrictions",
+  )) as HTMLTextAreaElement;
+  fireEvent.change(screen.getByLabelText("Permission mode", { selector: "#mode-github" }), {
+    target: { value: "source" },
+  });
   fireEvent.change(grants, { target: { value: "repository:theafeai/afe github.cancel" } });
   fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
   expect(grants.closest("fieldset")!.disabled).toBe(true);
@@ -249,7 +245,7 @@ it("shows permission loading and retry, keeps failed drafts, and disables contro
   expect(grants.value).toBe("repository:theafeai/afe github.cancel");
   expect(grants.closest("fieldset")!.disabled).toBe(false);
   fireEvent.change(grants, { target: { value: "" } });
-  expect(screen.getByText("No custom grants")).toBeTruthy();
+  expect(grants.value).toBe("");
 });
 
 it("lets administrators layer optional GitHub restrictions on Source without duplicate grants", async () => {
