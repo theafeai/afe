@@ -14,6 +14,7 @@ import {
 import "./Users.css";
 import { useAccess } from "../access.tsx";
 import { useToast } from "../toast.tsx";
+import { Link } from "../router.tsx";
 import { icons } from "../icons.tsx";
 
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
@@ -40,19 +41,12 @@ export function UsersPage() {
     (s) => request<{ users: User[] }>("GET", "/api/admin/users", undefined, s),
     [],
   );
-  const { data: mail, reload: reloadMail } = useAsync(
-    (s) =>
-      request<{
-        enabled: boolean;
-        configured: boolean;
-        from: string | null;
-        deliveries: { id: string; state: string; attempts: number }[];
-      }>("GET", "/api/admin/email", undefined, s),
+  const { data: mail } = useAsync(
+    (s) => request<{ enabled: boolean }>("GET", "/api/admin/email", undefined, s),
     [],
   );
   const [email, setEmail] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  const [testEmail, setTestEmail] = useState("");
   const [invite, setInvite] = useState(false);
   const [username, setUsername] = useState("");
   const [selected, setSelected] = useState<User | null>(null);
@@ -83,10 +77,13 @@ export function UsersPage() {
         },
       );
       setToken(r.token ?? null);
-      if (invite) toast("Invitation queued. Delivery status appears below.");
+      if (invite)
+        toast({
+          message: "Invitation queued.",
+          action: { label: "View delivery status", to: "/account/settings" },
+        });
       setUsername("");
       setEmail("");
-      reloadMail();
       reload();
     });
   }
@@ -116,7 +113,8 @@ export function UsersPage() {
       </p>
       <p>
         Create a user and share their generated access credential directly. Email is not required.
-        New users start with no tool access. Invitations are available when email is configured.
+        New users start with no tool access. Invitations are available when email is configured.{" "}
+        <Link to="/account/settings">Manage email delivery in Settings</Link>.
       </p>
       <form className="form card" onSubmit={(e) => void create(e)}>
         <label htmlFor="new-username">Username</label>
@@ -289,7 +287,6 @@ export function UsersPage() {
                             purpose,
                           });
                           toast("Email queued. Previous links are invalidated.");
-                          reloadMail();
                         })
                       }
                     >
@@ -303,51 +300,6 @@ export function UsersPage() {
           <ToolPermissions key={selected.id} userId={selected.id} disabled={busy} />
         </section>
       )}
-      <section className="card">
-        <h2>Email delivery</h2>
-        {mail?.configured ? (
-          <>
-            <p>Sender: {mail.from}</p>
-            <form
-              className="form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await request("POST", "/api/admin/email/test", { email: testEmail });
-                  toast("Test email queued.");
-                  reloadMail();
-                });
-              }}
-            >
-              <label htmlFor="test-email">Test recipient</label>
-              <input
-                id="test-email"
-                type="email"
-                required
-                value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
-              />
-              <button className="btn" disabled={busy}>
-                Send test email
-              </button>
-            </form>
-            <button className="btn" onClick={reloadMail}>
-              Refresh delivery status
-            </button>
-            <ul>
-              {mail.deliveries.map((d) => (
-                <li key={d.id}>
-                  {d.state} — {d.attempts} attempt(s)
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p>
-            Email is disabled. An operator can configure SMTP to enable invitations and reset links.
-          </p>
-        )}
-      </section>
     </div>
   );
 }

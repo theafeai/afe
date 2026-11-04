@@ -2,6 +2,7 @@ import { GitHubOperationsPage } from "./pages/GitHubOperations.tsx";
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
 import { AccountEmailPage } from "./pages/AccountEmail.tsx";
 import { UsersPage } from "./pages/Users.tsx";
+import { SettingsPage } from "./pages/Settings.tsx";
 import { ProfilePage } from "./pages/Profile.tsx";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, onUnauthorized, request } from "./api/client.ts";
@@ -40,6 +41,7 @@ export function Routes() {
   if (pathname === "/github") return <GitHubOperationsPage />;
   if (pathname === "/users") return <UsersPage />;
   if (pathname === "/profile") return <ProfilePage />;
+  if (pathname === "/account/settings") return <SettingsPage />;
   if (!admin && /^\/connections\/(github|vercel|argocd|terraform)(\/|$)/.test(pathname))
     return <div className="page">This view is unavailable for this account.</div>;
 
@@ -177,6 +179,7 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
           <ul aria-labelledby="nav-account">
             <NavLink to="/profile" label="Profile" icon={icons.profile} />
             {admin && <NavLink to="/users" label="Users" icon={icons.users} />}
+            {admin && <NavLink to="/account/settings" label="Settings" icon={icons.settings} />}
           </ul>
         </div>
       </nav>
