@@ -115,6 +115,7 @@ describe("web UI (AFE_WEB_DIR)", () => {
       "/events/3f6c1a52-0000-4000-8000-000000000000",
       "/connections/vercel/3f6c1a52-0000-4000-8000-000000000000/projects?x=1",
       "/connections/github",
+      "/account/settings",
     ]) {
       const res = await app.inject({ method: "GET", url });
       expect(res.statusCode, url).toBe(200);

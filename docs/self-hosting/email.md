@@ -55,7 +55,7 @@ an `afe worker` process to deliver it; `afe all` includes both roles.
 
 ## Verify and use
 
-1. Open **Users → Email delivery**, enter a test recipient and choose **Send test
+1. Open **Account → Settings → Email delivery**, enter a test recipient and choose **Send test
    email**. Refresh delivery status until it shows `sent` or `failed`.
 2. Create a user with **Send an invitation by email** selected. The new user has
    no tool access until an administrator assigns permissions.

@@ -163,6 +163,14 @@ resolver would be needed before inherited user access could be supported.
 SMTP and transactional email are optional and are not required for manual
 provisioning or sign-in.
 
+## Account settings
+
+Administrators open **Account → Settings** (`/account/settings`) for account-level
+configuration. **Email delivery** shows the configured sender, queues a test
+email and lists recent delivery status. SMTP configuration remains operator-managed;
+see [SMTP and account emails](self-hosting/email.md). Profile and Users remain
+separate items under Account.
+
 ## Invitations and email recovery
 
 Optional SMTP enables invitation and credential-reset emails from **Users**,
