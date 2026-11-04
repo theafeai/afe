@@ -1,8 +1,9 @@
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useAccess } from "../access.tsx";
 import { api } from "../api/client.ts";
 import type { ConnectionWithHealth } from "../api/types.ts";
-import { ErrorBox, toolLabel } from "../components.tsx";
+import { OperationDialog } from "../OperationDialog.tsx";
+import { toolLabel } from "../components.tsx";
 
 type Disconnectable = Pick<ConnectionWithHealth, "id" | "name" | "source" | "status">;
 
@@ -26,9 +27,8 @@ export function DisconnectAction({
   onDone: (note: string) => void;
 }) {
   const { admin } = useAccess();
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [open, setOpen] = useState(false);
   const submitting = useRef(false);
-  const id = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   if (!admin || c.status === "disconnected" || !consequences[c.source]) return null;
@@ -55,7 +55,7 @@ export function DisconnectAction({
         default:
           note = (await api.vercelDisconnect(c.id)).note ?? "Vercel integration removed.";
       }
-      dialog.current?.close();
+      setOpen(false);
       onDone(`${toolLabel(c.source)} “${c.name}” disconnected. ${note}`);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Request failed"));
@@ -73,51 +73,32 @@ export function DisconnectAction({
         aria-label={`Disconnect ${c.name}`}
         onClick={() => {
           setError(null);
-          dialog.current?.showModal();
+          setOpen(true);
         }}
       >
         Disconnect
       </button>
-      <dialog
-        ref={dialog}
-        className="disconnect-dialog"
-        aria-labelledby={`${id}-title`}
-        aria-describedby={`${id}-warning`}
-        onCancel={(event) => {
-          if (submitting.current) event.preventDefault();
-        }}
-      >
-        <h2 id={`${id}-title`}>
-          Disconnect {toolLabel(c.source)} “{c.name}”?
-        </h2>
-        <div id={`${id}-warning`} className="callout callout-gap">
-          <p>{consequences[c.source]}</p>
-          <p>
-            Observation stops until you reconnect. Recorded events remain until their retention
-            window expires.
-          </p>
-        </div>
-        {error && <ErrorBox error={error} title="Could not disconnect" />}
-        <div className="button-row">
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            onClick={() => dialog.current?.close()}
-            autoFocus
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={busy}
-            onClick={() => void disconnect()}
-          >
-            {busy ? "Disconnecting…" : "Disconnect connection"}
-          </button>
-        </div>
-      </dialog>
+      {open && (
+        <OperationDialog
+          title={`Disconnect ${toolLabel(c.source)} “${c.name}”?`}
+          description={
+            <div className="callout callout-gap">
+              <p>{consequences[c.source]}</p>
+              <p>
+                Observation stops until you reconnect. Recorded events remain until their retention
+                window expires.
+              </p>
+            </div>
+          }
+          confirmLabel="Disconnect connection"
+          pendingLabel="Disconnecting…"
+          destructive
+          busy={busy}
+          error={error}
+          onConfirm={() => void disconnect()}
+          onCancel={() => setOpen(false)}
+        />
+      )}
     </>
   );
 }
