@@ -103,7 +103,7 @@ it("shows failures in the dialog, prevents duplicate requests, then removes the 
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.getByRole("dialog")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Disconnect connection" }));
-  fireEvent.click(screen.getByRole("button", { name: "Disconnecting…" }));
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect connection" }));
   expect(attempts).toBe(2);
   finish!(json(200, { note: "The GitHub App remains installed." }));
   expect(await screen.findByText(/production.*disconnected/)).toBeTruthy();
