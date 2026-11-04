@@ -1950,7 +1950,8 @@ a.alert-badge:hover {
 }
 
 /* Native modal: focus trapping, Escape and focus restoration are browser-owned. */
-.disconnect-dialog {
+.disconnect-dialog,
+.confirm-dialog {
   width: min(560px, calc(100% - var(--space-5)));
   max-height: calc(100% - var(--space-5));
   overflow: auto;
@@ -1961,7 +1962,11 @@ a.alert-badge:hover {
   color: var(--text);
   box-shadow: var(--shadow-md);
 }
-.disconnect-dialog::backdrop {
+.disconnect-dialog::backdrop,
+.confirm-dialog::backdrop {
   background: var(--bg);
   opacity: 0.8;
+}
+.confirm-dialog {
+  overflow-wrap: anywhere;
 }

@@ -16,6 +16,39 @@ Existing bootstrap and static viewer token behavior is preserved. A custom
 `authProvider` supplied by a hosted build retains control of authentication;
 it can compose `withLocalUsers` if it wants local credentials as well.
 
+## Deleting a user
+
+In **Users**, select an account, then choose **Delete user** under Account
+management. The confirmation names that account and describes the effects.
+Cancel leaves it unchanged. Deletion is permanent and distinct from disabling.
+
+`DELETE /api/admin/users/:id` requires administrator authorization (and CSRF for
+cookie sessions), uses the authenticated tenant, and returns `404` for unknown or
+other-tenant IDs. A transaction locks the user, removes the login, permission
+settings, personal tool links, OAuth/OIDC states, recovery/invitation links and
+their email outbox records. Associated encrypted token, OIDC and email payloads
+are revoked and their key material destroyed. Only revoked credential metadata
+remains; no user tombstone is kept. No schema migration is required.
+
+The removed credential and every existing local-user session fail their next
+authentication check. Already-running requests or email deliveries may finish
+before deletion commits; delivered messages cannot be recalled, but their links
+stop working. Upstream accounts/tokens and shared observation connections are
+kept; revoke upstream tokens at the provider separately if required.
+
+Recorded events keep their original embedded actor identities, and operational
+receipts retain their actor IDs under their existing retention rules. These
+records do not reference the mutable login row. Reusing a deleted username
+creates a new UUID and does not restore credentials, sessions or tool access.
+
+Self-deletion returns `409 self_deletion`. Administrator-linked GitHub storage
+accounts are protected (`409 administrator_identity`); use Profile to unlink
+personal access instead. Local users are viewers, while the bootstrap administrator
+and external-provider administrator roles are managed outside this user table.
+Deleting the final managed user therefore cannot delete the last administrator.
+External providers remain responsible for their own administrator lifecycle;
+this endpoint does not remove provider principals or change administrator roles.
+
 ## Permission modes
 
 Open source supports inherited permissions only. Each user has a separate setting

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { TOOL_PERMISSION_MODES, type ToolPolicy } from "@afe/core";
+import { revokeCredential } from "./credentials.ts";
 
 export interface LocalUser {
   id: string;
@@ -37,12 +38,83 @@ export async function createLocalUser(
   );
   return { user: result.rows[0]!, token: issued.token };
 }
-export async function listLocalUsers(pool: pg.Pool, tenantId: string): Promise<LocalUser[]> {
-  const result = await pool.query<LocalUser>(
-    `SELECT ${columns} FROM users WHERE tenant_id=$1 ORDER BY username`,
+export async function listLocalUsers(
+  pool: pg.Pool,
+  tenantId: string,
+): Promise<(LocalUser & { administratorIdentity: boolean })[]> {
+  const result = await pool.query<LocalUser & { administratorIdentity: boolean }>(
+    `SELECT ${columns}, EXISTS (
+       SELECT 1 FROM github_admin_identities a WHERE a.tenant_id=users.tenant_id AND a.user_id=users.id
+     ) AS "administratorIdentity" FROM users WHERE tenant_id=$1 ORDER BY username`,
     [tenantId],
   );
   return result.rows;
+}
+
+/** Permanently remove a managed login, keeping immutable historical attribution. */
+export async function deleteLocalUser(
+  pool: pg.Pool,
+  tenantId: string,
+  id: string,
+): Promise<"deleted" | "not_found" | "administrator"> {
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    // Matches linking/recovery locks; prevents new associated records during deletion.
+    const user = await db.query("SELECT id FROM users WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [
+      tenantId,
+      id,
+    ]);
+    if (!user.rowCount) {
+      await db.query("ROLLBACK");
+      return "not_found";
+    }
+    const administrator = await db.query(
+      "SELECT 1 FROM github_admin_identities WHERE tenant_id=$1 AND user_id=$2",
+      [tenantId, id],
+    );
+    if (administrator.rowCount) {
+      await db.query("ROLLBACK");
+      return "administrator";
+    }
+    const accounts = await db.query<{ credential_id: string }>(
+      "DELETE FROM user_tool_accounts WHERE tenant_id=$1 AND user_id=$2 RETURNING credential_id",
+      [tenantId, id],
+    );
+    const oidc = await db.query<{ credential_id: string }>(
+      "DELETE FROM user_argocd_oidc_states WHERE tenant_id=$1 AND user_id=$2 RETURNING credential_id",
+      [tenantId, id],
+    );
+    const emails = await db.query<{ credential_id: string }>(
+      `DELETE FROM email_outbox o USING user_email_links l
+       WHERE o.tenant_id=$1 AND l.tenant_id=o.tenant_id AND l.id=o.link_id AND l.user_id=$2
+       RETURNING o.credential_id`,
+      [tenantId, id],
+    );
+    for (const row of [...accounts.rows, ...oidc.rows, ...emails.rows]) {
+      await revokeCredential(db, tenantId, row.credential_id);
+    }
+    await db.query("DELETE FROM user_email_links WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
+    await db.query("DELETE FROM user_oauth_states WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
+    await db.query("DELETE FROM user_tool_permissions WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
+    await db.query("DELETE FROM users WHERE tenant_id=$1 AND id=$2", [tenantId, id]);
+    await db.query("COMMIT");
+    return "deleted";
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  } finally {
+    db.release();
+  }
 }
 export async function authenticateLocalUser(pool: pg.Pool, tenantId: string, token: string) {
   const match =

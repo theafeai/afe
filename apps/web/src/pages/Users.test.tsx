@@ -1,10 +1,105 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeAll, expect, it } from "vitest";
 import { App } from "../App.tsx";
 import { setFetch } from "../api/client.ts";
 afterEach(cleanup);
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+});
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+it("confirms the named user's deletion, handles failure and cancellation, and clears the editor only after success", async () => {
+  let users = [{ id: "u1", username: "alice", disabled: false }];
+  let finishDelete: (response: Response) => void = () => {};
+  const deletes: string[] = [];
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email") return json({ enabled: false });
+    if (init?.method === "DELETE") {
+      deletes.push(url);
+      return new Promise<Response>((resolve) => {
+        finishDelete = resolve;
+      });
+    }
+    if (url === "/api/admin/users/u1/credentials")
+      return json({ token: "one-time-test-credential" });
+    if (url === "/api/admin/users") return json({ users });
+    if (url.endsWith("/permissions")) return json({ tools: initialTools() });
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset credential" }));
+  await screen.findByLabelText("Generated access credential");
+  fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
+  let dialog = screen.getByRole("dialog", { name: "Delete user “alice”?" });
+  expect(within(dialog).getByText(/active sessions stop working/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(deletes).toEqual([]);
+  expect(screen.getByRole("heading", { name: "alice" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
+  dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+  expect(
+    (within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect((screen.getByRole("button", { name: "alice" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(fireEvent(dialog, new Event("cancel", { cancelable: true }))).toBe(false);
+  finishDelete(
+    new Response(JSON.stringify({ message: "Try again in a moment." }), { status: 503 }),
+  );
+  await within(dialog).findByText("Could not delete alice (HTTP 503)");
+  expect(screen.queryByText("Deleted user alice.")).toBeNull();
+  expect(screen.getByRole("heading", { name: "alice" })).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+  expect(deletes).toEqual(["/api/admin/users/u1", "/api/admin/users/u1"]);
+  users = [];
+  finishDelete(json({ ok: true }));
+  await screen.findByText("Deleted user alice.");
+  await screen.findByText("No users yet");
+  expect(screen.getByText("Select a user")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "alice" })).toBeNull();
+  expect(screen.queryByLabelText("Generated access credential")).toBeNull();
+  expect(screen.queryByRole("form", { name: "GitHub permissions for alice" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("region", { name: "User accounts" }));
+});
+
+it.each(["self", "administrator"])(
+  "explains why %s accounts cannot be deleted",
+  async (deletionProtection) => {
+    setFetch(async (url) => {
+      if (url === "/api/session")
+        return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+      if (url === "/api/admin/email") return json({ enabled: false });
+      if (url === "/api/admin/users")
+        return json({
+          users: [{ id: "u1", username: "protected-user", disabled: false, deletionProtection }],
+        });
+      if (url.endsWith("/permissions")) return json({ tools: initialTools() });
+      throw new Error(`Unexpected API call: ${url}`);
+    });
+    window.history.replaceState(null, "", "/users");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "protected-user" }));
+    const button = screen.getByRole("button", {
+      name: "Delete user",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(
+      document.getElementById(button.getAttribute("aria-describedby")!)?.textContent,
+    ).toContain(
+      deletionProtection === "self" ? "own user account" : "Administrator-linked accounts",
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  },
+);
 it("selects structured user rows and keeps management and status updates working", async () => {
   const longName = `generated_${"long_username_".repeat(6)}`;
   const users = [

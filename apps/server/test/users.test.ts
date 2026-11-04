@@ -3,7 +3,14 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import type pg from "pg";
 import * as ArgoCd from "@afe/connector-argocd";
 import { EnvKeyProvider } from "@afe/core/security";
-import { createLocalUser, getCredentialMetadata, ingestEvent, upsertConnection } from "@afe/db";
+import {
+  createLocalUser,
+  getCredentialMetadata,
+  getLocalUser,
+  ensureGitHubAdminIdentity,
+  ingestEvent,
+  upsertConnection,
+} from "@afe/db";
 import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { buildAfe, defaultModules, loadConfig, type AfeApp } from "../src/index.ts";
 
@@ -65,6 +72,131 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 const read = async (url: string) => afe.app.inject({ url, headers: headers(user.token) });
+it("deletes the only managed user, revokes login and sessions, and preserves history and admin access", async () => {
+  const history = (
+    await pool.query("SELECT id,actor FROM events WHERE tenant_id='default' ORDER BY id")
+  ).rows;
+  const url = `/api/admin/users/${user.user.id}`;
+  const result = await afe.app.inject({ method: "DELETE", url, headers: headers() });
+  expect(result.statusCode).toBe(200);
+  expect(result.headers["cache-control"]).toBe("no-store");
+  expect(
+    (await afe.app.inject({ url: "/api/admin/users", headers: headers() })).json().users,
+  ).toEqual([]);
+  expect((await read("/api/session")).statusCode).toBe(401);
+  expect((await afe.app.inject({ url: "/api/session", headers: { cookie } })).statusCode).toBe(401);
+  expect(
+    (await afe.app.inject({ method: "POST", url: "/api/session", payload: { token: user.token } }))
+      .statusCode,
+  ).toBe(401);
+  expect((await afe.app.inject({ method: "DELETE", url, headers: headers() })).statusCode).toBe(
+    404,
+  );
+  expect(
+    (await afe.app.inject({ url: "/api/session", headers: headers() })).json().principal.roles,
+  ).toContain("admin");
+  expect(
+    (await pool.query("SELECT id,actor FROM events WHERE tenant_id='default' ORDER BY id")).rows,
+  ).toEqual(history);
+  const replacement = await afe.app.inject({
+    method: "POST",
+    url: "/api/admin/users",
+    headers: headers(),
+    payload: { username: user.user.username },
+  });
+  expect(replacement.statusCode).toBe(201);
+  expect(replacement.json().user.id).not.toBe(user.user.id);
+  expect((await afe.app.inject({ url: "/api/session", headers: { cookie } })).statusCode).toBe(401);
+});
+
+it("enforces delete authorization, CSRF, tenant isolation and administrator identity protection", async () => {
+  const url = `/api/admin/users/${user.user.id}`;
+  expect((await afe.app.inject({ method: "DELETE", url })).statusCode).toBe(401);
+  expect(
+    (await afe.app.inject({ method: "DELETE", url, headers: headers(user.token) })).statusCode,
+  ).toBe(403);
+  const login = await afe.app.inject({
+    method: "POST",
+    url: "/api/session",
+    payload: { token: admin },
+  });
+  const adminCookie = (login.headers["set-cookie"] as string[])
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  expect(
+    (await afe.app.inject({ method: "DELETE", url, headers: { cookie: adminCookie } })).statusCode,
+  ).toBe(403);
+  await pool.query("INSERT INTO tenants (id,name) VALUES ('other','Other')");
+  const other = await createLocalUser(pool, "other", "other-user");
+  expect(
+    (
+      await afe.app.inject({
+        method: "DELETE",
+        url: `/api/admin/users/${other.user.id}`,
+        headers: headers(),
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(await getLocalUser(pool, "other", other.user.id)).toBeTruthy();
+  expect(
+    (
+      await afe.app.inject({
+        method: "DELETE",
+        url: "/api/admin/users/invalid",
+        headers: headers(),
+      })
+    ).statusCode,
+  ).toBe(404);
+  const principal = (await afe.app.inject({ url: "/api/session", headers: headers() })).json()
+    .principal;
+  const identity = await ensureGitHubAdminIdentity(pool, "default", principal.id);
+  const blocked = await afe.app.inject({
+    method: "DELETE",
+    url: `/api/admin/users/${identity}`,
+    headers: headers(),
+  });
+  expect(blocked.statusCode).toBe(409);
+  expect(blocked.json().error).toBe("administrator_identity");
+  const list = (await afe.app.inject({ url: "/api/admin/users", headers: headers() })).json().users;
+  expect(list.find((u: { id: string }) => u.id === identity).deletionProtection).toBe(
+    "administrator",
+  );
+});
+
+it("rejects self-deletion when an administrator provider identifies the selected user", async () => {
+  const own = await buildAfe({
+    pool,
+    logLevel: "silent",
+    config: loadConfig({ DATABASE_URL: "unused" }),
+    authProvider: {
+      authenticate: () => ({
+        id: user.user.id,
+        tenantId: "default",
+        roles: ["admin"],
+        kind: "sso",
+      }),
+    },
+    keys: new EnvKeyProvider({ keys: { k1: randomBytes(32) } }),
+  });
+  try {
+    for (const id of [user.user.id, user.user.id.toUpperCase()]) {
+      const result = await own.app.inject({
+        method: "DELETE",
+        url: `/api/admin/users/${id}`,
+        headers: headers(),
+      });
+      expect(result.statusCode).toBe(409);
+      expect(result.json().error).toBe("self_deletion");
+    }
+    expect(
+      (await own.app.inject({ url: "/api/admin/users", headers: headers() })).json().users[0]
+        .deletionProtection,
+    ).toBe("self");
+    expect(await getLocalUser(pool, "default", user.user.id)).toBeTruthy();
+  } finally {
+    await own.app.close();
+  }
+});
 async function policy(
   mode: "none" | "source" | "custom" | "source + custom",
   resources = ["repository:acme/allowed"],

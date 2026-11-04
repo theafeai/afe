@@ -8,6 +8,7 @@ import {
 } from "@afe/core";
 import {
   createLocalUser,
+  deleteLocalUser,
   getLocalUser,
   getUserToolPolicy,
   listLocalUsers,
@@ -17,9 +18,19 @@ import {
   setUserToolPolicy,
 } from "@afe/db";
 import { requestTenant } from "./index.ts";
+import type { Principal } from "@afe/core";
 
 export const USER_TOOLS = ["github", "vercel", "argocd", "terraform"] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isSelf = (principal: Principal, id: string) => {
+  const target = id.toLowerCase(),
+    principalId = principal.id.toLowerCase();
+  return (
+    principal.localUserId?.toLowerCase() === target ||
+    principalId === target ||
+    principalId === `local:${target}`
+  );
+};
 
 export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
   app.addHook("onSend", async (req, reply, payload) => {
@@ -28,8 +39,40 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
     return payload;
   });
   app.get("/api/admin/users", { config: { access: "admin" } }, async (req) => ({
-    users: await listLocalUsers(pool, requestTenant(req)),
+    users: (await listLocalUsers(pool, requestTenant(req))).map(
+      ({ administratorIdentity, ...user }) => ({
+        ...user,
+        deletionProtection: isSelf(req.principal!, user.id)
+          ? "self"
+          : administratorIdentity
+            ? "administrator"
+            : null,
+      }),
+    ),
   }));
+  app.delete<{ Params: { id: string } }>(
+    "/api/admin/users/:id",
+    { config: { access: "admin" } },
+    async (req, reply) => {
+      const tid = requestTenant(req),
+        id = req.params.id;
+      if (!uuid.test(id) || !(await getLocalUser(pool, tid, id)))
+        return reply.code(404).send({ error: "not_found" });
+      if (isSelf(req.principal!, id))
+        return reply
+          .code(409)
+          .send({ error: "self_deletion", message: "You cannot delete your own user account." });
+      const result = await deleteLocalUser(pool, tid, id);
+      if (result === "not_found") return reply.code(404).send({ error: "not_found" });
+      if (result === "administrator")
+        return reply.code(409).send({
+          error: "administrator_identity",
+          message:
+            "Administrator-linked accounts cannot be deleted here. Unlink personal GitHub access in Profile; manage administrator access through its authentication provider.",
+        });
+      return { ok: true };
+    },
+  );
   app.post<{ Body: { username?: unknown } }>(
     "/api/admin/users",
     { config: { access: "admin" }, bodyLimit: 4096 },

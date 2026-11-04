@@ -244,8 +244,10 @@ encodings, the same way on every page.
 Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.
 
-The `.disconnect-dialog` class styles the native confirmation dialog for connection
-disconnect actions using theme tokens.
+The `.disconnect-dialog` and reusable `.confirm-dialog` classes style native
+confirmation dialogs using theme tokens. User deletion names the selected account,
+states the actual cleanup and retention effects, focuses Cancel by default, and
+keeps errors in the dialog for retry. Escape and Cancel are blocked during submission.
 
 ## Patterns
 
