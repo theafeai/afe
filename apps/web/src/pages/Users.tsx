@@ -1,12 +1,11 @@
 import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import {
   Empty,
   ErrorBox,
   Loading,
   SectionHead,
-  ToolBadge,
   toolLabel,
   useAsync,
   useDocumentTitle,
@@ -15,7 +14,7 @@ import "./Users.css";
 import { useAccess } from "../access.tsx";
 import { useToast } from "../toast.tsx";
 import { Link } from "../router.tsx";
-import { icons } from "../icons.tsx";
+import { icons, ToolMark } from "../icons.tsx";
 
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
@@ -50,13 +49,21 @@ export function UsersPage() {
   const [invite, setInvite] = useState(false);
   const [username, setUsername] = useState("");
   const [selected, setSelected] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [token, setToken] = useState<{ value: string; username: string } | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
+  const [failureContext, setFailureContext] = useState<string | null>(null);
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  async function run(action: () => Promise<void>) {
+  const [actionBusy, setBusy] = useState(false);
+  const [permissionsSaving, setPermissionsSaving] = useState(false);
+  const busy = actionBusy || permissionsSaving;
+  const userHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    userHeading.current?.focus();
+  }, [selected?.id]);
+  async function run(action: () => Promise<void>, context?: string) {
     setBusy(true);
     setFailure(null);
+    setFailureContext(context ?? null);
     try {
       await action();
     } catch (e) {
@@ -64,6 +71,9 @@ export function UsersPage() {
     } finally {
       setBusy(false);
     }
+  }
+  function runForUser(action: () => Promise<void>) {
+    return run(action, selected?.username);
   }
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -76,7 +86,7 @@ export function UsersPage() {
           username,
         },
       );
-      setToken(r.token ?? null);
+      setToken(r.token ? { value: r.token, username: r.user.username } : null);
       if (invite)
         toast({
           message: "Invitation queued.",
@@ -100,7 +110,7 @@ export function UsersPage() {
       </div>
     );
   return (
-    <div className="page">
+    <div className="page users-page">
       <header className="page-header">
         <div>
           <h1>Users</h1>
@@ -157,185 +167,249 @@ export function UsersPage() {
       </form>
       {token && (
         <section className="callout" role="status">
-          <h2>Save this credential now</h2>
+          <h2>Save the credential for {token.username} now</h2>
           <p>It is shown only once. Resetting it ends the user's existing sessions.</p>
-          <textarea aria-label="Generated access credential" readOnly value={token} />
+          <textarea aria-label="Generated access credential" readOnly value={token.value} />
           <button className="btn" onClick={() => setToken(null)}>
             Dismiss credential
           </button>
         </section>
       )}
-      {failure && <ErrorBox error={failure} />}
-      <section className="card" aria-labelledby="users-list-heading">
-        <SectionHead
-          id="users-list-heading"
-          title="User accounts"
-          count={!loading && !error ? data?.users.length : undefined}
-          hint="Select a user to manage access and credentials."
+      {failure && (
+        <ErrorBox
+          error={failure}
+          title={failureContext ? `Changes for ${failureContext} were not saved` : undefined}
         />
-        {loading ? (
-          <Loading label="Loading users…" />
-        ) : error ? (
-          <ErrorBox title="Users could not be loaded" error={error} onRetry={reload} />
-        ) : !data?.users.length ? (
-          <Empty title="No users yet" icon={icons.users}>
-            <p>Create a user above to give someone access to Afe.</p>
-          </Empty>
-        ) : (
-          <ul className="entity-list users-list" aria-label="User accounts">
-            {data.users.map((u) => (
-              <li key={u.id}>
-                <button
-                  type="button"
-                  className="users-row"
-                  aria-label={u.username}
-                  aria-describedby={`user-status-${u.id}`}
-                  aria-pressed={selected?.id === u.id}
-                  aria-controls={selected ? "user-details" : undefined}
-                  title={`Manage ${u.username}`}
-                  onClick={() => select(u)}
-                  disabled={busy}
-                >
-                  <span className="entity-main">
-                    <span className="entity-name">
-                      <strong>{u.username}</strong>
-                    </span>
-                    {u.email && <span className="entity-meta">{u.email}</span>}
-                  </span>
-                  <span className="badge users-status" id={`user-status-${u.id}`}>
-                    {u.disabled ? "Disabled" : "Active"}
-                  </span>
-                  {icons.edit}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      {selected && (
-        <section className="card users-detail" id="user-details" aria-labelledby="user-heading">
-          <h2 id="user-heading">{selected.username}</h2>
-          <div className="actions">
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  const r = await request<{ token: string }>(
-                    "POST",
-                    `/api/admin/users/${selected.id}/credentials`,
-                  );
-                  setToken(r.token);
-                })
-              }
-            >
-              Reset credential
-            </button>
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await request("PATCH", `/api/admin/users/${selected.id}`, {
-                    disabled: !selected.disabled,
-                  });
-                  setSelected({ ...selected, disabled: !selected.disabled });
-                  reload();
-                })
-              }
-            >
-              {selected.disabled ? "Enable user" : "Disable user"}
-            </button>
-          </div>
-          {mail?.enabled && (
-            <form
-              className="form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await request("PATCH", `/api/admin/users/${selected.id}`, {
-                    email: userEmail || null,
-                  });
-                  setSelected({ ...selected, email: userEmail || null });
-                  toast("Email saved. Earlier email links are invalidated.");
-                  reload();
-                });
-              }}
-            >
-              <label htmlFor="user-email">Email address</label>
-              <input
-                id="user-email"
-                type="email"
-                maxLength={254}
-                value={userEmail}
-                onChange={(e) => setUserEmail(e.target.value)}
-              />
-              <button className="btn" disabled={busy}>
-                Save email
-              </button>
-              {selected.email && (
-                <div className="actions">
-                  {(["invitation", "reset"] as const).map((purpose) => (
-                    <button
-                      key={purpose}
-                      type="button"
-                      className="btn"
-                      disabled={busy || selected.disabled}
-                      onClick={() =>
-                        void run(async () => {
-                          await request("POST", `/api/admin/users/${selected.id}/email`, {
-                            purpose,
-                          });
-                          toast("Email queued. Previous links are invalidated.");
-                        })
-                      }
-                    >
-                      {purpose === "invitation" ? "Resend invitation" : "Email reset link"}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </form>
-          )}
-          <ToolPermissions key={selected.id} userId={selected.id} disabled={busy} />
-        </section>
       )}
+      <div className="users-workspace">
+        <section className="card users-accounts" aria-labelledby="users-list-heading">
+          <SectionHead
+            id="users-list-heading"
+            title="User accounts"
+            count={!loading && !error ? data?.users.length : undefined}
+            hint="Select a user to manage access and credentials."
+          />
+          {loading ? (
+            <Loading label="Loading users…" />
+          ) : error ? (
+            <ErrorBox title="Users could not be loaded" error={error} onRetry={reload} />
+          ) : !data?.users.length ? (
+            <Empty title="No users yet" icon={icons.users}>
+              <p>Create a user above to give someone access to Afe.</p>
+            </Empty>
+          ) : (
+            <ul className="entity-list users-list" aria-label="User accounts">
+              {data.users.map((u) => (
+                <li key={u.id}>
+                  <button
+                    type="button"
+                    className="users-row"
+                    aria-label={u.username}
+                    aria-describedby={`user-status-${u.id}${selected?.id === u.id ? ` user-editing-${u.id}` : ""}`}
+                    aria-pressed={selected?.id === u.id}
+                    aria-controls="user-details"
+                    title={`Manage ${u.username}`}
+                    onClick={() => select(u)}
+                    disabled={busy}
+                  >
+                    <span className="entity-main">
+                      <span className="entity-name">
+                        <strong>{u.username}</strong>
+                      </span>
+                      {u.email && <span className="entity-meta">{u.email}</span>}
+                      {selected?.id === u.id && (
+                        <span className="entity-meta" id={`user-editing-${u.id}`}>
+                          Editing this user
+                        </span>
+                      )}
+                    </span>
+                    <span className="badge users-status" id={`user-status-${u.id}`}>
+                      {u.disabled ? "Disabled" : "Active"}
+                    </span>
+                    {selected?.id === u.id ? icons.check : icons.edit}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="card users-detail" id="user-details" aria-labelledby="user-heading">
+          {selected ? (
+            <>
+              <div className="users-edit-context">
+                <div className="users-permission-head">
+                  <p className="small muted">Editing user</p>
+                  <a className="btn btn-ghost btn-sm" href="#users-list-heading">
+                    Change user
+                  </a>
+                </div>
+                <div className="users-edit-identity">
+                  <h2 id="user-heading" ref={userHeading} tabIndex={-1}>
+                    {selected.username}
+                  </h2>
+                  <span className="badge">{selected.disabled ? "Disabled" : "Active"}</span>
+                </div>
+                {selected.email && <p className="small muted">{selected.email}</p>}
+              </div>
+              <ToolPermissions
+                key={selected.id}
+                user={selected}
+                disabled={busy}
+                onSaving={setPermissionsSaving}
+              />
+              <section className="users-account" aria-labelledby="user-account-heading">
+                <h3 id="user-account-heading">Account management</h3>
+                <p className="small muted">
+                  Credentials and account access for {selected.username}.
+                </p>
+                <div className="actions">
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() =>
+                      void runForUser(async () => {
+                        const r = await request<{ token: string }>(
+                          "POST",
+                          `/api/admin/users/${selected.id}/credentials`,
+                        );
+                        setToken({ value: r.token, username: selected.username });
+                      })
+                    }
+                  >
+                    Reset credential
+                  </button>
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() =>
+                      void runForUser(async () => {
+                        await request("PATCH", `/api/admin/users/${selected.id}`, {
+                          disabled: !selected.disabled,
+                        });
+                        setSelected({ ...selected, disabled: !selected.disabled });
+                        reload();
+                      })
+                    }
+                  >
+                    {selected.disabled ? "Enable user" : "Disable user"}
+                  </button>
+                </div>
+                {mail?.enabled && (
+                  <form
+                    className="form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void runForUser(async () => {
+                        await request("PATCH", `/api/admin/users/${selected.id}`, {
+                          email: userEmail || null,
+                        });
+                        setSelected({ ...selected, email: userEmail || null });
+                        toast(
+                          `Email saved for ${selected.username}. Earlier email links are invalidated.`,
+                        );
+                        reload();
+                      });
+                    }}
+                  >
+                    <label htmlFor="user-email">Email address</label>
+                    <input
+                      id="user-email"
+                      type="email"
+                      maxLength={254}
+                      value={userEmail}
+                      onChange={(e) => setUserEmail(e.target.value)}
+                    />
+                    <button className="btn" disabled={busy}>
+                      Save email
+                    </button>
+                    {selected.email && (
+                      <div className="actions">
+                        {(["invitation", "reset"] as const).map((purpose) => (
+                          <button
+                            key={purpose}
+                            type="button"
+                            className="btn"
+                            disabled={busy || selected.disabled}
+                            onClick={() =>
+                              void runForUser(async () => {
+                                await request("POST", `/api/admin/users/${selected.id}/email`, {
+                                  purpose,
+                                });
+                                toast(
+                                  `Email queued for ${selected.username}. Previous links are invalidated.`,
+                                );
+                              })
+                            }
+                          >
+                            {purpose === "invitation" ? "Resend invitation" : "Email reset link"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </form>
+                )}
+              </section>
+            </>
+          ) : (
+            <>
+              <SectionHead id="user-heading" title="User permissions" />
+              <Empty title="Select a user" icon={icons.users}>
+                <p>Choose an account from the list to edit its tool permissions and credentials.</p>
+              </Empty>
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
-function ToolPermissions({ userId, disabled }: { userId: string; disabled: boolean }) {
+function ToolPermissions({
+  user,
+  disabled,
+  onSaving,
+}: {
+  user: User;
+  disabled: boolean;
+  onSaving: (saving: boolean) => void;
+}) {
   const { data, error, loading, reload } = useAsync(
     (signal) =>
       request<{ tools: Record<string, Policy> }>(
         "GET",
-        `/api/admin/users/${userId}/permissions`,
+        `/api/admin/users/${user.id}/permissions`,
         undefined,
         signal,
       ),
-    [userId],
+    [user.id],
   );
   return (
     <section className="users-permissions" aria-labelledby="tool-permissions-title">
       <div>
         <h3 id="tool-permissions-title">Tool permissions</h3>
-        <p className="muted">
-          Choose how this account can access each tool. Save changes separately for each tool.
+        <p className="small muted">
+          Choose which linked tool accounts {user.username} can use. Each tool saves separately.
+          Switching users discards unsaved changes.
         </p>
       </div>
       {loading ? (
-        <Loading label="Loading tool permissions…" />
+        <Loading label={`Loading tool permissions for ${user.username}…`} />
       ) : error ? (
-        <ErrorBox title="Tool permissions could not be loaded" error={error} onRetry={reload} />
+        <ErrorBox
+          title={`Tool permissions for ${user.username} could not be loaded`}
+          error={error}
+          onRetry={reload}
+        />
       ) : (
         data &&
         TOOLS.map((tool) => (
           <ToolPermissionEditor
             key={tool}
-            userId={userId}
+            user={user}
             tool={tool}
             policy={data.tools[tool]!}
             disabled={disabled}
+            onSaving={onSaving}
           />
         ))
       )}
@@ -344,32 +418,37 @@ function ToolPermissions({ userId, disabled }: { userId: string; disabled: boole
 }
 
 function ToolPermissionEditor({
-  userId,
+  user,
   tool,
   policy,
   disabled,
+  onSaving,
 }: {
-  userId: string;
+  user: User;
   tool: string;
   policy: Policy;
   disabled: boolean;
+  onSaving: (saving: boolean) => void;
 }) {
   const name = toolLabel(tool);
   const [mode, setMode] = useState(policy.mode);
-  const [reviewed, setReviewed] = useState(false);
   const [restrictions, setRestrictions] = useState(
     (policy.denied ?? []).map((g) => `${g.resource} ${g.action}`).join("\n"),
   );
+  const [saved, setSaved] = useState({ mode: policy.mode, restrictions });
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const [error, setError] = useState<Error | null>(null);
-  const legacy = !Object.hasOwn(MODES, policy.mode) && !reviewed;
+  const legacy = !Object.hasOwn(MODES, saved.mode);
+  const dirty = mode !== saved.mode || restrictions !== saved.restrictions;
   async function save(e: FormEvent) {
     e.preventDefault();
+    if (disabled || saving || !dirty || !Object.hasOwn(MODES, mode)) return;
     setSaving(true);
+    onSaving(true);
     setError(null);
     try {
-      await request("PUT", `/api/admin/users/${userId}/permissions/${tool}`, {
+      await request("PUT", `/api/admin/users/${user.id}/permissions/${tool}`, {
         mode,
         ...(tool === "github"
           ? {
@@ -385,23 +464,29 @@ function ToolPermissionEditor({
           : {}),
         custom: [],
       });
-      setReviewed(true);
-      toast(`Saved ${name} permissions.`);
+      setSaved({ mode, restrictions });
+      toast(`Saved ${name} permissions for ${user.username}.`);
     } catch (e) {
       setError(e instanceof Error ? e : new Error("Request failed"));
     } finally {
       setSaving(false);
+      onSaving(false);
     }
   }
   return (
     <form
       className="users-permission"
       onSubmit={(e) => void save(e)}
-      aria-label={`${name} permissions`}
+      aria-label={`${name} permissions for ${user.username}`}
+      aria-busy={saving}
     >
-      <h4>
-        <ToolBadge source={tool} />
-      </h4>
+      <div className="users-permission-head">
+        <h4 className={`tool-${tool}`}>
+          <ToolMark source={tool} />
+          {name}
+        </h4>
+        <span className="badge">{legacy ? "Review required" : MODES[saved.mode]?.label}</span>
+      </div>
       {legacy && (
         <div className="callout callout-error" role="alert">
           Existing {policy.mode} policy is blocked in open source. Review the linked account’s
@@ -429,7 +514,9 @@ function ToolPermissionEditor({
         </details>
       )}
       <fieldset className="form users-permission-fields" disabled={disabled || saving}>
-        <legend className="sr-only">{name} permissions</legend>
+        <legend className="sr-only">
+          {name} permissions for {user.username}
+        </legend>
         <div className="field">
           <label htmlFor={`mode-${tool}`}>Permission mode</label>
           <select
@@ -459,11 +546,10 @@ function ToolPermissionEditor({
         </div>
         {tool === "github" && (
           <>
-            <div className="callout small">
-              Source inherits supported operations from the linked GitHub account. GitHub checks
-              current repository access and operation permissions on every request. Deny-only
-              restrictions below can narrow access; they never grant access.
-            </div>
+            <p className="small muted">
+              GitHub checks the linked account’s repository access and operation permissions on
+              every request. Restrictions below can narrow that access; they never grant access.
+            </p>
             <div className="field">
               <label htmlFor="github-restrictions">GitHub action restrictions (optional)</label>
               <textarea
@@ -497,13 +583,23 @@ function ToolPermissionEditor({
             </details>
           </>
         )}
-        <div className="button-row">
-          <button className="btn" disabled={!Object.hasOwn(MODES, mode)}>
+        <div className="users-permission-save">
+          <p className="small muted" id={`permission-context-${tool}`}>
+            Applies to <strong>{user.username}</strong>
+            {dirty && <span className="users-unsaved">Unsaved changes</span>}
+          </p>
+          <button
+            className="btn btn-sm"
+            disabled={!dirty || !Object.hasOwn(MODES, mode)}
+            aria-describedby={`permission-context-${tool}`}
+          >
             {saving ? `Saving ${name} permissions…` : `Save ${name} permissions`}
           </button>
         </div>
       </fieldset>
-      {error && <ErrorBox title={`${name} permissions were not saved`} error={error} />}
+      {error && (
+        <ErrorBox title={`${name} permissions for ${user.username} were not saved`} error={error} />
+      )}
     </form>
   );
 }
