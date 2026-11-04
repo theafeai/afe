@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeAll, expect, it } from "vitest";
 import { setFetch } from "../api/client.ts";
 import { GitHubRunControls } from "./GitHubRunControls.tsx";
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+});
 afterEach(cleanup);
 it("confirms the repository/run/attempt and submits only once before showing acceptance", async () => {
   const mutations: unknown[] = [];
@@ -29,7 +37,9 @@ it("confirms the repository/run/attempt and submits only once before showing acc
   fireEvent.click(await screen.findByRole("button", { name: "Re-run all jobs" }));
   expect(mutations).toHaveLength(0);
   expect(screen.getByText(/Re-run all jobs for acme\/app, run 123, attempt 2/)).toBeTruthy();
-  const confirm = screen.getByRole("button", { name: "Confirm re-run all jobs" });
+  const confirm = screen
+    .getByRole("dialog", { name: "Re-run all jobs" })
+    .querySelector(".btn-primary")!;
   fireEvent.click(confirm);
   fireEvent.click(confirm);
   await screen.findByRole("status");

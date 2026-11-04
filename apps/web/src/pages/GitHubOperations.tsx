@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useContext, type FormEvent } from "react";
+import { useEffect, useState, useRef, useContext, type FormEvent, type ReactNode } from "react";
 import type {
   GitHubOperation,
   GitHubOperationCapability,
@@ -19,6 +19,7 @@ import {
   useAsync,
   useDocumentTitle,
 } from "../components.tsx";
+import { OperationDialog } from "../OperationDialog.tsx";
 import { icons } from "../icons.tsx";
 import { formatBytes, humanize } from "../format.ts";
 import { Link, useLocation } from "../router.tsx";
@@ -524,6 +525,44 @@ export function GitHubOperationsPage() {
     </div>
   );
 }
+function operationInput(value: unknown): ReactNode {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value))
+    return (
+      <ul className="plain">
+        {value.map((item, index) => (
+          <li key={index}>{operationInput(item)}</li>
+        ))}
+      </ul>
+    );
+  if (value !== null && typeof value === "object")
+    return <OperationInputs params={value as GitHubOperationParams} />;
+  return String(value ?? "None");
+}
+function OperationInputs({ params }: { params: GitHubOperationParams }) {
+  return (
+    <KeyValue
+      items={Object.entries(params).map(([key, value]) => {
+        const words = key
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replace(/_/g, " ")
+          .toLowerCase();
+        return [words.charAt(0).toUpperCase() + words.slice(1), operationInput(value)];
+      })}
+    />
+  );
+}
+function operationConsequence(action: GitHubOperation) {
+  if (action.includes("rerun"))
+    return "GitHub will start another attempt. This may trigger a deployment.";
+  if (action.includes("cancel"))
+    return "GitHub will be asked to stop this run. Jobs that have already finished are kept.";
+  if (action.includes("delete"))
+    return "The selected resource will be deleted in GitHub. This cannot be undone from Afe.";
+  if (action === "github.dispatch" || action === "github.deployment_create")
+    return "This may start a deployment using the submitted inputs.";
+  return "This changes source configuration or allows delivery to proceed in GitHub.";
+}
 function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
   const root = `/api/actions/github/repositories/${scope.repository.split("/").map(encodeURIComponent).join("/")}`;
   const [tab, setTab] = useState<string>("workflows"),
@@ -540,12 +579,11 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     [receipt, setReceipt] = useState<GitHubOperationReceipt | null>(null),
     [recovery, setRecovery] = useState<GitHubOperationReceipt | null>(null),
     [risk, setRisk] = useState(false);
+  const [review, setReview] = useState<{
+    action: GitHubOperation;
+    params: GitHubOperationParams;
+  } | null>(null);
   const sending = useRef(false);
-  const notice = useRef<HTMLDivElement>(null);
-  // A prepared operation or its outcome is shown above the list; bring it into view.
-  useEffect(() => {
-    if (pending || receipt || recovery) notice.current?.scrollIntoView?.({ block: "nearest" });
-  }, [pending, receipt, recovery]);
   const read: Reader = (view, query = {}) =>
     request(
       "GET",
@@ -581,6 +619,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     setError(null);
     setPending(null);
     setReceipt(null);
+    setReview({ action, params });
     try {
       const preview = await request<GitHubPreparedOperation>("POST", root + "/prepare", {
         connectionId: scope.connectionId,
@@ -611,11 +650,13 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       });
       setReceipt(result);
       setPending(null);
+      setReview(null);
       refresh();
     } catch (e) {
       if (e instanceof ApiError && e.body?.state) {
         setReceipt(e.body as unknown as GitHubOperationReceipt);
         setPending(null);
+        setReview(null);
         refresh();
       }
       setError(e instanceof Error ? e : new Error("Request failed"));
@@ -628,6 +669,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     if (!recovery || !risk || sending.current) return;
     sending.current = true;
     setBusy(true);
+    setError(null);
     try {
       const result = await request<GitHubOperationReceipt>(
         "POST",
@@ -790,8 +832,9 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
           ))}
         </div>
       </section>
-      <div ref={notice}>
-        {(error || caps.error) && <ErrorBox error={(error ?? caps.error)!} />}
+      <div>
+        {caps.error && <ErrorBox error={caps.error} />}
+        {error && !review && !recovery && <ErrorBox error={error} />}
         {receipt && (
           <section
             className={`callout ${receipt.state === "accepted" ? "callout-ok" : receipt.state === "rejected" ? "callout-error" : receipt.state === "released" ? "" : "callout-gap"} gh-receipt`}
@@ -817,57 +860,122 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             </div>
           </section>
         )}
-        {pending && (
-          <section className="card gh-confirm" role="group" aria-label="Confirm GitHub operation">
-            <h2>Confirm operation</h2>
-            <p className="gh-confirm-summary">{pending.preview.summary}</p>
-            <p className="small muted">
-              This may trigger a deployment or change source configuration. If another tool changes
-              this resource, Afe will ask you to refresh.
-            </p>
-            <div className="toolbar">
+        {review && (
+          <OperationDialog
+            title={label(review.action)}
+            description={
+              <>
+                <p>
+                  {pending?.preview.summary ??
+                    `Review ${label(review.action).toLowerCase()} for ${scope.repository}.`}
+                </p>
+                <p className="small muted">
+                  {operationConsequence(review.action)} If another tool changes this resource, Afe
+                  will ask you to refresh.
+                </p>
+              </>
+            }
+            confirmLabel={label(review.action)}
+            destructive={caps.data?.items.find((c) => c.action === review.action)?.destructive}
+            busy={busy}
+            pendingLabel={pending ? "Submitting…" : "Preparing operation…"}
+            confirmDisabled={!pending}
+            error={error}
+            onConfirm={() => void execute()}
+            onCancel={() => {
+              setReview(null);
+              setPending(null);
+              setError(null);
+            }}
+          >
+            <KeyValue
+              items={[
+                ["Repository", scope.repository],
+                ...(review.params.runId
+                  ? ([["Run", String(pending?.preview.context.runId ?? review.params.runId)]] as [
+                      string,
+                      string,
+                    ][])
+                  : []),
+                ...(review.params.attempt
+                  ? ([
+                      [
+                        "Attempt",
+                        String(pending?.preview.context.runAttempt ?? review.params.attempt),
+                      ],
+                    ] as [string, string][])
+                  : []),
+              ]}
+            />
+            {review.action.includes("rerun") && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={Boolean(review.params.enableDebugLogging)}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void prepare(review.action, {
+                      ...review.params,
+                      enableDebugLogging: event.target.checked,
+                    })
+                  }
+                />
+                Enable debug logging for this re-run
+              </label>
+            )}
+            <details>
+              <summary>Submitted inputs</summary>
+              <OperationInputs params={review.params} />
+            </details>
+            {!pending && error && (
               <button
-                className={
-                  caps.data?.items.find((c) => c.action === pending.preview.action)?.destructive
-                    ? "btn btn-danger"
-                    : "btn btn-primary"
-                }
+                className="btn"
                 disabled={busy}
-                onClick={() => void execute()}
+                onClick={() => void prepare(review.action, review.params)}
               >
-                Confirm operation
+                Retry preparation
               </button>
-              <button className="btn" disabled={busy} onClick={() => setPending(null)}>
-                Go back
-              </button>
-            </div>
-          </section>
+            )}
+          </OperationDialog>
         )}
         {recovery && (
-          <section className="card gh-confirm">
-            <h2>Recover uncertain request</h2>
-            <p>
-              Inspect the source state in the Runs, Workflows or Deployments tabs first. The
-              original request might have succeeded; another submission could create a duplicate
-              deployment.
-            </p>
+          <OperationDialog
+            title="Recover uncertain request"
+            description={
+              <>
+                <p>
+                  {label(recovery.action)} · {scope.repository} · Request{" "}
+                  <code>{recovery.requestId}</code>
+                </p>
+                <p>
+                  Inspect the source state in the Runs, Workflows or Deployments tabs first. The
+                  original request might have succeeded; another submission could create a duplicate
+                  deployment.
+                </p>
+              </>
+            }
+            confirmLabel="Allow a new deliberate request"
+            destructive
+            busy={busy}
+            confirmDisabled={!risk}
+            error={error}
+            onConfirm={() => void release()}
+            onCancel={() => {
+              setRecovery(null);
+              setRisk(false);
+              setError(null);
+            }}
+          >
             <label className="check">
-              <input type="checkbox" checked={risk} onChange={(e) => setRisk(e.target.checked)} />I
-              checked the current source state and accept the risk of a duplicate operation.
+              <input
+                type="checkbox"
+                disabled={busy}
+                checked={risk}
+                onChange={(e) => setRisk(e.target.checked)}
+              />
+              I checked the current source state and accept the risk of a duplicate operation.
             </label>
-            <div className="toolbar">
-              <button
-                className="btn btn-danger"
-                disabled={!risk || busy}
-                onClick={() => void release()}
-              >
-                Allow a new deliberate request
-              </button>
-              <button className="btn" onClick={() => setRecovery(null)}>
-                Go back
-              </button>
-            </div>
-          </section>
+          </OperationDialog>
         )}
       </div>
       <section className="gh-list-section" aria-label={tabLabel}>
@@ -923,6 +1031,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
                         onClick={() => {
                           setRecovery(r);
                           setRisk(false);
+                          setError(null);
                         }}
                       >
                         Review recovery
@@ -1343,7 +1452,6 @@ function RunPanel({
   const run = useAsync(() => read<{ item: Item }>("run", { id: String(item.id) }), [item.id]);
   const current = run.data?.item ?? item;
   const [attempt, setAttempt] = useState(item.run_attempt ?? 1),
-    [debug, setDebug] = useState(false),
     [envIds, setEnvIds] = useState<number[]>([]),
     [comment, setComment] = useState("");
   const [jobPage, setJobPage] = useState(1);
@@ -1391,14 +1499,10 @@ function RunPanel({
         <div className="toolbar gh-ops">
           {button("github.cancel", params)}
           {button("github.force_cancel", params)}
-          {button("github.rerun", { ...params, enableDebugLogging: debug })}
-          {button("github.rerun_failed", { ...params, enableDebugLogging: debug })}
+          {button("github.rerun", { ...params, enableDebugLogging: false })}
+          {button("github.rerun_failed", { ...params, enableDebugLogging: false })}
           {button("github.approve_run", params)}
         </div>
-        <label className="check">
-          <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
-          Enable debug logging for the next re-run
-        </label>
       </section>
       <section className="gh-section" aria-labelledby={`run-${item.id}-jobs`}>
         <div className="gh-section-head">
@@ -1459,7 +1563,7 @@ function RunPanel({
                 action={button("github.rerun_job", {
                   ...params,
                   jobId: job.id,
-                  enableDebugLogging: debug,
+                  enableDebugLogging: false,
                 })}
               />
             ))}

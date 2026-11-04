@@ -47,9 +47,9 @@ it("confirms the named user's deletion, handles failure and cancellation, and cl
   fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
   dialog = screen.getByRole("dialog");
   fireEvent.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
-  expect(
-    (within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled,
-  ).toBe(true);
+  expect(within(dialog).getByRole("button", { name: "Cancel" }).getAttribute("aria-disabled")).toBe(
+    "true",
+  );
   expect((screen.getByRole("button", { name: "alice" }) as HTMLButtonElement).disabled).toBe(true);
   expect(fireEvent(dialog, new Event("cancel", { cancelable: true }))).toBe(false);
   finishDelete(

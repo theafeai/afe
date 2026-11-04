@@ -65,10 +65,16 @@ export function UsersPage() {
   const [deleting, setDeleting] = useState(false);
   const busy = actionBusy || permissionsSaving || deleting;
   const userList = useRef<HTMLElement>(null);
+  const focusUserList = useRef(false);
   const userHeading = useRef<HTMLHeadingElement>(null);
+  const selectedId = selected?.id;
   useEffect(() => {
-    userHeading.current?.focus();
-  }, [selected?.id]);
+    // Run after the modal's cleanup restores focus to its former trigger.
+    if (focusUserList.current && !selectedId) {
+      userList.current?.focus();
+      focusUserList.current = false;
+    } else userHeading.current?.focus();
+  }, [selectedId]);
   async function run(action: () => Promise<void>, context?: string) {
     setBusy(true);
     setFailure(null);
@@ -314,11 +320,11 @@ export function UsersPage() {
                     onBusy={setDeleting}
                     onDeleted={() => {
                       toast(`Deleted user ${selected.username}.`);
+                      focusUserList.current = true;
                       setSelected(null);
                       setToken(null);
                       setFailure(null);
                       reload();
-                      userList.current?.focus();
                     }}
                   />
                 </div>

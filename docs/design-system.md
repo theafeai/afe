@@ -113,7 +113,7 @@ colour looks right.
 | Control height | `--control-h` 36px                                                                                                                                                                                                         |
 | Elevation      | None at rest (`--shadow-xs` and `--sheen` are transparent) · `--shadow-sm` (sign-in card, pressed theme switch) · `--shadow-md` (popovers, toasts)                                                                         |
 | Motion         | `--dur` 120ms · `--ease`; respect `prefers-reduced-motion` (handled globally)                                                                                                                                              |
-| Layout         | `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                                                                      |
+| Layout         | `--dialog-w` (confirmation dialog width) · `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                           |
 
 Prefer the spacing and size tokens for new CSS. Some older page rules still
 use literal `rem` values; convert them when you touch those rules.
@@ -189,6 +189,7 @@ Use these instead of re-creating their markup.
 | `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
 | `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
 | `SectionHead`                                                                | A section's title, optional count and hint, and its main action         |
+| `OperationDialog` (`OperationDialog.tsx`)                                    | Operation review and confirmation in a native modal                     |
 | `useToast` (`toast.tsx`)                                                     | Confirming an action the user just took (see [Patterns](#patterns))     |
 | `icons.*`, `BrandMark`, `ToolMark`                                           | 16px Lucide line icons (`aria-hidden`), the Afe wordmark and tool logos |
 | `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
@@ -244,10 +245,10 @@ encodings, the same way on every page.
 Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.
 
-The `.disconnect-dialog` and reusable `.confirm-dialog` classes style native
-confirmation dialogs using theme tokens. User deletion names the selected account,
-states the actual cleanup and retention effects, focuses Cancel by default, and
-keeps errors in the dialog for retry. Escape and Cancel are blocked during submission.
+The `.operation-dialog` class styles `OperationDialog` with theme tokens.
+User deletion names the selected account, states the actual cleanup and retention
+effects, and keeps errors in the dialog for retry. Cancel receives initial focus;
+Escape and cancellation are blocked during submission.
 
 ## Patterns
 
@@ -285,6 +286,22 @@ keeps errors in the dialog for retry. Escape and Cancel are blocked during submi
   and focus only (see `.event-row.has-action`); touch screens always show them.
 - **Identifiers**: short SHA (7 characters) in `<code>`, full value in `title`.
   Times: absolute in `title` / `dateTime`, relative in the text (`TimeAgo`).
+- **Tool operation confirmations** use `OperationDialog`, mounted only while reviewing
+  an operation. This applies to GitHub Actions (including recovery), connection
+  disconnects for every tool, and future integrations. Supply an operation-specific
+  `title` and `confirmLabel`, a `description` naming the target and consequences,
+  optional input controls or a summary as children, and `onConfirm` / `onCancel`.
+  Preparation, validation and execution errors stay inside the dialog (`error`);
+  use `busy`, `pendingLabel` and `confirmDisabled` while preparing or submitting.
+  Keep the caller's synchronous submission guard and existing authorization,
+  version checks and request IDs. Only the explicit confirmation button executes;
+  do not submit on Enter in an input. Cancel, Escape and backdrop clicks dismiss
+  idle dialogs without executing. During a request, dismissal is held until the
+  result is known. Native modal behavior contains focus and makes the page inert;
+  initial focus is Cancel, and closing restores the trigger with `preventScroll`.
+  The dialog overlays the current selection without scrolling to a separate panel
+  or shifting the list. Do not replace editing workspaces with modals; show their
+  submitted inputs when confirming the resulting operation.
 - **Destructive actions** use `.btn-danger` and confirm first.
 - **Confirmations are toasts, state is a callout.** After an action succeeds
   ("Saved", "Invitation queued", "disconnected"), call `useToast()` instead of

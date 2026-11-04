@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { setFetch } from "../api/client.ts";
 import { Router } from "../router.tsx";
 import { GitHubOperationsPage } from "./GitHubOperations.tsx";
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+});
 afterEach(cleanup);
 const root = "/api/actions/github/repositories/acme/app";
 function fixture({
@@ -14,6 +22,9 @@ function fixture({
   logStatus = 200,
   logGrant = true,
   conclusion = "success",
+  prepareStatus = 200,
+  executeStatus = 202,
+  holdMutation = false,
 } = {}) {
   const mutations: Record<string, unknown>[] = [];
   setFetch(async (url, init) => {
@@ -22,16 +33,31 @@ function fixture({
         items: [{ connectionId: "c", connectionName: "acme", repository: "acme/app" }],
         hasMore: false,
       });
-    if (url === root + "/prepare")
+    if (url === root + "/prepare") {
+      if (prepareStatus !== 200)
+        return Response.json({ message: "Source state unavailable" }, { status: prepareStatus });
+      const { action, params } = JSON.parse(String(init?.body));
       return Response.json({
-        action: JSON.parse(String(init?.body)).action,
+        action,
         version: "a".repeat(64),
-        summary: "Dispatch workflow · acme/app · workflow:42",
-        context: { connectionId: "c", repository: "acme/app" },
+        summary: `${action === "github.dispatch" ? "Dispatch workflow" : "Re-run all jobs"} · acme/app · ${params.runId ? `run:${params.runId} · attempt ${params.attempt}` : "workflow:42"}`,
+        context: {
+          connectionId: "c",
+          repository: "acme/app",
+          runId: params.runId,
+          runAttempt: params.attempt,
+        },
       });
+    }
     if (url === root && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       mutations.push(body);
+      if (holdMutation) return new Promise<Response>(() => {});
+      if (executeStatus !== 202)
+        return Response.json(
+          { message: "Resource changed; refresh before retrying" },
+          { status: executeStatus },
+        );
       return Response.json(
         {
           requestId: body.requestId,
@@ -175,11 +201,11 @@ it("renders typed inputs and requires confirmation before one deliberate dispatc
   const mutations = fixture();
   fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
   fireEvent.click(await screen.findByRole("button", { name: "Prepare dispatch" }));
-  const confirm = await screen.findByRole("group", { name: "Confirm GitHub operation" });
+  const confirm = await screen.findByRole("dialog", { name: "Dispatch workflow" });
   expect(mutations).toHaveLength(0);
-  expect(within(confirm).getByText(/acme\/app/)).toBeTruthy();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Confirm operation" }));
-  fireEvent.click(within(confirm).getByRole("button", { name: "Confirm operation" }));
+  expect(within(confirm).getByText("acme/app")).toBeTruthy();
+  fireEvent.click(within(confirm).getByRole("button", { name: "Dispatch workflow" }));
+  fireEvent.click(within(confirm).getByRole("button", { name: "Dispatch workflow" }));
   await screen.findByText("GitHub accepted the request.");
   expect(mutations).toHaveLength(1);
   expect(mutations[0]).toMatchObject({
@@ -199,7 +225,7 @@ it("retains uncertain outcomes in Afe and asks for explicit risk acknowledgement
   fixture({ uncertain: true });
   fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
   fireEvent.click(await screen.findByRole("button", { name: "Prepare dispatch" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Confirm operation" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Dispatch workflow" }));
   await screen.findByText("unknown");
   fireEvent.click(screen.getByRole("button", { name: "Inspect request history" }));
   fireEvent.click(await screen.findByRole("button", { name: "Review recovery" }));
@@ -642,4 +668,88 @@ it("supports selection and pins when browser storage is unavailable", async () =
     get.mockRestore();
     set.mockRestore();
   }
+});
+
+async function openRunOperation() {
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  const row = (await screen.findByText("Deploy 102")).closest("li")!;
+  fireEvent.click(within(row).getByRole("button", { name: "Open details" }));
+  const trigger = await within(row).findByRole("button", { name: "Re-run all jobs" });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole("dialog", { name: "Re-run all jobs" });
+  await waitFor(() => expect(dialog.getAttribute("aria-busy")).toBe("false"));
+  return { row, trigger, dialog };
+}
+it("overlays a selected run, restores its trigger and dismisses without execution", async () => {
+  const mutations = fixture();
+  const { row, trigger, dialog } = await openRunOperation();
+  expect(dialog.parentElement).toBe(document.body);
+  expect(row.contains(dialog)).toBe(false);
+  expect(within(dialog).getAllByText("102").length).toBeGreaterThan(0);
+  expect(within(dialog).getAllByText("2").length).toBeGreaterThan(0);
+  expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.getByRole("region", { name: "Run 102" }).closest("li")).toBe(row);
+  fireEvent.click(trigger);
+  const again = await screen.findByRole("dialog", { name: "Re-run all jobs" });
+  await waitFor(() => expect(again.getAttribute("aria-busy")).toBe("false"));
+  fireEvent(again, new Event("cancel", { cancelable: true }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(mutations).toHaveLength(0);
+});
+it("reviews debug input in the overlay and preserves prepared version and run context", async () => {
+  const mutations = fixture();
+  const { dialog } = await openRunOperation();
+  fireEvent.click(
+    within(dialog).getByRole("checkbox", { name: "Enable debug logging for this re-run" }),
+  );
+  await waitFor(() => expect(dialog.getAttribute("aria-busy")).toBe("false"));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Re-run all jobs" }));
+  await screen.findByText("GitHub accepted the request.");
+  expect(mutations).toHaveLength(1);
+  expect(mutations[0]).toMatchObject({
+    action: "github.rerun",
+    params: { runId: 102, attempt: 2, enableDebugLogging: true },
+    expectedVersion: "a".repeat(64),
+    confirmed: true,
+  });
+});
+it("keeps preparation failures and retry inside the dialog without enabling execution", async () => {
+  const mutations = fixture({ prepareStatus: 503 });
+  const { dialog } = await openRunOperation();
+  expect(within(dialog).getByRole("alert").textContent).toContain("Source state unavailable");
+  expect(
+    (within(dialog).getByRole("button", { name: "Re-run all jobs" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Retry preparation" }));
+  await within(dialog).findByRole("alert");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(mutations).toHaveLength(0);
+});
+it("keeps execution errors in context and uses the same deliberate request on retry", async () => {
+  const mutations = fixture({ executeStatus: 409 });
+  const { dialog } = await openRunOperation();
+  const confirm = within(dialog).getByRole("button", { name: "Re-run all jobs" });
+  fireEvent.click(confirm);
+  await within(dialog).findByRole("alert");
+  expect(within(dialog).getByRole("alert").textContent).toContain("Resource changed");
+  fireEvent.click(confirm);
+  await waitFor(() => expect(mutations).toHaveLength(2));
+  expect(mutations[0]!.requestId).toBe(mutations[1]!.requestId);
+});
+it("prevents duplicate execution and dismissal while the operation is in flight", async () => {
+  const mutations = fixture({ holdMutation: true });
+  const { dialog } = await openRunOperation();
+  const confirm = within(dialog).getByRole("button", { name: "Re-run all jobs" });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  expect(within(dialog).getByRole("status").textContent).toBe("Submitting…");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  fireEvent(dialog, new Event("cancel", { cancelable: true }));
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect(mutations).toHaveLength(1);
 });

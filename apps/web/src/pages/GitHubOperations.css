@@ -90,22 +90,6 @@
   flex: 1 1 20rem;
   overflow-wrap: anywhere;
 }
-.card.gh-confirm {
-  box-shadow:
-    inset 2px 0 0 var(--accent-solid),
-    var(--shadow-sm);
-}
-.gh-confirm h2 {
-  margin-bottom: var(--space-2);
-}
-.gh-confirm p {
-  margin: 0 0 var(--space-3);
-}
-.gh-confirm-summary {
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-
 /* List ------------------------------------------------------------------------ */
 .gh-list-section {
   margin-bottom: var(--space-4);

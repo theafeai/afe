@@ -15,6 +15,7 @@
  */
 :root {
   color-scheme: light;
+  scrollbar-gutter: stable;
 
   /* Neutrals */
   --bg: #ffffff;
@@ -112,6 +113,7 @@
   --dur: 120ms;
 
   /* Layout */
+  --dialog-w: 560px;
   --sidebar-w: 236px;
   --topbar-h: 0px;
   --sticky-top: 0px;
@@ -1949,12 +1951,12 @@ a.alert-badge:hover {
   }
 }
 
-/* Native modal: focus trapping, Escape and focus restoration are browser-owned. */
-.disconnect-dialog,
-.confirm-dialog {
-  width: min(560px, calc(100% - var(--space-5)));
+/* Native modal: the browser keeps background content inert and contains focus. */
+.operation-dialog {
+  width: min(var(--dialog-w), calc(100% - var(--space-5)));
   max-height: calc(100% - var(--space-5));
   overflow: auto;
+  overflow-wrap: anywhere;
   padding: var(--space-5);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
@@ -1962,11 +1964,21 @@ a.alert-badge:hover {
   color: var(--text);
   box-shadow: var(--shadow-md);
 }
-.disconnect-dialog::backdrop,
-.confirm-dialog::backdrop {
+.operation-dialog::backdrop {
   background: var(--bg);
   opacity: 0.8;
 }
-.confirm-dialog {
-  overflow-wrap: anywhere;
+
+:root:has(.operation-dialog[open]) {
+  overflow: hidden;
+}
+.operation-dialog h2 {
+  font-size: var(--fs-lg);
+  margin: 0 0 var(--space-3);
+}
+.operation-dialog p {
+  margin: 0 0 var(--space-3);
+}
+.operation-dialog .form-end {
+  margin-top: var(--space-5);
 }

@@ -4,6 +4,7 @@ import type {
   GitHubRunControls as Controls,
   GitHubActionReceipt,
 } from "@afe/core";
+import { OperationDialog } from "../OperationDialog.tsx";
 import { request } from "../api/client.ts";
 import { ErrorBox, Loading, useAsync } from "../components.tsx";
 
@@ -88,26 +89,35 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
             ))}
           </div>
           {selected && (
-            <div role="group" aria-label="Confirm GitHub action">
-              <p>
-                {labels[selected]} for {data.context.repository}, run {data.context.runId}, attempt{" "}
-                {data.context.runAttempt}?
-              </p>
-              <button
-                className={selected === CANCEL_ACTION ? "btn btn-danger" : "btn btn-primary"}
-                disabled={busy}
-                onClick={() => void execute()}
-              >
-                {busy ? "Submitting…" : `Confirm ${labels[selected].toLowerCase()}`}
-              </button>{" "}
-              <button className="btn" disabled={busy} onClick={() => setSelected(null)}>
-                Go back
-              </button>
-            </div>
+            <OperationDialog
+              title={labels[selected]}
+              description={
+                <>
+                  <p>
+                    {labels[selected]} for {data.context.repository}, run {data.context.runId},
+                    attempt {data.context.runAttempt}?
+                  </p>
+                  <p className="small muted">
+                    {selected === CANCEL_ACTION
+                      ? "GitHub will be asked to stop this run. Jobs that have already finished are kept."
+                      : "GitHub will start another attempt. This may trigger a deployment."}
+                  </p>
+                </>
+              }
+              confirmLabel={labels[selected]}
+              destructive={selected === CANCEL_ACTION}
+              busy={busy}
+              error={failure}
+              onConfirm={() => void execute()}
+              onCancel={() => {
+                setSelected(null);
+                setFailure(null);
+              }}
+            />
           )}
         </>
       )}
-      {failure && <ErrorBox error={failure} />}
+      {failure && !selected && <ErrorBox error={failure} />}
       {receipt && <p role="status">{receipt.message}</p>}
       <button
         className="btn"
