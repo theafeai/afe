@@ -30,8 +30,8 @@ PostgreSQL 16 database and a loopback SMTP receiver. No external email was sent.
 - Component tests cover loading, failed-load retry, SMTP disabled, empty history,
   failed submission with retained draft, pending submission and status refresh.
 - `pnpm lint`, `pnpm typecheck`, all builds and the complete suite passed:
-  **1,118 tests across 101 files**. After the final spacing adjustment, rebuilt
-  the web app and reran Settings and design-system checks (14 tests).
+  **1,120 tests across 101 files** after integrating the latest main, including
+  the updated Users list. Rechecked the browser flow on the combined build.
 
 SMTP configuration remains operator-managed; there are no new settings APIs,
 configuration controls, migrations or placeholder sections.

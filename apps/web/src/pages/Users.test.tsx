@@ -1,10 +1,89 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { App } from "../App.tsx";
 import { setFetch } from "../api/client.ts";
 afterEach(cleanup);
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+it("selects structured user rows and keeps management and status updates working", async () => {
+  const longName = `generated_${"long_username_".repeat(6)}`;
+  const users = [
+    { id: "u1", username: "alice", disabled: false, email: "alice@example.com" },
+    { id: "u2", username: longName, disabled: true },
+  ];
+  const writes: { url: string; method: string; body: unknown }[] = [];
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email") return json({ enabled: false, configured: false });
+    if (init?.method === "PATCH" || init?.method === "POST") {
+      writes.push({ url, method: init.method, body: init.body && JSON.parse(String(init.body)) });
+      if (init.method === "PATCH") users[1]!.disabled = false;
+      return json({ token: "replacement-credential" });
+    }
+    if (url === "/api/admin/users") return json({ users });
+    if (url.endsWith("/permissions")) return json({ tools: initialTools() });
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  const list = await screen.findByRole("list", { name: "User accounts" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(list).getByText("alice@example.com")).toBeTruthy();
+  const alice = within(list).getByRole("button", { name: "alice" });
+  const generated = within(list).getByRole("button", { name: longName });
+  expect(alice.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(alice);
+  expect(alice.getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(generated);
+  expect(alice.getAttribute("aria-pressed")).toBe("false");
+  expect(generated.getAttribute("aria-pressed")).toBe("true");
+  expect(document.getElementById(generated.getAttribute("aria-controls")!)?.textContent).toContain(
+    longName,
+  );
+  expect(within(generated).getByText("Disabled")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Enable user" }));
+  const reloaded = await screen.findByRole("button", { name: longName });
+  expect(reloaded.getAttribute("aria-pressed")).toBe("true");
+  expect(within(reloaded).getByText("Active")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Reset credential" }));
+  expect(
+    ((await screen.findByLabelText("Generated access credential")) as HTMLTextAreaElement).value,
+  ).toBe("replacement-credential");
+  expect(writes).toEqual([
+    { url: "/api/admin/users/u2", method: "PATCH", body: { disabled: false } },
+    { url: "/api/admin/users/u2/credentials", method: "POST", body: undefined },
+  ]);
+});
+
+it("shows users loading, a retryable error, and an actionable empty state", async () => {
+  let finishLoad: (response: Response) => void = () => {};
+  let first = true;
+  setFetch(async (url) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email") return json({ enabled: false, configured: false });
+    if (url === "/api/admin/users") {
+      if (!first) return json({ users: [] });
+      first = false;
+      return new Promise<Response>((resolve) => {
+        finishLoad = resolve;
+      });
+    }
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  await screen.findByText("Loading users…");
+  expect(screen.queryByText("No users yet")).toBeNull();
+  finishLoad(new Response(JSON.stringify({ message: "Temporarily unavailable" }), { status: 500 }));
+  await screen.findByText("Users could not be loaded (HTTP 500)");
+  expect(screen.queryByText("No users yet")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  await screen.findByText("No users yet");
+  expect(screen.getByText("Create a user above to give someone access to Afe.")).toBeTruthy();
+});
+
 it("lets admins create a user and dismiss their one-time credential", async () => {
   setFetch(async (url, init) => {
     if (url === "/api/session")
