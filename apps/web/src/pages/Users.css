@@ -1,3 +1,59 @@
+.users-page {
+  overflow-wrap: anywhere;
+}
+
+.users-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+.users-workspace > .card {
+  margin-bottom: 0;
+}
+.users-accounts h2 {
+  scroll-margin-top: calc(var(--sticky-top) + var(--space-4));
+}
+.users-edit-context {
+  position: sticky;
+  top: var(--sticky-top);
+  z-index: 2;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 2px 0 0 var(--select);
+}
+.users-edit-context p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.users-edit-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.users-edit-identity h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-lg);
+  scroll-margin-top: calc(var(--sticky-top) + var(--space-7));
+}
+@media (min-width: 1100px) {
+  .users-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+  .users-accounts {
+    position: sticky;
+    top: var(--sticky-top);
+  }
+}
+
 .users-list > li {
   padding: 0;
 }
@@ -39,14 +95,13 @@
 .users-row > .icon {
   color: var(--muted);
 }
-.users-detail h2 {
+.users-detail {
   overflow-wrap: anywhere;
 }
 
 .users-permissions {
   display: grid;
   gap: var(--space-5);
-  margin-top: var(--space-5);
 }
 .users-permissions h3,
 .users-permissions p,
@@ -62,6 +117,51 @@
   padding-top: var(--space-5);
   border-top: 1px solid var(--border);
   min-width: 0;
+}
+.users-permission-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+.users-permission-head h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-base);
+}
+.users-permission-save {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.users-permission-save p {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.users-unsaved {
+  display: block;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.users-account {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+.users-account h3 {
+  margin: 0 0 var(--space-2);
+}
+.users-account > p {
+  margin: 0 0 var(--space-4);
+  overflow-wrap: anywhere;
+}
+.users-account .form {
+  margin-top: var(--space-4);
 }
 .users-permission-fields {
   border: 0;

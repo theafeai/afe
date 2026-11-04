@@ -270,6 +270,12 @@ disconnect actions using theme tokens.
   with a wrapping name and optional email, an aligned neutral status badge and
   a manage icon. `aria-pressed` exposes selection; selection tokens and the
   global focus ring distinguish selected and keyboard-focused rows.
+  The permissions editor sits beside the list on wide screens and below it on
+  smaller screens (`.users-workspace`). A sticky identity header carries the same
+  selection rule and a "Change user" link; selecting a user focuses that heading.
+  Tool sections show the saved access mode, label unsaved changes, and name the
+  user beside Save and in all permission feedback. Selection is disabled during
+  a save; changing users otherwise remounts the editor and discards unsaved drafts.
 - **Pickers** with many options (the GitHub repository picker) are a labelled
   button that opens a search popover (`role="dialog"`), closed by Escape or a
   click outside, returning focus to the button.
