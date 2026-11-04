@@ -189,7 +189,7 @@ Use these instead of re-creating their markup.
 | `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
 | `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
 | `SectionHead`                                                                | A section's title, optional count and hint, and its main action         |
-| `OperationDialog` (`OperationDialog.tsx`)                                    | Tool operation review and confirmation in a native modal                |
+| `OperationDialog` (`OperationDialog.tsx`)                                    | Operation review and confirmation in a native modal                     |
 | `useToast` (`toast.tsx`)                                                     | Confirming an action the user just took (see [Patterns](#patterns))     |
 | `icons.*`, `BrandMark`, `ToolMark`                                           | 16px Lucide line icons (`aria-hidden`), the Afe wordmark and tool logos |
 | `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
@@ -246,6 +246,9 @@ Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.
 
 The `.operation-dialog` class styles `OperationDialog` with theme tokens.
+User deletion names the selected account, states the actual cleanup and retention
+effects, and keeps errors in the dialog for retry. Cancel receives initial focus;
+Escape and cancellation are blocked during submission.
 
 ## Patterns
 

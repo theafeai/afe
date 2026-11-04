@@ -15,8 +15,15 @@ import { useAccess } from "../access.tsx";
 import { useToast } from "../toast.tsx";
 import { Link } from "../router.tsx";
 import { icons, ToolMark } from "../icons.tsx";
+import { DeleteUserAction, type UserDeletionProtection } from "./DeleteUserAction.tsx";
 
-type User = { id: string; username: string; disabled: boolean; email?: string | null };
+type User = {
+  id: string;
+  username: string;
+  disabled: boolean;
+  email?: string | null;
+  deletionProtection?: UserDeletionProtection;
+};
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
 const MODES: Record<string, { label: string; help: string }> = {
   none: {
@@ -55,11 +62,19 @@ export function UsersPage() {
   const toast = useToast();
   const [actionBusy, setBusy] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
-  const busy = actionBusy || permissionsSaving;
+  const [deleting, setDeleting] = useState(false);
+  const busy = actionBusy || permissionsSaving || deleting;
+  const userList = useRef<HTMLElement>(null);
+  const focusUserList = useRef(false);
   const userHeading = useRef<HTMLHeadingElement>(null);
+  const selectedId = selected?.id;
   useEffect(() => {
-    userHeading.current?.focus();
-  }, [selected?.id]);
+    // Run after the modal's cleanup restores focus to its former trigger.
+    if (focusUserList.current && !selectedId) {
+      userList.current?.focus();
+      focusUserList.current = false;
+    } else userHeading.current?.focus();
+  }, [selectedId]);
   async function run(action: () => Promise<void>, context?: string) {
     setBusy(true);
     setFailure(null);
@@ -182,7 +197,12 @@ export function UsersPage() {
         />
       )}
       <div className="users-workspace">
-        <section className="card users-accounts" aria-labelledby="users-list-heading">
+        <section
+          className="card users-accounts"
+          aria-labelledby="users-list-heading"
+          ref={userList}
+          tabIndex={-1}
+        >
           <SectionHead
             id="users-list-heading"
             title="User accounts"
@@ -293,6 +313,20 @@ export function UsersPage() {
                   >
                     {selected.disabled ? "Enable user" : "Disable user"}
                   </button>
+                  <DeleteUserAction
+                    key={selected.id}
+                    user={selected}
+                    disabled={busy}
+                    onBusy={setDeleting}
+                    onDeleted={() => {
+                      toast(`Deleted user ${selected.username}.`);
+                      focusUserList.current = true;
+                      setSelected(null);
+                      setToken(null);
+                      setFailure(null);
+                      reload();
+                    }}
+                  />
                 </div>
                 {mail?.enabled && (
                   <form
