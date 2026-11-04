@@ -1,3 +1,48 @@
+.users-list > li {
+  padding: 0;
+}
+.users-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--space-7);
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: var(--lh-dense);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.users-row:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.users-row[aria-pressed="true"] {
+  background: var(--select-soft);
+  box-shadow: inset 2px 0 0 var(--select);
+}
+.users-row:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.users-status {
+  min-width: calc(var(--space-7) + var(--space-5));
+  justify-content: center;
+}
+.users-row > .icon {
+  color: var(--muted);
+}
+.users-detail h2 {
+  overflow-wrap: anywhere;
+}
+
 .users-permissions {
   display: grid;
   gap: var(--space-5);
