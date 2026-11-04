@@ -266,6 +266,10 @@ disconnect actions using theme tokens.
   the identifier in `code`, metadata in `.entity-meta`, and icon-only
   `.btn-ghost.btn-icon.btn-sm` actions in `.entity-actions`, each with an
   `aria-label` and a matching `title`.
+  The Users list uses a full-row selection button (`.users-row` in `Users.css`),
+  with a wrapping name and optional email, an aligned neutral status badge and
+  a manage icon. `aria-pressed` exposes selection; selection tokens and the
+  global focus ring distinguish selected and keyboard-focused rows.
 - **Pickers** with many options (the GitHub repository picker) are a labelled
   button that opens a search popover (`role="dialog"`), closed by Escape or a
   click outside, returning focus to the button.

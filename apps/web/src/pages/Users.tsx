@@ -2,8 +2,10 @@ import { GITHUB_OPERATIONS } from "@afe/core/github-operations";
 import { useState, type FormEvent } from "react";
 import { request } from "../api/client.ts";
 import {
+  Empty,
   ErrorBox,
   Loading,
+  SectionHead,
   ToolBadge,
   toolLabel,
   useAsync,
@@ -12,6 +14,7 @@ import {
 import "./Users.css";
 import { useAccess } from "../access.tsx";
 import { useToast } from "../toast.tsx";
+import { icons } from "../icons.tsx";
 
 type User = { id: string; username: string; disabled: boolean; email?: string | null };
 const TOOLS = ["github", "vercel", "argocd", "terraform"];
@@ -101,7 +104,12 @@ export function UsersPage() {
     );
   return (
     <div className="page">
-      <h1>Users</h1>
+      <header className="page-header">
+        <div>
+          <h1>Users</h1>
+          <p className="lede">Manage user access, credentials and linked tool permissions.</p>
+        </div>
+      </header>
       <p>
         Open source inherits source permissions. Afe-managed custom permissions are planned for Afe
         Cloud only.
@@ -159,69 +167,56 @@ export function UsersPage() {
           </button>
         </section>
       )}
-      {(failure || error) && <ErrorBox error={(failure || error)!} />}
-      {loading ? (
-        <Loading />
-      ) : (
-        <ul>
-          {data?.users.map((u) => (
-            <li key={u.id}>
-              <button className="btn" onClick={() => void select(u)} disabled={busy}>
-                {u.username}
-              </button>{" "}
-              {u.disabled ? "Disabled" : "Active"}
-            </li>
-          ))}
-        </ul>
-      )}
-      <section className="card">
-        <h2>Email delivery</h2>
-        {mail?.configured ? (
-          <>
-            <p>Sender: {mail.from}</p>
-            <form
-              className="form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void run(async () => {
-                  await request("POST", "/api/admin/email/test", { email: testEmail });
-                  toast("Test email queued.");
-                  reloadMail();
-                });
-              }}
-            >
-              <label htmlFor="test-email">Test recipient</label>
-              <input
-                id="test-email"
-                type="email"
-                required
-                value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
-              />
-              <button className="btn" disabled={busy}>
-                Send test email
-              </button>
-            </form>
-            <button className="btn" onClick={reloadMail}>
-              Refresh delivery status
-            </button>
-            <ul>
-              {mail.deliveries.map((d) => (
-                <li key={d.id}>
-                  {d.state} — {d.attempts} attempt(s)
-                </li>
-              ))}
-            </ul>
-          </>
+      {failure && <ErrorBox error={failure} />}
+      <section className="card" aria-labelledby="users-list-heading">
+        <SectionHead
+          id="users-list-heading"
+          title="User accounts"
+          count={!loading && !error ? data?.users.length : undefined}
+          hint="Select a user to manage access and credentials."
+        />
+        {loading ? (
+          <Loading label="Loading users…" />
+        ) : error ? (
+          <ErrorBox title="Users could not be loaded" error={error} onRetry={reload} />
+        ) : !data?.users.length ? (
+          <Empty title="No users yet" icon={icons.users}>
+            <p>Create a user above to give someone access to Afe.</p>
+          </Empty>
         ) : (
-          <p>
-            Email is disabled. An operator can configure SMTP to enable invitations and reset links.
-          </p>
+          <ul className="entity-list users-list" aria-label="User accounts">
+            {data.users.map((u) => (
+              <li key={u.id}>
+                <button
+                  type="button"
+                  className="users-row"
+                  aria-label={u.username}
+                  aria-describedby={`user-status-${u.id}`}
+                  aria-pressed={selected?.id === u.id}
+                  aria-controls={selected ? "user-details" : undefined}
+                  title={`Manage ${u.username}`}
+                  onClick={() => select(u)}
+                  disabled={busy}
+                >
+                  <span className="entity-main">
+                    <span className="entity-name">
+                      <strong>{u.username}</strong>
+                    </span>
+                    {u.email && <span className="entity-meta">{u.email}</span>}
+                  </span>
+                  <span className="badge users-status" id={`user-status-${u.id}`}>
+                    {u.disabled ? "Disabled" : "Active"}
+                  </span>
+                  {icons.edit}
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
       {selected && (
-        <section className="card">
-          <h2>{selected.username}</h2>
+        <section className="card users-detail" id="user-details" aria-labelledby="user-heading">
+          <h2 id="user-heading">{selected.username}</h2>
           <div className="actions">
             <button
               className="btn"
@@ -308,6 +303,51 @@ export function UsersPage() {
           <ToolPermissions key={selected.id} userId={selected.id} disabled={busy} />
         </section>
       )}
+      <section className="card">
+        <h2>Email delivery</h2>
+        {mail?.configured ? (
+          <>
+            <p>Sender: {mail.from}</p>
+            <form
+              className="form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void run(async () => {
+                  await request("POST", "/api/admin/email/test", { email: testEmail });
+                  toast("Test email queued.");
+                  reloadMail();
+                });
+              }}
+            >
+              <label htmlFor="test-email">Test recipient</label>
+              <input
+                id="test-email"
+                type="email"
+                required
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+              />
+              <button className="btn" disabled={busy}>
+                Send test email
+              </button>
+            </form>
+            <button className="btn" onClick={reloadMail}>
+              Refresh delivery status
+            </button>
+            <ul>
+              {mail.deliveries.map((d) => (
+                <li key={d.id}>
+                  {d.state} — {d.attempts} attempt(s)
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p>
+            Email is disabled. An operator can configure SMTP to enable invitations and reset links.
+          </p>
+        )}
+      </section>
     </div>
   );
 }
