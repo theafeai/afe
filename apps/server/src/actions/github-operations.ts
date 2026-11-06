@@ -190,7 +190,8 @@ export class GitHubOperations {
     return c;
   }
   require(c: GitHubOperationContext, action: GitHubOperation) {
-    const d = GITHUB_OPERATIONS.find((o) => o[0] === action)!;
+    const d = GITHUB_OPERATIONS.find((o) => o[0] === action);
+    if (!d) throw fail(400, "Unknown GitHub operation.");
     if (!c.grants.includes(action))
       throw fail(
         403,
@@ -271,37 +272,32 @@ export class GitHubOperations {
       this.activeLogs--;
     }
   }
-  async workflowFile(c: GitHubOperationContext, path: string, ref: string, missing = false) {
+  async workflowFile(c: GitHubOperationContext, path: string, ref: string) {
     if (!isWorkflowPath(path))
       throw fail(
         400,
         "Only a workflow YAML file immediately inside .github/workflows is supported.",
       );
-    try {
-      const file = (
-        await this.request<{
-          sha: string;
-          content: string;
-          encoding: string;
-          size: number;
-          type: string;
-        }>(c, `${c.path}/contents/${path.split("/").map(segment).join("/")}`, "GET", undefined, {
-          ref,
-        })
-      ).data;
-      if (
-        file.type !== "file" ||
-        file.encoding !== "base64" ||
-        file.size > 128 * 1024 ||
-        typeof file.content !== "string"
-      )
-        throw fail(422, "Workflow exceeds the supported 128 KiB size or is not a file.");
-      const content = Buffer.from(file.content, "base64").toString("utf8");
-      return { path, sha: file.sha, content, ...workflowInputs(content) };
-    } catch (e) {
-      if (missing && e instanceof GitHubApiError && e.status === 404) return null;
-      throw e;
-    }
+    const file = (
+      await this.request<{
+        sha: string;
+        content: string;
+        encoding: string;
+        size: number;
+        type: string;
+      }>(c, `${c.path}/contents/${path.split("/").map(segment).join("/")}`, "GET", undefined, {
+        ref,
+      })
+    ).data;
+    if (
+      file.type !== "file" ||
+      file.encoding !== "base64" ||
+      file.size > 128 * 1024 ||
+      typeof file.content !== "string"
+    )
+      throw fail(422, "Workflow exceeds the supported 128 KiB size or is not a file.");
+    const content = Buffer.from(file.content, "base64").toString("utf8");
+    return { path, sha: file.sha, content, ...workflowInputs(content) };
   }
   async prepare(c: GitHubOperationContext, action: GitHubOperation, params: GitHubOperationParams) {
     this.require(c, action);
@@ -411,27 +407,6 @@ export class GitHubOperations {
         method = "PUT";
         path = `${c.path}/actions/workflows/${p.workflowId}/${action === "github.enable" ? "enable" : "disable"}`;
       }
-    } else if (["github.workflow_save", "github.workflow_delete"].includes(action)) {
-      const file = await this.workflowFile(c, String(p.path), String(p.branch), true);
-      if ((file?.sha ?? undefined) !== p.sha)
-        throw fail(409, "The workflow file changed. Reload its SHA before saving or deleting.");
-      if (action === "github.workflow_save") {
-        if (Buffer.byteLength(String(p.content), "utf8") > 128 * 1024)
-          throw fail(413, "Workflow YAML exceeds the 128 KiB limit.");
-        workflowInputs(String(p.content));
-      } else if (!file) throw fail(404, "Workflow file not found.");
-      source = { sha: file?.sha ?? null, path: p.path, branch: p.branch };
-      resourceKey = `workflow-file:${p.branch}:${p.path}`;
-      path = `${c.path}/contents/${String(p.path).split("/").map(segment).join("/")}`;
-      method = action === "github.workflow_save" ? "PUT" : "DELETE";
-      body = {
-        branch: p.branch,
-        message: p.message,
-        ...(p.sha ? { sha: p.sha } : {}),
-        ...(action === "github.workflow_save"
-          ? { content: Buffer.from(String(p.content)).toString("base64") }
-          : {}),
-      };
     } else if (action === "github.deployment_create") {
       const commit = await one(`/commits/${segment(p.ref)}`);
       source = { sha: commit.sha };
@@ -1026,28 +1001,15 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
             403,
             "GitHub repository write permission is required to inspect workflow inputs or source.",
           );
-        if (
-          !["github.dispatch", "github.workflow_save", "github.workflow_delete"].some((a) =>
-            c.grants.includes(a),
-          )
-        )
-          throw fail(403, "Workflow source requires a dispatch or workflow configuration grant.");
+        if (!c.grants.includes("github.dispatch"))
+          throw fail(403, "Workflow source requires dispatch permission.");
         if (!q.ref || q.ref.length > 255) throw fail(400, "Select a workflow ref.");
         const wid = Number(q.id);
         if (!Number.isSafeInteger(wid) || wid < 1) throw fail(400, "Select a workflow.");
         const w = (await service.request<SourceObject>(c, `${c.path}/actions/workflows/${wid}`))
           .data;
         const file = await service.workflowFile(c, String(w.path), q.ref);
-        // Dispatch-only users receive the input schema, not workflow source.
-        return {
-          path: file!.path,
-          sha: file!.sha,
-          dispatchable: file!.dispatchable,
-          inputs: file!.inputs,
-          ...(c.grants.some((a) => ["github.workflow_save", "github.workflow_delete"].includes(a))
-            ? { content: file!.content }
-            : {}),
-        };
+        return file;
       }
       let path = "",
         key: string | null = null;

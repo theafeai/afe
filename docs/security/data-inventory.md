@@ -175,13 +175,14 @@ creation time. No credentials, input values, YAML, payload bodies or log output.
 `github-actions.purge` job deletes receipts outside the tenant retention window.
 
 The operations UI can read an explicitly selected `.github/workflows/*.yml` or
-`.yaml` file to discover typed dispatch inputs or edit workflow configuration.
+`.yaml` file to display a read-only definition and discover typed dispatch inputs.
 Source content and submitted deployment payloads are transient, never copied into
-events/receipts/logs. Dispatch-only users receive the input schema, not YAML.
+events/receipts/logs. Workflow source reads require dispatch permission and current
+repository write access.
 Requested artifact and completed-log ZIPs are streamed, with limits and inert
 attachment headers; signed storage URLs and GitHub credentials stay server-side.
 Personal fine-grained tokens use the existing encrypted user GitHub credential
-kind. Explicit OAuth workflow-edit consent adds `workflow` only to that sign-in.
+kind. OAuth requests `repo read:user` without the `workflow` scope.
 
 ## Connection lifecycle identities (AFE-64)
 

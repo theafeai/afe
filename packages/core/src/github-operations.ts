@@ -3,8 +3,6 @@ export const GITHUB_OPERATIONS = [
   ["github.dispatch", "Dispatch workflow", "workflow", false, "write"],
   ["github.enable", "Enable workflow", "workflow", false, "write"],
   ["github.disable", "Disable workflow", "workflow", true, "write"],
-  ["github.workflow_save", "Save workflow", "workflow", false, "write"],
-  ["github.workflow_delete", "Delete workflow file", "workflow", true, "write"],
   ["github.cancel", "Cancel run", "run", true, "write"],
   ["github.force_cancel", "Force cancel run", "run", true, "write"],
   ["github.rerun", "Re-run all jobs", "run", false, "write"],

@@ -16,14 +16,6 @@ it("rejects malformed or expanding YAML and unknown workflow operation propertie
   expect(() => workflowInputs("on: workflow_dispatch\njobs: []")).toThrow();
   expect(() => workflowInputs("jobs: {}\njobs: {}")).toThrow();
   expect(() =>
-    parseOperation("github.workflow_save", {
-      path: "../../private.txt",
-      branch: "main",
-      content: "secret",
-      message: "Edit",
-    }),
-  ).toThrow();
-  expect(() =>
     parseOperation("github.rerun", { runId: 123, attempt: 1, token: "do-not-accept" }),
   ).toThrow();
 });

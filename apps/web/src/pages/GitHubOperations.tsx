@@ -1421,90 +1421,13 @@ function WorkflowPanel({ item, read, prepare, button, can, revision }: PanelProp
       </section>
       {file.data?.content !== undefined && (
         <details className="gh-section">
-          <summary>Edit workflow YAML</summary>
-          <WorkflowEditor
-            key={`${file.data.sha}:${loadedRef}`}
-            prepare={prepare}
-            canSave={!file.loading && !file.error && can("github.workflow_save")}
-            canDelete={!file.loading && !file.error && can("github.workflow_delete")}
-            file={{ ...file.data, content: file.data.content, branch: loadedRef }}
-          />
+          <summary>View workflow YAML</summary>
+          <pre className="json" tabIndex={0} aria-label="Workflow YAML">
+            <code>{file.data.content}</code>
+          </pre>
         </details>
       )}
     </div>
-  );
-}
-function WorkflowEditor({
-  prepare,
-  file,
-  canSave,
-  canDelete,
-}: {
-  canSave: boolean;
-  canDelete: boolean;
-  prepare: Prepare;
-  file: { path: string; sha: string; content: string; branch: string };
-}) {
-  const { path, branch, sha } = file;
-  const [content, setContent] = useState(file.content),
-    [message, setMessage] = useState("Update workflow from Afe");
-  return (
-    <section className="card">
-      <h3>Edit workflow file</h3>
-      <form
-        className="form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!canSave) return;
-          void prepare("github.workflow_save", {
-            path,
-            branch,
-            content,
-            message,
-            sha,
-          });
-        }}
-      >
-        <Field label="Workflow file path">
-          <input value={path} readOnly required />
-        </Field>
-        <Field label="Target branch">
-          <input value={branch} readOnly required />
-        </Field>
-        <Field label="Commit message">
-          <input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            required
-            maxLength={500}
-          />
-        </Field>
-        <Field label="Workflow YAML">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={15}
-            required
-            spellCheck={false}
-          />
-        </Field>
-        <p className="muted">
-          Only workflow YAML is read or edited. Branch protection and GitHub workflow permissions
-          still apply.
-        </p>
-        <button className="btn" disabled={!canSave}>
-          Prepare workflow save
-        </button>
-        <button
-          type="button"
-          className="btn btn-danger"
-          disabled={!canDelete}
-          onClick={() => void prepare("github.workflow_delete", { path, branch, message, sha })}
-        >
-          Prepare workflow deletion
-        </button>
-      </form>
-    </section>
   );
 }
 function RunPanel({
