@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setFetch } from "../api/client.ts";
 import type { WorkflowProgress } from "../api/github-runs.ts";
-import { GitHubRunPanel } from "./GitHubRunPanel.tsx";
+import { GitHubRunPanel, ProgressState } from "./GitHubRunPanel.tsx";
 
 let snapshot: WorkflowProgress;
 let requests: string[];
@@ -165,4 +165,45 @@ describe("GitHub workflow progress panel", () => {
     expect(requests).toHaveLength(2);
     expect(screen.getByText("5. Deploy")).toBeTruthy();
   });
+});
+
+it.each([null, "unknown", "future_provider_state"])(
+  "does not invent a pending state for %s",
+  (status) => {
+    render(<ProgressState status={status} conclusion={null} />);
+    expect(screen.getByText("unknown")).toBeTruthy();
+    expect(screen.queryByText("pending")).toBeNull();
+  },
+);
+
+it("shows neutral loading on initial load and clears the previous event immediately", async () => {
+  let release!: (response: Response) => void;
+  setFetch(
+    () =>
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const view = render(<GitHubRunPanel eventId="a" />);
+  expect(screen.getByText("Loading workflow progress…")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Pause updates" })).toBeNull();
+  await act(async () => release(json(snapshot)));
+  expect(screen.getByText("5. Deploy")).toBeTruthy();
+  view.rerender(<GitHubRunPanel eventId="b" />);
+  expect(screen.queryByText("5. Deploy")).toBeNull();
+  expect(screen.getByText("Loading workflow progress…")).toBeTruthy();
+  await act(async () =>
+    release(
+      json({
+        ...snapshot,
+        run: {
+          ...snapshot.run,
+          name: "Other workflow",
+          status: "completed",
+          conclusion: "failure",
+        },
+      }),
+    ),
+  );
+  expect(screen.getByText("Other workflow")).toBeTruthy();
 });

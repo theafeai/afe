@@ -134,9 +134,9 @@ function EditableMappingPage() {
   useDocumentTitle("Mapping");
   const [tick, setTick] = useState(0);
   const reload = () => setTick((t) => t + 1);
-  const state = useAsync((s) => mappingApi.get(s), [tick]);
-  const unmapped = useAsync((s) => mappingApi.unmapped(s), [tick]);
-  const current = useAsync((s) => mappingApi.preview({ items: 20 }, s), [tick]);
+  const state = useAsync((s) => mappingApi.get(s), [], tick);
+  const unmapped = useAsync((s) => mappingApi.unmapped(s), [], tick);
+  const current = useAsync((s) => mappingApi.preview({ items: 20 }, s), [], tick);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const toast = useToast();
   const [actionError, setActionError] = useState<Error | null>(null);

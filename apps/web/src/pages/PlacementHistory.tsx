@@ -100,14 +100,15 @@ export function PlacementHistoryPanel({
   onTarget: (target: string | null) => void;
   onClose: () => void;
 }) {
-  const [meta, setMeta] = useState<HistoryResponse | null>(null);
-  const key = `${service}/${environment}/${target ?? ""}`;
+  const [savedMeta, setMeta] = useState<{ key: string; response: HistoryResponse } | null>(null);
+  const key = JSON.stringify([service, environment, target]);
+  const meta = savedMeta?.key === key ? savedMeta.response : null;
   const page = usePaged<HistoryItem>(
     key,
     () => new URLSearchParams(target ? { target } : {}),
     async (params, signal) => {
       const res = await environmentsApi.history(service, environment, params, signal);
-      setMeta(res);
+      if (!signal.aborted) setMeta({ key, response: res });
       return { items: res.items, nextCursor: res.nextCursor, snapshotSeq: res.window.asOfSeq };
     },
     HISTORY_PAGE_SIZE,
@@ -170,7 +171,8 @@ export function PlacementHistoryPanel({
           </select>
         </div>
       )}
-      {page.loading ? (
+      {page.loading && page.items.length > 0 && <Loading label="Refreshing placement history…" />}
+      {page.loading && page.items.length === 0 ? (
         <Loading label="Loading placement history…" />
       ) : page.error && page.items.length === 0 ? (
         <ErrorBox error={page.error} onRetry={page.reload} title="Could not load the history" />
@@ -187,14 +189,14 @@ export function PlacementHistoryPanel({
             ))}
           </ol>
           {page.error && (
-            <ErrorBox error={page.error} onRetry={page.loadMore} title="Could not load more" />
+            <ErrorBox error={page.error} onRetry={page.reload} title="Could not update history" />
           )}
           {page.hasMore && (
             <button
               type="button"
               className="btn btn-wide"
               onClick={page.loadMore}
-              disabled={page.loadingMore}
+              disabled={page.loading || page.loadingMore}
             >
               {page.loadingMore ? "Loading…" : "Load older placements"}
             </button>

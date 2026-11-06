@@ -254,6 +254,10 @@ Escape and cancellation are blocked during submission.
 
 - **Loading → error → empty → data.** Every data view handles all four, with
   `Loading`, `ErrorBox`, `Empty` and then the content.
+- **Refreshing resource data** retains valid content with a neutral loading indicator.
+  Treat changed resource dependencies as unresolved immediately; never render old
+  data under a new selection. Operation controls stay blocked while resource state
+  or capabilities are unresolved. See [loading-state behavior](loading-states.md).
 - **Empty states** say what the view will show and the next step, with a link
   or button to it. First-run screens (no connections yet) pass an `icon`.
   Filtered-to-nothing states suggest widening the filters.

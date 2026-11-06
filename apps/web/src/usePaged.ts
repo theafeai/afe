@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Page } from "./api/types.ts";
+import { useAsync } from "./components.tsx";
 
 export interface Paged<T> {
   items: T[];
@@ -11,81 +12,89 @@ export interface Paged<T> {
   reload: () => void;
 }
 
-/**
- * Cursor pagination (docs/api.md "Pagination"). The first page is fetched
- * whenever `key` changes; "load more" re-sends exactly the parameters of the
- * first page (a relative time range is resolved once, so the cursor's query
- * fingerprint stays the same) plus the cursor.
- */
+/** Cursor pages share the first request's parameters and lifetime. */
 export function usePaged<T>(
   key: string,
   makeParams: () => URLSearchParams,
   fetchPage: (params: URLSearchParams, signal: AbortSignal) => Promise<Page<T>>,
   pageSize = 50,
 ): Paged<T> {
-  const [items, setItems] = useState<T[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [tick, setTick] = useState(0);
-  const params = useRef<URLSearchParams>(new URLSearchParams());
-  const ctrl = useRef<AbortController | null>(null);
-  const makeRef = useRef(makeParams);
-  makeRef.current = makeParams;
+  const first = useAsync(
+    async (signal) => {
+      const params = makeParams();
+      params.set("limit", String(pageSize));
+      return { page: await fetchPage(params, signal), params };
+    },
+    [key, pageSize],
+  );
+  const [more, setMore] = useState<{
+    base: typeof first.data;
+    items: T[];
+    cursor: string | null;
+    loading: boolean;
+    error: Error | null;
+  } | null>(null);
+  const controller = useRef<AbortController | null>(null);
   const fetchRef = useRef(fetchPage);
   fetchRef.current = fetchPage;
-
+  // Refreshing or changing filters cancels pending pagination too, including
+  // transports which do not honour abort (their results are checked below).
   useEffect(() => {
-    ctrl.current?.abort();
-    const c = new AbortController();
-    ctrl.current = c;
-    const p = makeRef.current();
-    p.set("limit", String(pageSize));
-    params.current = p;
-    setLoading(true);
-    setError(null);
-    setItems([]);
-    setCursor(null);
-    fetchRef.current(p, c.signal).then(
-      (page) => {
-        if (c.signal.aborted) return;
-        setItems(page.items);
-        setCursor(page.nextCursor);
-        setLoading(false);
-      },
-      (err: unknown) => {
-        if (c.signal.aborted) return;
-        setError(err instanceof Error ? err : new Error(String(err)));
-        setLoading(false);
-      },
-    );
-    return () => c.abort();
-  }, [key, tick, pageSize]);
-
+    if (first.loading)
+      setMore((previous) => (previous?.loading ? { ...previous, loading: false } : previous));
+    return () => {
+      controller.current?.abort();
+      controller.current = null;
+    };
+  }, [key, pageSize, first.data, first.loading]);
+  const current = first.data && more?.base === first.data ? more : null;
+  const cursor = current ? current.cursor : (first.data?.page.nextCursor ?? null);
   const loadMore = useCallback(() => {
-    if (!cursor || loadingMore) return;
+    if (!first.data || first.loading || !cursor || controller.current) return;
+    const base = first.data;
     const c = new AbortController();
-    ctrl.current = c;
-    const p = new URLSearchParams(params.current);
-    p.set("cursor", cursor);
-    setLoadingMore(true);
-    setError(null);
-    fetchRef.current(p, c.signal).then(
+    controller.current = c;
+    const params = new URLSearchParams(base.params);
+    params.set("cursor", cursor);
+    setMore((previous) => ({
+      base,
+      items: previous?.base === base ? previous.items : [],
+      cursor,
+      loading: true,
+      error: null,
+    }));
+    fetchRef.current(params, c.signal).then(
       (page) => {
         if (c.signal.aborted) return;
-        setItems((prev) => [...prev, ...page.items]);
-        setCursor(page.nextCursor);
-        setLoadingMore(false);
+        controller.current = null;
+        setMore((previous) => ({
+          base,
+          items: [...(previous?.base === base ? previous.items : []), ...page.items],
+          cursor: page.nextCursor,
+          loading: false,
+          error: null,
+        }));
       },
-      (err: unknown) => {
+      (error: unknown) => {
         if (c.signal.aborted) return;
-        setError(err instanceof Error ? err : new Error(String(err)));
-        setLoadingMore(false);
+        controller.current = null;
+        setMore((previous) => ({
+          base,
+          items: previous?.base === base ? previous.items : [],
+          cursor,
+          loading: false,
+          error: error instanceof Error ? error : new Error(String(error)),
+        }));
       },
     );
-  }, [cursor, loadingMore]);
-
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { items, loading, loadingMore, error, hasMore: cursor !== null, loadMore, reload };
+  }, [first.data, first.loading, cursor]);
+  return {
+    items: [...(first.data?.page.items ?? []), ...(current?.items ?? [])],
+    loading: first.loading,
+    loadingMore: current?.loading ?? false,
+    error: first.error ?? current?.error ?? null,
+    hasMore: cursor !== null && !first.loading,
+    loadMore,
+    reload: first.reload,
+  };
 }

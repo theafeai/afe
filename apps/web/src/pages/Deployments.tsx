@@ -65,7 +65,8 @@ export function Deployments() {
         filters={filters}
         onChange={(f) => setParams(filtersToSearch(f), { replace: true })}
       />
-      {page.loading ? (
+      {page.loading && page.items.length > 0 && <Loading label="Refreshing deployments…" />}
+      {page.loading && page.items.length === 0 ? (
         <Loading label="Loading deployments…" />
       ) : page.error && page.items.length === 0 ? (
         <ErrorBox error={page.error} onRetry={page.reload} title="Could not load deployments" />
@@ -151,14 +152,18 @@ export function Deployments() {
             </table>
           </div>
           {page.error && (
-            <ErrorBox error={page.error} onRetry={page.loadMore} title="Could not load more" />
+            <ErrorBox
+              error={page.error}
+              onRetry={page.reload}
+              title="Could not update deployments"
+            />
           )}
           {page.hasMore && (
             <button
               type="button"
               className="btn btn-wide"
               onClick={page.loadMore}
-              disabled={page.loadingMore}
+              disabled={page.loading || page.loadingMore}
             >
               {page.loadingMore ? "Loading…" : "Load more"}
             </button>
