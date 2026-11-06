@@ -15,6 +15,10 @@ const labels: Record<GitHubRunAction, string> = {
   "github.rerun_failed": "Re-run failed jobs",
 };
 export function GitHubRunControls({ eventId }: { eventId: string }) {
+  return <RunControls key={eventId} eventId={eventId} />;
+}
+
+function RunControls({ eventId }: { eventId: string }) {
   const url = `/api/actions/github/events/${encodeURIComponent(eventId)}`;
   const { data, error, loading, reload } = useAsync(
     (s) => request<Controls>("GET", url, undefined, s),
@@ -30,7 +34,15 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
   );
   const submitting = useRef(false);
   async function execute() {
-    if (!selected || !data || submitting.current) return;
+    if (
+      !selected ||
+      !data ||
+      loading ||
+      error ||
+      submitting.current ||
+      !data.capabilities.some((c) => c.action === selected && c.enabled)
+    )
+      return;
     const action = selected,
       attempt = data.context.runAttempt;
     if (intent.current?.action !== action || intent.current.attempt !== attempt)
@@ -58,7 +70,7 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
   return (
     <section className="card" aria-label="GitHub run controls">
       <h2>GitHub run controls</h2>
-      {loading && <Loading label="Checking GitHub run…" />}
+      {loading && <Loading label={data ? "Refreshing GitHub run…" : "Checking GitHub run…"} />}
       {error && <ErrorBox error={error} onRetry={reload} />}
       {data && (
         <>
@@ -75,7 +87,8 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
               <span key={c.action}>
                 <button
                   className={c.action === CANCEL_ACTION ? "btn btn-danger" : "btn"}
-                  disabled={busy || !c.enabled}
+                  disabled={busy || loading || !!error || !c.enabled}
+                  aria-busy={loading}
                   onClick={() => {
                     setSelected(c.action);
                     setReceipt(null);
@@ -84,7 +97,7 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
                 >
                   {labels[c.action]}
                 </button>
-                {c.reason && <small className="muted"> {c.reason}</small>}
+                {!loading && c.reason && <small className="muted"> {c.reason}</small>}
               </span>
             ))}
           </div>
@@ -107,6 +120,7 @@ export function GitHubRunControls({ eventId }: { eventId: string }) {
               confirmLabel={labels[selected]}
               destructive={selected === CANCEL_ACTION}
               busy={busy}
+              confirmDisabled={loading || !!error}
               error={failure}
               onConfirm={() => void execute()}
               onCancel={() => {

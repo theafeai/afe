@@ -627,3 +627,13 @@ details.gh-section[open] > summary {
 .gh-repository-tabs .gh-tab[aria-pressed="true"] .icon {
   color: var(--on-accent);
 }
+
+/* Keep refresh messages from moving the selected resource. */
+.gh-check-status {
+  min-height: var(--control-h);
+  display: flex;
+  align-items: center;
+}
+.gh-check-status > .state {
+  margin: 0;
+}

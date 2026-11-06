@@ -1,0 +1,33 @@
+{
+  "evidence": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "rowY": 519.21875,
+      "refreshRowY": 519.21875,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "rowY": 519.21875,
+      "refreshRowY": 519.21875,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "rowY": 695.0625,
+      "refreshRowY": 695.0625,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "rowY": 695.0625,
+      "refreshRowY": 695.0625,
+      "overflow": false
+    }
+  ],
+  "errors": []
+}

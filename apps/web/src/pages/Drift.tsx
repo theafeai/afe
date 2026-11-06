@@ -4,7 +4,7 @@ import { ScopeNotice } from "../access.tsx";
  * (manual overrides, untracked deploys, unknown images, ambiguous
  * attribution, out-of-band changes), with filters, severity and evidence.
  */
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   DEFAULT_DRIFT_FILTERS,
   DRIFT_TYPES,
@@ -123,25 +123,61 @@ export function DriftPage() {
   const key = driftFiltersToSearch(filters).toString();
   const mapping = useAsync((s) => mappingApi.get(s).catch(() => null), []);
   const page = useAsync((s) => fetchDriftFindings(filters, undefined, s), [key]);
-  const [more, setMore] = useState<{ items: DriftFindingSummary[]; cursor: string | null }>({
-    items: [],
-    cursor: null,
-  });
+  const [more, setMore] = useState<{
+    base: typeof page.data;
+    items: DriftFindingSummary[];
+    cursor: string | null;
+    error: Error | null;
+  } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  useEffect(() => setMore({ items: [], cursor: page.data?.nextCursor ?? null }), [page.data]);
-  const items = [...(page.data?.findings ?? []), ...more.items];
+  const moreController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setLoadingMore(false);
+    return () => {
+      moreController.current?.abort();
+      moreController.current = null;
+    };
+  }, [key, page.data, page.loading]);
+  const currentMore = more?.base === page.data ? more : null;
+  const cursor = currentMore ? currentMore.cursor : page.data?.nextCursor;
+  const items = [...(page.data?.findings ?? []), ...(currentMore?.items ?? [])];
   const filtered =
     filters.type || filters.severity || filters.service || filters.environment
       ? true
       : filters.status !== DEFAULT_DRIFT_FILTERS.status;
 
   const loadMore = () => {
-    if (!more.cursor) return;
+    if (!cursor || page.loading || moreController.current) return;
+    const base = page.data;
+    const controller = new AbortController();
+    moreController.current = controller;
     setLoadingMore(true);
-    fetchDriftFindings(filters, more.cursor)
-      .then((p) => setMore((m) => ({ items: [...m.items, ...p.findings], cursor: p.nextCursor })))
-      .catch(() => {})
-      .finally(() => setLoadingMore(false));
+    setMore({ base, items: currentMore?.items ?? [], cursor, error: null });
+    fetchDriftFindings(filters, cursor, controller.signal)
+      .then((p) => {
+        if (!controller.signal.aborted)
+          setMore((m) => ({
+            base,
+            items: [...(m?.base === base ? m.items : []), ...p.findings],
+            cursor: p.nextCursor,
+            error: null,
+          }));
+      })
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted)
+          setMore((m) => ({
+            base,
+            items: m?.items ?? [],
+            cursor,
+            error: err instanceof Error ? err : new Error(String(err)),
+          }));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          moreController.current = null;
+          setLoadingMore(false);
+        }
+      });
   };
 
   return (
@@ -167,7 +203,8 @@ export function DriftPage() {
         mapping={mapping.data}
         onChange={(f) => setParams(driftFiltersToSearch(f), { replace: true })}
       />
-      {page.loading ? (
+      {page.loading && page.data && <Loading label="Refreshing drift findings…" />}
+      {page.loading && !page.data ? (
         <Loading label="Loading drift findings…" />
       ) : page.error ? (
         <ErrorBox error={page.error} onRetry={page.reload} title="Could not load drift findings" />
@@ -224,7 +261,14 @@ export function DriftPage() {
               </tbody>
             </table>
           </div>
-          {more.cursor && (
+          {currentMore?.error && (
+            <ErrorBox
+              error={currentMore.error}
+              onRetry={loadMore}
+              title="Could not load more findings"
+            />
+          )}
+          {cursor && (
             <p className="end">
               <button type="button" className="btn" onClick={loadMore} disabled={loadingMore}>
                 {loadingMore ? "Loading…" : "Load more"}

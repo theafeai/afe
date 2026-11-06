@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "./api/client.ts";
 import type { ConnectionWithHealth, HealthState, ObservationMethod } from "./api/types.ts";
 import { formatDateTime, formatRelative, humanize } from "./format.ts";
@@ -14,12 +14,24 @@ export interface AsyncState<T> {
   reload: () => void;
 }
 
-/** Runs `load` when `deps` change; aborts the previous request. */
+/** Resource changes clear data immediately; same-resource refreshes retain valid data. */
 export function useAsync<T>(
   load: (signal: AbortSignal) => Promise<T>,
   deps: readonly unknown[],
+  refreshKey?: unknown,
 ): AsyncState<T> {
-  const [state, setState] = useState<{ data: T | null; error: Error | null; loading: boolean }>({
+  const resource = useMemo(() => ({}), deps);
+  const [state, setState] = useState<{
+    resource: object;
+    tick: number;
+    refreshKey: unknown;
+    data: T | null;
+    error: Error | null;
+    loading: boolean;
+  }>({
+    resource,
+    tick: 0,
+    refreshKey,
     data: null,
     error: null,
     loading: true,
@@ -30,26 +42,44 @@ export function useAsync<T>(
 
   useEffect(() => {
     const ctrl = new AbortController();
-    setState((s) => ({ ...s, loading: true, error: null }));
+    setState((s) => ({
+      resource,
+      tick,
+      refreshKey,
+      data: s.resource === resource ? s.data : null,
+      loading: true,
+      error: null,
+    }));
     loadRef.current(ctrl.signal).then(
       (data) => {
-        if (!ctrl.signal.aborted) setState({ data, error: null, loading: false });
+        if (!ctrl.signal.aborted)
+          setState({ resource, tick, refreshKey, data, error: null, loading: false });
       },
       (error: unknown) => {
         if (ctrl.signal.aborted) return;
-        setState({
-          data: null,
+        setState((s) => ({
+          resource,
+          tick,
+          refreshKey,
+          // Do not retain data after access was revoked or the resource disappeared.
+          data: error instanceof ApiError && [401, 403, 404].includes(error.status) ? null : s.data,
           error: error instanceof Error ? error : new Error(String(error)),
           loading: false,
-        });
+        }));
       },
     );
     return () => ctrl.abort();
     // `load` is read through a ref; `deps` decide when to reload.
-  }, [...deps, tick]);
+  }, [resource, tick, refreshKey]);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { ...state, reload };
+  if (state.resource !== resource) return { data: null, error: null, loading: true, reload };
+  return {
+    data: state.data,
+    error: state.tick === tick && Object.is(state.refreshKey, refreshKey) ? state.error : null,
+    loading: state.loading || state.tick !== tick || !Object.is(state.refreshKey, refreshKey),
+    reload,
+  };
 }
 
 export function useDocumentTitle(title: string) {

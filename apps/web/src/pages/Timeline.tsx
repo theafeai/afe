@@ -230,7 +230,8 @@ export function Timeline() {
       <FilterBar filters={filters} onChange={setFilters} />
       {highlight.banner}
 
-      {page.loading ? (
+      {page.loading && page.items.length > 0 && <Loading label="Refreshing events…" />}
+      {page.loading && page.items.length === 0 ? (
         <Loading label="Loading events…" />
       ) : page.error && page.items.length === 0 ? (
         <ErrorBox error={page.error} onRetry={page.reload} title="Could not load events" />
@@ -265,14 +266,14 @@ export function Timeline() {
         <>
           <EventList items={page.items} decorate={highlight.decorate} />
           {page.error && (
-            <ErrorBox error={page.error} onRetry={page.loadMore} title="Could not load more" />
+            <ErrorBox error={page.error} onRetry={page.reload} title="Could not update events" />
           )}
           {page.hasMore ? (
             <button
               type="button"
               className="btn btn-wide"
               onClick={page.loadMore}
-              disabled={page.loadingMore}
+              disabled={page.loading || page.loadingMore}
             >
               {page.loadingMore ? "Loading…" : "Load more"}
             </button>

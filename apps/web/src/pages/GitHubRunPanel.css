@@ -4,3 +4,13 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Polling must not move the progress table while a request is in flight. */
+.github-run-check {
+  min-height: var(--control-h);
+  display: flex;
+  align-items: center;
+}
+.github-run-check > .state {
+  margin: 0;
+}
