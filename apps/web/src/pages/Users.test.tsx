@@ -445,6 +445,9 @@ it("names the user in save feedback and keeps selection fixed until the save com
   });
   fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
   expect(bobForm.getAttribute("aria-busy")).toBe("true");
+  expect((screen.getByRole("button", { name: "Tool GitHub" }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
   expect((screen.getByRole("button", { name: "alice" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "alice" }));
   expect(screen.getByRole("heading", { name: "bob", level: 2 })).toBeTruthy();
@@ -612,4 +615,125 @@ it("lets administrators layer optional GitHub restrictions on Source without dup
     custom: [],
     denied: [{ resource: "repository:acme/app", action: "github.environment_delete" }],
   });
+});
+
+it("searches and pages users without changing the selected editing context", async () => {
+  const users = Array.from({ length: 23 }, (_, i) => ({
+    id: `u${i}`,
+    username: `user-${String(i).padStart(2, "0")}`,
+    disabled: false,
+    email: i === 22 ? "Last.Person@example.com" : null,
+  }));
+  setFetch(async (url, init) => {
+    expect(init?.method ?? "GET").toBe("GET");
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email") return json({ enabled: false });
+    if (url === "/api/admin/users") return json({ users });
+    if (url.endsWith("/permissions")) return json({ tools: sourceTools("none") });
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "user-00" }));
+  await screen.findByRole("form", { name: "GitHub permissions for user-00" });
+  const list = screen.getByRole("list", { name: "User accounts" });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(10);
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(within(list).getByRole("button", { name: "user-10" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "user-00", level: 2 })).toBeTruthy();
+  const search = screen.getByRole("searchbox", { name: "Search users" });
+  fireEvent.change(search, { target: { value: "  USER-22 " } });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(1);
+  fireEvent.click(within(list).getByRole("button", { name: "user-22" }));
+  await screen.findByRole("form", { name: "GitHub permissions for user-22" });
+  fireEvent.change(search, { target: { value: "LAST.PERSON" } });
+  expect(within(list).getByRole("button", { name: "user-22" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  fireEvent.change(search, { target: { value: "no-such-user" } });
+  expect(screen.getByText("No matching users")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "user-22", level: 2 })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Clear user search" }));
+  expect(screen.getByRole("button", { name: "user-00" })).toBeTruthy();
+});
+
+it("searches API-provided tools and discards drafts while retaining successful saves", async () => {
+  const writes: string[] = [];
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email") return json({ enabled: false });
+    if (url === "/api/admin/users")
+      return json({ users: [{ id: "u1", username: "alice", disabled: false }] });
+    if (init?.method === "PUT") {
+      writes.push(url);
+      return json({ ok: true });
+    }
+    if (url.endsWith("/permissions"))
+      return json({
+        tools: {
+          ...sourceTools("none"),
+          newintegration: { mode: "source", custom: [] },
+        },
+      });
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+  await screen.findByRole("form", { name: "GitHub permissions for alice" });
+  const trigger = screen.getByRole("button", { name: "Tool GitHub" });
+  fireEvent.change(screen.getByLabelText("Permission mode"), { target: { value: "source" } });
+  fireEvent.click(trigger);
+  const search = screen.getByRole("searchbox", { name: "Search tools" });
+  expect(document.activeElement).toBe(search);
+  fireEvent.change(search, { target: { value: "missing-tool" } });
+  expect(screen.getByText("No matching tools")).toBeTruthy();
+  fireEvent.change(search, { target: { value: " NEWINTEGRATION " } });
+  fireEvent.click(screen.getByRole("button", { name: "newintegration" }));
+  expect(document.activeElement).toBe(trigger);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("form", { name: "GitHub permissions for alice" })).toBeNull();
+  expect((screen.getByLabelText("Permission mode") as HTMLSelectElement).value).toBe("source");
+  fireEvent.click(screen.getByRole("button", { name: "Tool newintegration" }));
+  fireEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  expect((screen.getByLabelText("Permission mode") as HTMLSelectElement).value).toBe("none");
+  expect(screen.queryByText("Unsaved changes")).toBeNull();
+  expect(writes).toEqual([]);
+  fireEvent.change(screen.getByLabelText("Permission mode"), { target: { value: "source" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save GitHub permissions" }));
+  await screen.findByText("Saved GitHub permissions for alice.");
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "Vercel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Tool Vercel" }));
+  fireEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  expect((screen.getByLabelText("Permission mode") as HTMLSelectElement).value).toBe("source");
+  expect(writes).toEqual(["/api/admin/users/u1/permissions/github"]);
+  fireEvent.click(trigger);
+  fireEvent.keyDown(screen.getByRole("searchbox", { name: "Search tools" }), { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger);
+  fireEvent.mouseDown(screen.getByRole("heading", { name: "alice", level: 2 }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("shows an actionable empty state when no tool permissions are returned", async () => {
+  setFetch(async (url) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/admin/email") return json({ enabled: false });
+    if (url === "/api/admin/users")
+      return json({ users: [{ id: "u1", username: "alice", disabled: false }] });
+    if (url.endsWith("/permissions")) return json({ tools: {} });
+    throw new Error(`Unexpected API call: ${url}`);
+  });
+  window.history.replaceState(null, "", "/users");
+  render(<App />);
+  expect(screen.queryByRole("button", { name: /^Tool / })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "alice" }));
+  await screen.findByText("No tools available");
+  expect(screen.getByRole("button", { name: "Reload tools" })).toBeTruthy();
+  expect(screen.queryByLabelText("Permission mode")).toBeNull();
 });
