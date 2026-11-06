@@ -24,7 +24,7 @@ type User = {
   email?: string | null;
   deletionProtection?: UserDeletionProtection;
 };
-const TOOLS = ["github", "vercel", "argocd", "terraform"];
+const USER_PAGE_SIZE = 10;
 const MODES: Record<string, { label: string; help: string }> = {
   none: {
     label: "No access",
@@ -55,6 +55,8 @@ export function UsersPage() {
   const [userEmail, setUserEmail] = useState("");
   const [invite, setInvite] = useState(false);
   const [username, setUsername] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+  const [requestedPage, setUserPage] = useState(0);
   const [selected, setSelected] = useState<User | null>(null);
   const [token, setToken] = useState<{ value: string; username: string } | null>(null);
   const [failure, setFailure] = useState<Error | null>(null);
@@ -68,6 +70,13 @@ export function UsersPage() {
   const focusUserList = useRef(false);
   const userHeading = useRef<HTMLHeadingElement>(null);
   const selectedId = selected?.id;
+  const query = userSearch.trim().toLowerCase();
+  const matches = (data?.users ?? []).filter((u) =>
+    `${u.username} ${u.email ?? ""}`.toLowerCase().includes(query),
+  );
+  const pages = Math.max(1, Math.ceil(matches.length / USER_PAGE_SIZE));
+  const page = Math.min(requestedPage, pages - 1);
+  const visibleUsers = matches.slice(page * USER_PAGE_SIZE, (page + 1) * USER_PAGE_SIZE);
   useEffect(() => {
     // Run after the modal's cleanup restores focus to its former trigger.
     if (focusUserList.current && !selectedId) {
@@ -209,6 +218,19 @@ export function UsersPage() {
             count={!loading && !error ? data?.users.length : undefined}
             hint="Select a user to manage access and credentials."
           />
+          <div className="field users-search">
+            <label htmlFor="users-search">Search users</label>
+            <input
+              id="users-search"
+              type="search"
+              placeholder="Search by username or email"
+              value={userSearch}
+              onChange={(event) => {
+                setUserSearch(event.target.value);
+                setUserPage(0);
+              }}
+            />
+          </div>
           {loading ? (
             <Loading label="Loading users…" />
           ) : error ? (
@@ -217,9 +239,16 @@ export function UsersPage() {
             <Empty title="No users yet" icon={icons.users}>
               <p>Create a user above to give someone access to Afe.</p>
             </Empty>
+          ) : !matches.length ? (
+            <Empty title="No matching users">
+              <p>Try another username or email.</p>
+              <button className="btn btn-sm" onClick={() => setUserSearch("")}>
+                Clear user search
+              </button>
+            </Empty>
           ) : (
             <ul className="entity-list users-list" aria-label="User accounts">
-              {data.users.map((u) => (
+              {visibleUsers.map((u) => (
                 <li key={u.id}>
                   <button
                     type="button"
@@ -251,6 +280,33 @@ export function UsersPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {!loading && !error && !!data?.users.length && (pages > 1 || query) && (
+            <div className="users-pager">
+              <span className="small muted" role="status">
+                {matches.length ? page * USER_PAGE_SIZE + 1 : 0}–
+                {Math.min((page + 1) * USER_PAGE_SIZE, matches.length)} of {matches.length} users
+                {query ? ` (${data.users.length} total)` : ""}
+              </span>
+              {pages > 1 && (
+                <nav className="button-row" aria-label="User pages">
+                  <button
+                    className="btn btn-sm"
+                    disabled={page === 0}
+                    onClick={() => setUserPage(page - 1)}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    disabled={page === pages - 1}
+                    onClick={() => setUserPage(page + 1)}
+                  >
+                    Next
+                  </button>
+                </nav>
+              )}
+            </div>
           )}
         </section>
         <section className="card users-detail" id="user-details" aria-labelledby="user-heading">
@@ -417,13 +473,17 @@ function ToolPermissions({
       ),
     [user.id],
   );
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
+  const [savedPolicies, setSavedPolicies] = useState<Record<string, Policy>>({});
+  const tools = Object.keys(data?.tools ?? {});
+  const tool = selectedTool && tools.includes(selectedTool) ? selectedTool : tools[0];
   return (
     <section className="users-permissions" aria-labelledby="tool-permissions-title">
       <div>
         <h3 id="tool-permissions-title">Tool permissions</h3>
         <p className="small muted">
           Choose which linked tool accounts {user.username} can use. Each tool saves separately.
-          Switching users discards unsaved changes.
+          Switching users or tools discards unsaved changes.
         </p>
       </div>
       {loading ? (
@@ -434,20 +494,157 @@ function ToolPermissions({
           error={error}
           onRetry={reload}
         />
+      ) : !tool ? (
+        <Empty title="No tools available">
+          <p>No tool permissions are available for {user.username}. Try loading them again.</p>
+          <button className="btn btn-sm" onClick={reload}>
+            Reload tools
+          </button>
+        </Empty>
       ) : (
-        data &&
-        TOOLS.map((tool) => (
+        <>
+          <ToolPicker
+            tools={tools}
+            selected={tool}
+            disabled={disabled}
+            onSelect={setSelectedTool}
+          />
           <ToolPermissionEditor
             key={tool}
             user={user}
             tool={tool}
-            policy={data.tools[tool]!}
+            policy={savedPolicies[tool] ?? data!.tools[tool]!}
             disabled={disabled}
             onSaving={onSaving}
+            onSaved={(policy) => setSavedPolicies((saved) => ({ ...saved, [tool]: policy }))}
           />
-        ))
+        </>
       )}
     </section>
+  );
+}
+
+/** Search popover follows the repository picker pattern (ADR 0015). */
+function ToolPicker({
+  tools,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  tools: string[];
+  selected: string;
+  disabled: boolean;
+  onSelect: (tool: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const picker = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const query = search.trim().toLowerCase();
+  const matches = tools.filter((tool) =>
+    `${toolLabel(tool)} ${tool}`.toLowerCase().includes(query),
+  );
+  useEffect(() => {
+    if (!open) return;
+    input.current?.focus();
+    const away = (event: MouseEvent) => {
+      if (!picker.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  function close() {
+    setOpen(false);
+    setSearch("");
+    trigger.current?.focus();
+  }
+  return (
+    <div
+      className="users-tool-picker"
+      ref={picker}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+          setSearch("");
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="btn users-tool-trigger"
+        ref={trigger}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls="users-tool-menu"
+        disabled={disabled}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        <span className="muted">Tool</span>
+        <ToolMark source={selected} />
+        <strong>{toolLabel(selected)}</strong>
+        {icons.chevrons}
+      </button>
+      {open && (
+        <div
+          className="users-tool-menu"
+          id="users-tool-menu"
+          role="dialog"
+          aria-label="Choose a tool"
+        >
+          <label className="field">
+            <span>Search tools</span>
+            <input
+              type="search"
+              value={search}
+              ref={input}
+              placeholder="Search by tool name"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          <p className="small muted" role="status">
+            {matches.length} of {tools.length} tools
+          </p>
+          {matches.length ? (
+            <ul className="entity-list users-tool-options" aria-label="Tool results">
+              {matches.map((tool) => (
+                <li key={tool}>
+                  <button
+                    type="button"
+                    className="users-row"
+                    aria-pressed={tool === selected}
+                    disabled={disabled}
+                    onClick={() => {
+                      onSelect(tool);
+                      close();
+                    }}
+                  >
+                    <span>
+                      <ToolMark source={tool} /> {toolLabel(tool)}
+                    </span>
+                    {tool === selected && icons.check}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty title="No matching tools">
+              <p>Try another tool name.</p>
+            </Empty>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -457,12 +654,14 @@ function ToolPermissionEditor({
   policy,
   disabled,
   onSaving,
+  onSaved,
 }: {
   user: User;
   tool: string;
   policy: Policy;
   disabled: boolean;
   onSaving: (saving: boolean) => void;
+  onSaved: (policy: Policy) => void;
 }) {
   const name = toolLabel(tool);
   const [mode, setMode] = useState(policy.mode);
@@ -482,7 +681,7 @@ function ToolPermissionEditor({
     onSaving(true);
     setError(null);
     try {
-      await request("PUT", `/api/admin/users/${user.id}/permissions/${tool}`, {
+      const nextPolicy: Policy = {
         mode,
         ...(tool === "github"
           ? {
@@ -491,13 +690,15 @@ function ToolPermissionEditor({
                 .map((s) => s.trim())
                 .filter(Boolean)
                 .map((line) => {
-                  const [resource, action = ""] = line.split(/\s+/);
+                  const [resource = "", action = ""] = line.split(/\s+/);
                   return { resource, action };
                 }),
             }
           : {}),
         custom: [],
-      });
+      };
+      await request("PUT", `/api/admin/users/${user.id}/permissions/${tool}`, nextPolicy);
+      onSaved(nextPolicy);
       setSaved({ mode, restrictions });
       toast(`Saved ${name} permissions for ${user.username}.`);
     } catch (e) {

@@ -22,7 +22,8 @@ permissions:
 jobs:
   terraform:
     name: Real Terraform lifecycle through Afe
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 supports Ubuntu 24.04; ubuntu-latest may select a newer OS.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:

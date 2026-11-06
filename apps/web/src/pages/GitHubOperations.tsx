@@ -88,7 +88,9 @@ function OperationButton({
   params,
   prepare,
   label,
+  checking,
 }: {
+  checking: boolean;
   label?: string;
   action: GitHubOperation;
   capabilities: GitHubOperationCapability[];
@@ -101,13 +103,14 @@ function OperationButton({
     <span className="gh-op">
       <button
         className={c.destructive ? "btn btn-danger" : "btn"}
-        disabled={!c.enabled}
-        title={c.reason ?? undefined}
+        disabled={checking || !c.enabled}
+        aria-busy={checking}
+        title={checking ? "Checking operation availability…" : (c.reason ?? undefined)}
         onClick={() => void prepare(action, params)}
       >
         {label ?? c.label}
       </button>
-      {!c.enabled && c.reason && <small className="gh-op-reason">{c.reason}</small>}
+      {!checking && !c.enabled && c.reason && <small className="gh-op-reason">{c.reason}</small>}
     </span>
   );
 }
@@ -599,11 +602,13 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             ? { workflowId: String(selected.id) }
             : {},
       ),
-    [root, revision, tab, selected?.id],
+    [root, tab, selected?.id],
+    revision,
   );
-  const list = useAsync(() => read<Page>(tab, { page: String(page) }), [root, tab, page, revision]);
+  const list = useAsync(() => read<Page>(tab, { page: String(page) }), [root, tab, page], revision);
+  const checking = caps.loading || !!caps.error || !caps.data;
   const can = (action: GitHubOperation) =>
-    caps.data?.items.find((c) => c.action === action)?.enabled ?? false;
+    !checking && (caps.data?.items.find((c) => c.action === action)?.enabled ?? false);
   const label = (action: string) =>
     caps.data?.items.find((c) => c.action === action)?.label ?? humanize(action);
   const refresh = () => setRevision((r) => r + 1);
@@ -613,7 +618,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     setSelected(null);
   };
   async function prepare(action: GitHubOperation, params: GitHubOperationParams) {
-    if (sending.current) return;
+    if (sending.current || !can(action)) return;
     sending.current = true;
     setBusy(true);
     setError(null);
@@ -635,7 +640,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
     }
   }
   async function execute() {
-    if (!pending || sending.current) return;
+    if (!pending || sending.current || !can(pending.preview.action)) return;
     sending.current = true;
     setBusy(true);
     setError(null);
@@ -687,12 +692,18 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       setBusy(false);
     }
   }
-  const button = (action: GitHubOperation, params: GitHubOperationParams, label?: string) => (
+  const button = (
+    action: GitHubOperation,
+    params: GitHubOperationParams,
+    label?: string,
+    unresolved = false,
+  ) => (
     <OperationButton
       action={action}
       label={label}
       params={params}
-      capabilities={caps.data?.items ?? []}
+      capabilities={caps.error ? [] : (caps.data?.items ?? [])}
+      checking={checking || busy || unresolved}
       prepare={prepare}
     />
   );
@@ -705,6 +716,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             key={item.id}
             item={item}
             read={read}
+            revision={revision}
             prepare={prepare}
             button={button}
             can={can}
@@ -713,9 +725,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       case "runs":
         return (
           <RunPanel
-            key={`${item.id}:${revision}`}
+            key={item.id}
             item={item}
             read={read}
+            revision={revision}
             button={button}
             can={can}
             download={(kind, id, attempt) =>
@@ -726,9 +739,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       case "deployments":
         return (
           <DeploymentPanel
-            key={`${item.id}:${revision}`}
+            key={item.id}
             item={item}
             read={read}
+            revision={revision}
             prepare={prepare}
             button={button}
             can={can}
@@ -737,9 +751,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       case "environments":
         return (
           <EnvironmentPanel
-            key={`${item.id}:${revision}`}
+            key={item.id}
             item={item}
             read={read}
+            revision={revision}
             prepare={prepare}
             button={button}
             can={can}
@@ -814,7 +829,11 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             >
               Open on GitHub
             </a>
-            <button className="btn" disabled={busy} onClick={refresh}>
+            <button
+              className="btn"
+              disabled={busy || list.loading || caps.loading}
+              onClick={refresh}
+            >
               Refresh GitHub state
             </button>
           </div>
@@ -833,7 +852,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
         </div>
       </section>
       <div>
-        {caps.error && <ErrorBox error={caps.error} />}
+        <div className="gh-check-status">
+          {caps.loading && <Loading label="Checking operation availability…" />}
+        </div>
+        {caps.error && <ErrorBox error={caps.error} onRetry={caps.reload} />}
         {error && !review && !recovery && <ErrorBox error={error} />}
         {receipt && (
           <section
@@ -879,7 +901,7 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
             destructive={caps.data?.items.find((c) => c.action === review.action)?.destructive}
             busy={busy}
             pendingLabel={pending ? "Submitting…" : "Preparing operation…"}
-            confirmDisabled={!pending}
+            confirmDisabled={!pending || checking}
             error={error}
             onConfirm={() => void execute()}
             onCancel={() => {
@@ -981,14 +1003,21 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       <section className="gh-list-section" aria-label={tabLabel}>
         <div className="gh-list-head">
           <h2>{tabLabel}</h2>
-          {list.data && list.data.items.length > 0 && (
-            <span className="small muted">
-              {list.data.items.length} on page {page}
-              {list.data.hasMore ? ", more available" : ""}
+          {list.loading && list.data ? (
+            <span className="small muted" role="status">
+              Refreshing GitHub state…
             </span>
+          ) : (
+            list.data &&
+            list.data.items.length > 0 && (
+              <span className="small muted">
+                {list.data.items.length} on page {page}
+                {list.data.hasMore ? ", more available" : ""}
+              </span>
+            )
           )}
         </div>
-        {list.loading && <Loading label="Loading GitHub state…" />}
+        {list.loading && !list.data && <Loading label="Loading GitHub state…" />}
         {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
         {tab === "workflows" &&
           list.data &&
@@ -1098,9 +1127,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       {tab === "deployments" && !selected && (
         <CreatePanel id="gh-create-deployment" title="Create deployment" action="New deployment">
           <DeploymentPanel
-            key={`new:${revision}`}
+            key="new"
             item={null}
             read={read}
+            revision={revision}
             prepare={prepare}
             button={button}
             can={can}
@@ -1110,9 +1140,10 @@ function GitHubWorkspace({ scope }: { scope: GitHubRepositoryChoice }) {
       {tab === "environments" && !selected && (
         <CreatePanel id="gh-create-environment" title="Create environment" action="New environment">
           <EnvironmentPanel
-            key={`new:${revision}`}
+            key="new"
             item={null}
             read={read}
+            revision={revision}
             prepare={prepare}
             button={button}
             can={can}
@@ -1169,23 +1200,36 @@ function CreatePanel({
 }
 type PanelProps = {
   item: Item;
+  revision: number;
   read: Reader;
   prepare: Prepare;
-  button: (a: GitHubOperation, p: GitHubOperationParams, label?: string) => React.ReactNode;
+  button: (
+    a: GitHubOperation,
+    p: GitHubOperationParams,
+    label?: string,
+    unresolved?: boolean,
+  ) => React.ReactNode;
   can: (a: GitHubOperation) => boolean;
 };
-function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
+function WorkflowPanel({ item, read, prepare, button, can, revision }: PanelProps) {
   const [ref, setRef] = useState("main"),
     [loadedRef, setLoadedRef] = useState("main"),
     [inputs, setInputs] = useState<Record<string, string | boolean | number>>({});
   const [refPage, setRefPage] = useState(1);
-  const refs = useAsync(async () => {
-    const [branches, tags] = await Promise.all([
-      read<Page>("branches", { page: String(refPage) }),
-      read<Page>("tags", { page: String(refPage) }),
-    ]);
-    return { items: [...branches.items, ...tags.items], hasMore: branches.hasMore || tags.hasMore };
-  }, [refPage]);
+  const refs = useAsync(
+    async () => {
+      const [branches, tags] = await Promise.all([
+        read<Page>("branches", { page: String(refPage) }),
+        read<Page>("tags", { page: String(refPage) }),
+      ]);
+      return {
+        items: [...branches.items, ...tags.items],
+        hasMore: branches.hasMore || tags.hasMore,
+      };
+    },
+    [refPage],
+    revision,
+  );
   const file = useAsync(
     () =>
       read<{
@@ -1196,8 +1240,9 @@ function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
         inputs: GitHubDispatchInput[];
       }>("workflow_file", { id: String(item.id), ref: loadedRef }),
     [item.id, loadedRef],
+    revision,
   );
-  const environments = useAsync(() => read<Page>("environments"), [item.id]);
+  const environments = useAsync(() => read<Page>("environments"), [item.id], revision);
   return (
     <div className="gh-detail" role="region" aria-label={item.name ?? "Workflow"}>
       <div className="gh-detail-head">
@@ -1257,13 +1302,26 @@ function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
           </div>
         </form>
         {refs.error && <ErrorBox error={refs.error} />}
-        {file.loading && <Loading />}
+        {refs.loading && <Loading label="Loading branches and tags…" />}
+        {environments.loading && <Loading label="Loading environments…" />}
+        {environments.error && (
+          <ErrorBox error={environments.error} onRetry={environments.reload} />
+        )}
+        {file.loading && <Loading label="Loading workflow inputs…" />}
         {file.error && <ErrorBox error={file.error} onRetry={file.reload} />}
         {file.data && (
           <form
             className="form"
             onSubmit={(e) => {
               e.preventDefault();
+              if (
+                file.loading ||
+                file.error ||
+                !file.data?.dispatchable ||
+                environments.loading ||
+                environments.error
+              )
+                return;
               void prepare("github.dispatch", {
                 workflowId: item.id,
                 ref: loadedRef,
@@ -1340,7 +1398,14 @@ function WorkflowPanel({ item, read, prepare, button, can }: PanelProps) {
             <div className="toolbar">
               <button
                 className="btn btn-primary"
-                disabled={!can("github.dispatch") || !file.data.dispatchable}
+                disabled={
+                  !can("github.dispatch") ||
+                  file.loading ||
+                  !!file.error ||
+                  !file.data.dispatchable ||
+                  environments.loading ||
+                  !!environments.error
+                }
               >
                 Prepare dispatch
               </button>
@@ -1370,43 +1435,85 @@ function RunPanel({
   read,
   button,
   download,
+  revision,
 }: Omit<PanelProps, "prepare"> & {
   download: (kind: string, id: number, attempt?: number) => string;
 }) {
-  const run = useAsync(() => read<{ item: Item }>("run", { id: String(item.id) }), [item.id]);
+  const run = useAsync(
+    () => read<{ item: Item | null }>("run", { id: String(item.id) }),
+    [item.id],
+    revision,
+  );
   const current = run.data?.item ?? item;
-  const [attempt, setAttempt] = useState(item.run_attempt ?? 1),
+  const [attempt, setAttempt] = useState<number | null>(item.run_attempt ?? null),
     [envIds, setEnvIds] = useState<number[]>([]),
     [comment, setComment] = useState("");
   const [jobPage, setJobPage] = useState(1);
+  useEffect(() => {
+    if (attempt === null && run.data?.item?.run_attempt !== undefined)
+      setAttempt(run.data.item.run_attempt);
+  }, [attempt, run.data]);
   const jobs = useAsync(
     () =>
-      read<Page>("jobs", {
-        runId: String(item.id),
-        attempt: String(attempt),
-        page: String(jobPage),
-      }),
+      attempt === null
+        ? Promise.resolve({ items: [], page: 1, hasMore: false })
+        : read<Page>("jobs", {
+            runId: String(item.id),
+            attempt: String(attempt),
+            page: String(jobPage),
+          }),
     [item.id, attempt, jobPage],
+    revision,
   );
-  const pending = useAsync(() => read<Page>("pending", { runId: String(item.id) }), [item.id]);
+  const pending = useAsync(
+    () => read<Page>("pending", { runId: String(item.id) }),
+    [item.id],
+    revision,
+  );
   const archives = useAsync(
     () =>
-      read<{ items: GitHubOperationCapability[] }>("capabilities", {
-        runId: String(item.id),
-        attempt: String(attempt),
-      }),
+      attempt === null
+        ? Promise.resolve({ items: [] })
+        : read<{ items: GitHubOperationCapability[] }>("capabilities", {
+            runId: String(item.id),
+            attempt: String(attempt),
+          }),
     [item.id, attempt],
+    revision,
   );
   const logCapability = archives.data?.items.find((c) => c.action === "github.logs_download");
-  const params = { runId: item.id, attempt: current.run_attempt ?? 1 };
+  const selectedEnvIds = envIds.filter((id) =>
+    pending.data?.items.some(
+      (p) =>
+        (typeof p.environment === "object" ? p.environment.id : p.id) === id &&
+        p.current_user_can_approve,
+    ),
+  );
+  const params = { runId: item.id, attempt: current.run_attempt };
+  const runReady = !run.error && !!run.data?.item && current.run_attempt !== undefined;
+  const runButton: PanelProps["button"] = (action, params, label) =>
+    button(action, params, label, run.loading);
   return (
     <div className="gh-detail" aria-label={`Run ${item.id}`} role="region">
-      {run.error && <ErrorBox error={run.error} />}
+      <div className="gh-check-status">
+        {run.loading && (
+          <Loading label={run.data ? "Refreshing run details…" : "Loading run details…"} />
+        )}
+      </div>
+      {run.error && <ErrorBox error={run.error} onRetry={run.reload} />}
+      {!run.loading && !run.error && !run.data?.item && (
+        <Empty title="Run details unavailable">
+          <p>Refresh GitHub state or select another run.</p>
+        </Empty>
+      )}
       <div className="gh-detail-head">
         <KeyValue
           items={[
             ["Status", <RunState key="s" item={current} />],
-            ["Current attempt", String(current.run_attempt ?? 1)],
+            [
+              "Current attempt",
+              current.run_attempt === undefined ? "Not reported" : String(current.run_attempt),
+            ],
             ["Branch", current.head_branch],
             ["Commit", <ShortSha key="c" sha={current.head_sha} />],
             ["Trigger", current.event && humanize(current.event)],
@@ -1420,13 +1527,15 @@ function RunPanel({
       </div>
       <section className="gh-section" aria-labelledby={`run-${item.id}-actions`}>
         <h3 id={`run-${item.id}-actions`}>Run actions</h3>
-        <div className="toolbar gh-ops">
-          {button("github.cancel", params)}
-          {button("github.force_cancel", params)}
-          {button("github.rerun", { ...params, enableDebugLogging: false })}
-          {button("github.rerun_failed", { ...params, enableDebugLogging: false })}
-          {button("github.approve_run", params)}
-        </div>
+        {runReady && (
+          <div className="toolbar gh-ops">
+            {runButton("github.cancel", params)}
+            {runButton("github.force_cancel", params)}
+            {runButton("github.rerun", { ...params, enableDebugLogging: false })}
+            {runButton("github.rerun_failed", { ...params, enableDebugLogging: false })}
+            {runButton("github.approve_run", params)}
+          </div>
+        )}
       </section>
       <section className="gh-section" aria-labelledby={`run-${item.id}-jobs`}>
         <div className="gh-section-head">
@@ -1438,16 +1547,17 @@ function RunPanel({
                 type="number"
                 aria-label="Inspect log/job attempt"
                 min={1}
-                max={current.run_attempt ?? 1}
-                value={attempt}
+                max={current.run_attempt}
+                value={attempt ?? ""}
+                disabled={!runReady || run.loading}
                 onChange={(e) => {
                   setAttempt(Number(e.target.value));
                   setJobPage(1);
                 }}
               />
             </label>
-            {archives.data?.items.find((c) => c.action === "github.logs_download")?.enabled && (
-              <a className="btn" href={download("logs", item.id, attempt)}>
+            {!archives.loading && !archives.error && logCapability?.enabled && (
+              <a className="btn" href={download("logs", item.id, attempt ?? undefined)}>
                 Download this attempt's archived logs
               </a>
             )}
@@ -1457,17 +1567,22 @@ function RunPanel({
           Open a job’s logs to inspect its completed output. Logs may take a moment to become
           available after completion.
         </p>
-        {archives.loading && <Loading label="Checking log access…" />}
+        <div className="gh-check-status">
+          {archives.loading && <Loading label="Checking log access…" />}
+        </div>
         {archives.error && <ErrorBox error={archives.error} onRetry={archives.reload} />}
-        {logCapability && !logCapability.enabled && (
+        {!archives.loading && logCapability && !logCapability.enabled && (
           <p className="callout" role="note">
             Logs unavailable: {logCapability.reason}
           </p>
         )}
-        {jobs.loading && <Loading />}
+        {attempt === null && <Loading label="Waiting for the run attempt…" />}
+        {jobs.loading && !jobs.data && <Loading label="Loading jobs…" />}
         {jobs.error && <ErrorBox error={jobs.error} onRetry={jobs.reload} />}
-        {jobs.data && !jobs.data.items.length && <Empty title="No jobs available" />}
-        {!jobs.loading && jobs.data && jobs.data.items.length > 0 && (
+        {attempt !== null && jobs.data && !jobs.data.items.length && (
+          <Empty title="No jobs available" />
+        )}
+        {attempt !== null && jobs.data && jobs.data.items.length > 0 && (
           <ul className="gh-jobs">
             {jobs.data.items.map((job) => (
               <RunJob
@@ -1476,7 +1591,7 @@ function RunPanel({
                 runId={item.id}
                 attempt={attempt}
                 read={read}
-                enabled={logCapability?.enabled === true}
+                enabled={!archives.loading && !archives.error && logCapability?.enabled === true}
                 unavailableReason={
                   archives.loading
                     ? "Checking log access…"
@@ -1484,11 +1599,14 @@ function RunPanel({
                       ? "Could not check log access. Retry above."
                       : (logCapability?.reason ?? "Log access is unavailable.")
                 }
-                action={button("github.rerun_job", {
-                  ...params,
-                  jobId: job.id,
-                  enableDebugLogging: false,
-                })}
+                action={
+                  runReady &&
+                  button("github.rerun_job", {
+                    ...params,
+                    jobId: job.id,
+                    enableDebugLogging: false,
+                  })
+                }
               />
             ))}
           </ul>
@@ -1514,7 +1632,7 @@ function RunPanel({
       </section>
       <section className="gh-section" aria-labelledby={`run-${item.id}-reviews`}>
         <h3 id={`run-${item.id}-reviews`}>Pending deployment reviews</h3>
-        {pending.loading && <Loading />}
+        {pending.loading && !pending.data && <Loading label="Loading deployment reviews…" />}
         {pending.error && <ErrorBox error={pending.error} />}
         {pending.data && !pending.data.items.length && (
           <p className="small muted">No environments are awaiting review.</p>
@@ -1532,7 +1650,9 @@ function RunPanel({
                   <label className="check" key={env.id}>
                     <input
                       type="checkbox"
-                      disabled={!p.current_user_can_approve}
+                      disabled={
+                        pending.loading || run.loading || !runReady || !p.current_user_can_approve
+                      }
                       checked={envIds.includes(env.id)}
                       onChange={(e) =>
                         setEnvIds(
@@ -1557,16 +1677,20 @@ function RunPanel({
                 maxLength={2000}
               />
             </Field>
-            {envIds.length > 0 && comment.trim() ? (
+            {runReady &&
+            !pending.loading &&
+            !pending.error &&
+            selectedEnvIds.length > 0 &&
+            comment.trim() ? (
               <div className="toolbar">
-                {button(
+                {runButton(
                   "github.review_deployment",
-                  { ...params, environmentIds: envIds, state: "approved", comment },
+                  { ...params, environmentIds: selectedEnvIds, state: "approved", comment },
                   "Approve selected deployments",
                 )}
-                {button(
+                {runButton(
                   "github.review_deployment",
-                  { ...params, environmentIds: envIds, state: "rejected", comment },
+                  { ...params, environmentIds: selectedEnvIds, state: "rejected", comment },
                   "Reject selected deployments",
                 )}
               </div>
@@ -1579,15 +1703,18 @@ function RunPanel({
       <section className="gh-section gh-danger" aria-labelledby={`run-${item.id}-cleanup`}>
         <h3 id={`run-${item.id}-cleanup`}>Cleanup</h3>
         <p className="small muted">These permanently remove the run or its logs on GitHub.</p>
-        <div className="toolbar gh-ops">
-          {button("github.delete_logs", params)}
-          {button("github.delete_run", params)}
-        </div>
+        {runReady && (
+          <div className="toolbar gh-ops">
+            {runButton("github.delete_logs", params)}
+            {runButton("github.delete_run", params)}
+          </div>
+        )}
       </section>
     </div>
   );
 }
 function DeploymentPanel({
+  revision,
   item,
   read,
   prepare,
@@ -1617,6 +1744,7 @@ function DeploymentPanel({
         ? read<Page>("statuses", { id: String(item.id) })
         : Promise.resolve({ items: [], hasMore: false, page: 1 }),
     [item?.id],
+    revision,
   );
   function create(e: FormEvent) {
     e.preventDefault();
@@ -1812,6 +1940,7 @@ function DeploymentPanel({
   );
 }
 function EnvironmentPanel({
+  revision,
   item,
   read,
   prepare,
@@ -1825,21 +1954,30 @@ function EnvironmentPanel({
         ? read<{ item: Item | null }>("environment", { name: environmentName })
         : Promise.resolve({ item: null }),
     [environmentName],
+    revision,
   );
-  if (details.loading) return <Loading />;
+  if (details.loading && !details.data) return <Loading label="Loading environment…" />;
   if (details.error) return <ErrorBox error={details.error} onRetry={details.reload} />;
+  if (item && !details.data?.item)
+    return (
+      <Empty title="Environment unavailable">
+        <p>Refresh GitHub state or select another environment.</p>
+      </Empty>
+    );
   return (
     <EnvironmentEditor
       key={JSON.stringify(details.data)}
       item={details.data?.item ?? null}
+      revision={revision}
       read={read}
       prepare={prepare}
       button={button}
-      can={can}
+      can={(action) => !details.loading && !details.error && can(action)}
     />
   );
 }
 function EnvironmentEditor({
+  revision,
   item,
   read,
   prepare,
@@ -1870,7 +2008,8 @@ function EnvironmentEditor({
       can("github.environment_save")
         ? read<Page>("reviewers", { page: String(reviewerPage) })
         : Promise.resolve({ items: [], hasMore: false, page: 1 }),
-    [reviewerPage],
+    [reviewerPage, can("github.environment_save")],
+    revision,
   );
   const customRules = useAsync(
     () =>
@@ -1878,13 +2017,15 @@ function EnvironmentEditor({
         ? read<Page>("protection_rules", { name: item.name ?? "" })
         : Promise.resolve({ items: [], hasMore: false, page: 1 }),
     [item?.name],
+    revision,
   );
   const ruleApps = useAsync(
     () =>
       item && can("github.protection_rule_enable")
         ? read<Page>("protection_apps", { name: item.name ?? "" })
         : Promise.resolve({ items: [], hasMore: false, page: 1 }),
-    [item?.name],
+    [item?.name, can("github.protection_rule_enable")],
+    revision,
   );
   const policies = useAsync(
     () =>
@@ -1892,9 +2033,11 @@ function EnvironmentEditor({
         ? read<Page>("branch_policies", { name: item.name ?? "" })
         : Promise.resolve({ items: [], hasMore: false, page: 1 }),
     [item?.name],
+    revision,
   );
   function save(e: FormEvent) {
     e.preventDefault();
+    if (!can("github.environment_save")) return;
     void prepare("github.environment_save", {
       environment: name,
       waitTimer: timer,
@@ -1943,10 +2086,12 @@ function EnvironmentEditor({
         <Field label="Required reviewers (up to six; User:ID or Team:ID, one per line)">
           <textarea value={reviewers} onChange={(e) => setReviewers(e.target.value)} />
         </Field>
+        {options.loading && <Loading label="Loading repository reviewers…" />}
         {options.error && <ErrorBox error={options.error} />}
         <Field label="Add a repository reviewer">
           <select
             value=""
+            disabled={options.loading || !!options.error}
             onChange={(e) => {
               if (e.target.value)
                 setReviewers((value) =>
@@ -1954,7 +2099,15 @@ function EnvironmentEditor({
                 );
             }}
           >
-            <option value="">Choose a GitHub user or team</option>
+            <option value="">
+              {options.loading
+                ? "Loading reviewers…"
+                : options.error
+                  ? "Reviewers unavailable"
+                  : options.data?.items.length
+                    ? "Choose a GitHub user or team"
+                    : "No reviewers available"}
+            </option>
             {options.data?.items.map((o) => (
               <option key={`${o.type}:${o.id}`} value={`${o.type}:${o.id}`}>
                 {o.name} ({o.type})

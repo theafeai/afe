@@ -39,9 +39,9 @@ export function ProgressState({
             ? "in_progress"
             : result === "skipped"
               ? "skipped"
-              : result === "neutral" || result === "completed"
-                ? "unknown"
-                : "pending";
+              : ["queued", "waiting", "requested", "pending"].includes(result)
+                ? "pending"
+                : "unknown";
   return (
     <>
       <OutcomeBadge outcome={outcome} />
@@ -59,16 +59,22 @@ function duration(step: Pick<WorkflowStep, "startedAt" | "completedAt">, now: st
 }
 
 export function GitHubRunPanel({ eventId }: { eventId: string }) {
+  return <GitHubRunProgress key={eventId} eventId={eventId} />;
+}
+
+function GitHubRunProgress({ eventId }: { eventId: string }) {
   const [data, setData] = useState<WorkflowProgress | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [automatic, setAutomatic] = useState(true);
   const [revision, setRevision] = useState(0);
   const [jobId, setJobId] = useState<number | null>(null);
+  const [checking, setChecking] = useState(true);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     const poll = async () => {
+      setChecking(true);
       let delay: number | null = 5000;
       try {
         const next = await fetchWorkflowProgress(eventId, controller.signal);
@@ -92,6 +98,7 @@ export function GitHubRunPanel({ eventId }: { eventId: string }) {
             err instanceof ApiError ? Number(err.body?.retryAfterMs) || 0 : 0,
           );
       }
+      if (!controller.signal.aborted) setChecking(false);
       if (automatic && delay !== null && !controller.signal.aborted) {
         const tick = () => {
           if (document.visibilityState === "hidden") timer = setTimeout(tick, delay!);
@@ -118,10 +125,14 @@ export function GitHubRunPanel({ eventId }: { eventId: string }) {
           </p>
         </div>
         <div className="toolbar">
-          <button className="btn-ghost" onClick={() => setRevision((n) => n + 1)}>
+          <button
+            className="btn-ghost"
+            disabled={checking}
+            onClick={() => setRevision((n) => n + 1)}
+          >
             Refresh progress
           </button>
-          {data?.run.status !== "completed" && (
+          {data && data.run.status !== "completed" && (
             <button
               className="btn-ghost"
               aria-pressed={automatic}
@@ -139,7 +150,10 @@ export function GitHubRunPanel({ eventId }: { eventId: string }) {
           onRetry={() => setRevision((n) => n + 1)}
         />
       )}
-      {!data && !error && <Loading label="Loading workflow progress…" />}
+      <div className="github-run-check">
+        {!data && !error && <Loading label="Loading workflow progress…" />}
+        {data && checking && <Loading label="Refreshing workflow progress…" />}
+      </div>
       {data && (
         <>
           <p>
@@ -155,7 +169,9 @@ export function GitHubRunPanel({ eventId }: { eventId: string }) {
               ? " · Updates every 5 seconds"
               : data.nextPollMs
                 ? " · Updates paused"
-                : " · Workflow finished"}
+                : data.run.status === "completed"
+                  ? " · Workflow finished"
+                  : " · Automatic updates unavailable"}
             .
           </p>
           {data.partial && (

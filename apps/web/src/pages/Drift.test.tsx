@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setFetch } from "../api/client.ts";
 import type { DriftFindingDetail, DriftFindingSummary } from "../api/drift.ts";
@@ -151,4 +151,52 @@ describe("Drift page (AFE-26)", () => {
     const journey = screen.getByRole("link", { name: /github\.com\/acme\/shop/ });
     expect(journey.getAttribute("href")).toMatch(/^\/journeys\?repository=/);
   });
+});
+
+it("reports pagination errors and ignores a late continuation after filters change", async () => {
+  let finish!: (response: Response) => void;
+  let continuation = 0;
+  const late = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  setFetch(async (url) => {
+    if (url === "/api/session")
+      return json(200, {
+        principal: { id: "p", tenantId: "default", roles: ["viewer"], kind: "token" },
+      });
+    if (url === "/api/mapping") return json(200, { services: [], environments: [] });
+    const query = new URL(url, "http://afe.test").searchParams;
+    if (query.has("cursor")) {
+      continuation++;
+      return continuation === 1 ? json(503, { message: "Could not reach drift source" }) : late;
+    }
+    return json(200, {
+      evaluatedAt: null,
+      counts: { open: 1, resolved: 0 },
+      findings: [
+        {
+          ...summary,
+          title: query.get("severity") === "low" ? "New filter finding" : "Original finding",
+        },
+      ],
+      nextCursor: query.get("severity") === "low" ? null : "old-cursor",
+    });
+  });
+  window.history.replaceState(null, "", "/drift");
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+  expect(await screen.findByText("Could not reach drift source")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  fireEvent.change(screen.getByLabelText("Severity"), { target: { value: "low" } });
+  await screen.findByText("New filter finding");
+  await act(async () =>
+    finish(
+      json(200, {
+        findings: [{ ...summary, id: "old", title: "Stale continuation" }],
+        nextCursor: "wrong-cursor",
+      }),
+    ),
+  );
+  expect(screen.queryByText("Stale continuation")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 });

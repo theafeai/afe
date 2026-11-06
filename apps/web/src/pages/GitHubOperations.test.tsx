@@ -25,9 +25,11 @@ function fixture({
   prepareStatus = 200,
   executeStatus = 202,
   holdMutation = false,
+  beforeRead = async (_url: string) => {},
 } = {}) {
   const mutations: Record<string, unknown>[] = [];
   setFetch(async (url, init) => {
+    if (!init?.method || init.method === "GET") await beforeRead(url);
     if (url.startsWith("/api/actions/github/resources"))
       return Response.json({
         items: [{ connectionId: "c", connectionName: "acme", repository: "acme/app" }],
@@ -765,4 +767,90 @@ it("prevents duplicate execution and dismissal while the operation is in flight"
   fireEvent(dialog, new Event("cancel", { cancelable: true }));
   expect(screen.getByRole("dialog")).toBe(dialog);
   expect(mutations).toHaveLength(1);
+});
+
+it("keeps operations unresolved until the selected workflow capabilities arrive", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const mutations = fixture({
+    beforeRead: async (url) => {
+      if (url.includes("view=capabilities") && url.includes("workflowId=42")) await gate;
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
+  const dispatch = await screen.findByRole("button", { name: "Prepare dispatch" });
+  expect((dispatch as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("Checking operation availability…")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Disable workflow" })).toBeNull();
+  fireEvent.submit(dispatch.closest("form")!);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(mutations).toHaveLength(0);
+  await act(async () => release());
+  await waitFor(() => expect((dispatch as HTMLButtonElement).disabled).toBe(false));
+});
+
+it("clears old ref inputs and waits for the newly selected ref before dispatch", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fixture({
+    beforeRead: async (url) => {
+      if (url.includes("view=workflow_file") && url.includes("ref=release")) await gate;
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
+  await screen.findByRole("button", { name: "Prepare dispatch" });
+  fireEvent.change(screen.getByLabelText("Workflow branch, tag or SHA"), {
+    target: { value: "release" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Load ref and inputs" }));
+  expect(screen.queryByRole("button", { name: "Prepare dispatch" })).toBeNull();
+  expect(screen.queryByLabelText(/region/)).toBeNull();
+  expect(screen.getByText("Loading workflow inputs…")).toBeTruthy();
+  await act(async () => release());
+  fireEvent.click(await screen.findByRole("button", { name: "Prepare dispatch" }));
+  expect(screen.getByRole("dialog").textContent).toContain("release");
+});
+
+it("retains run details while refreshing and blocks actions until checks finish", async () => {
+  let refreshing = false;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fixture({
+    beforeRead: async () => {
+      if (refreshing) await gate;
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Runs" }));
+  fireEvent.click((await screen.findAllByRole("button", { name: "Open details" }))[0]!);
+  const detail = await screen.findByRole("region", { name: "Run 101" });
+  await within(detail).findByRole("button", { name: "Re-run all jobs" });
+  refreshing = true;
+  fireEvent.click(screen.getByRole("button", { name: "Refresh GitHub state" }));
+  expect(screen.getByRole("region", { name: "Run 101" })).toBe(detail);
+  expect(within(detail).getAllByText("succeeded").length).toBeGreaterThan(0);
+  expect(screen.queryByText("in progress")).toBeNull();
+  expect(
+    (
+      within(detail).getByRole("button", {
+        name: "Re-run all jobs",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(screen.getByText("Refreshing GitHub state…")).toBeTruthy();
+  await act(async () => release());
+  await waitFor(() =>
+    expect(
+      (
+        within(detail).getByRole("button", {
+          name: "Re-run all jobs",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
 });

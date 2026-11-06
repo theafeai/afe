@@ -254,6 +254,10 @@ Escape and cancellation are blocked during submission.
 
 - **Loading → error → empty → data.** Every data view handles all four, with
   `Loading`, `ErrorBox`, `Empty` and then the content.
+- **Refreshing resource data** retains valid content with a neutral loading indicator.
+  Treat changed resource dependencies as unresolved immediately; never render old
+  data under a new selection. Operation controls stay blocked while resource state
+  or capabilities are unresolved. See [loading-state behavior](loading-states.md).
 - **Empty states** say what the view will show and the next step, with a link
   or button to it. First-run screens (no connections yet) pass an `icon`.
   Filtered-to-nothing states suggest widening the filters.
@@ -276,9 +280,16 @@ Escape and cancellation are blocked during submission.
   The permissions editor sits beside the list on wide screens and below it on
   smaller screens (`.users-workspace`). A sticky identity header carries the same
   selection rule and a "Change user" link; selecting a user focuses that heading.
-  Tool sections show the saved access mode, label unsaved changes, and name the
-  user beside Save and in all permission feedback. Selection is disabled during
-  a save; changing users otherwise remounts the editor and discards unsaved drafts.
+  User search matches usernames (the current display identity) and email addresses
+  without regard to case; results are paged by ten. Filtering or paging does not
+  change the selected user. After user selection, a labelled Tool button opens a
+  searchable popover of the tools returned by the permissions API. Only the
+  selected tool's editor is displayed. Tool sections show the saved access mode,
+  label unsaved changes, and name the user beside Save and in permission feedback.
+  User and tool selection are disabled during a save. Changing either selection
+  remounts the editor and discards unsaved drafts; saved policies remain available
+  when returning to a tool. The picker focuses search on opening, supports Tab and
+  Enter for choices, and closes on Escape, outside click or focus leaving it.
 - **Pickers** with many options (the GitHub repository picker) are a labelled
   button that opens a search popover (`role="dialog"`), closed by Escape or a
   click outside, returning focus to the button.
