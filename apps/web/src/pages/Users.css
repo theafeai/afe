@@ -188,3 +188,55 @@
 .users-permission-catalog li + li {
   margin-top: var(--space-2);
 }
+
+.users-search {
+  margin-bottom: var(--space-3);
+}
+.users-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.users-tool-picker {
+  position: relative;
+  min-width: 0;
+}
+.users-tool-trigger {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.users-tool-menu {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  width: 100%;
+  max-width: calc(var(--space-7) * 9);
+  box-sizing: border-box;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.users-tool-options {
+  max-height: calc(var(--space-7) * 4);
+  overflow-y: auto;
+}
+.users-tool-options > li {
+  padding: 0;
+}
+.users-tool-options .users-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.users-tool-options .users-row > span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
