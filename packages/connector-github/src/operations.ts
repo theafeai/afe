@@ -22,17 +22,12 @@ const env = z
   .min(1)
   .max(255)
   .refine((v) => v !== "." && v !== ".." && !Array.from(v).some((c) => c.charCodeAt(0) < 32));
-const sha = z.string().regex(/^[a-f0-9]{40,64}$/i);
 export const isWorkflowPath = (v: string) =>
   v.startsWith(".github/workflows/") &&
   v.split("/").length === 3 &&
   /^.+\.ya?ml$/.test(v.split("/")[2] ?? "") &&
   !v.includes("\\") &&
   !Array.from(v).some((c) => c.charCodeAt(0) < 32);
-const workflowPath = z
-  .string()
-  .max(512)
-  .refine(isWorkflowPath, "Select a YAML file immediately inside .github/workflows.");
 const url = z.union([
   z.literal(""),
   z.url().refine((v) => {
@@ -57,22 +52,6 @@ export const operationSchemas = {
   }),
   "github.enable": z.strictObject({ workflowId: id }),
   "github.disable": z.strictObject({ workflowId: id }),
-  "github.workflow_save": z.strictObject({
-    path: workflowPath,
-    branch: ref,
-    sha: sha.optional(),
-    message: z.string().min(1).max(500),
-    content: z
-      .string()
-      .min(1)
-      .max(128 * 1024),
-  }),
-  "github.workflow_delete": z.strictObject({
-    path: workflowPath,
-    branch: ref,
-    sha,
-    message: z.string().min(1).max(500),
-  }),
   "github.cancel": z.strictObject(run),
   "github.force_cancel": z.strictObject(run),
   "github.rerun": z.strictObject({ ...run, ...debug }),

@@ -333,10 +333,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
       u.search = new URLSearchParams({
         client_id: config.clientId,
         redirect_uri: `${ctx.config.publicUrl}/api/profile/tools/github/callback`,
-        scope:
-          (req.body as { workflowAccess?: boolean } | undefined)?.workflowAccess === true
-            ? "repo read:user workflow"
-            : "repo read:user",
+        scope: "repo read:user",
         state,
       }).toString();
       return { url: u.toString() };

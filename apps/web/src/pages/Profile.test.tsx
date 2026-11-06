@@ -126,3 +126,30 @@ it("shows token rejections and keeps the GitHub token guidance tied to the field
   );
   expect(screen.queryByRole("status", { name: /linked/ })).toBeNull();
 });
+
+it("offers GitHub sign-in without workflow editing consent", async () => {
+  setFetch(async (url) => {
+    if (url === "/api/session")
+      return json({ principal: { id: "admin", roles: ["admin"], kind: "session" } });
+    if (url === "/api/profile")
+      return json({
+        managedUser: true,
+        tools: [
+          {
+            tool: "github",
+            mode: "source",
+            linked: false,
+            sourceEnabled: true,
+            sourceAvailable: true,
+            oauthAvailable: true,
+          },
+        ],
+      });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  window.history.replaceState(null, "", "/profile");
+  render(<App />);
+  await screen.findByRole("button", { name: "Sign in with GitHub" });
+  expect(screen.queryByRole("checkbox", { name: /workflow/i })).toBeNull();
+  expect(screen.getByText(/Contents read for workflow definitions/)).toBeTruthy();
+});

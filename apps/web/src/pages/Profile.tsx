@@ -28,7 +28,6 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
   const id = useId();
   const name = toolLabel(tool.tool);
   const [token, setToken] = useState("");
-  const [workflowAccess, setWorkflowAccess] = useState(false);
   const [context, setContext] = useState("");
   const [oidcConnection, setOidcConnection] = useState(tool.oidcConnections?.[0]?.id ?? "");
   const [error, setError] = useState<{ title: string; error: Error } | null>(null);
@@ -106,16 +105,6 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
                 </small>
               </div>
             )}
-            {tool.tool === "github" && (
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={workflowAccess}
-                  onChange={(e) => setWorkflowAccess(e.target.checked)}
-                />
-                Allow editing workflow files (adds the GitHub workflow scope)
-              </label>
-            )}
             <div className="button-row">
               <button
                 type="button"
@@ -126,11 +115,7 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
                     const r = await request<{ url: string }>(
                       "POST",
                       `/api/profile/tools/${tool.tool}/login`,
-                      tool.tool === "argocd"
-                        ? { connectionId: oidcConnection }
-                        : tool.tool === "github"
-                          ? { workflowAccess }
-                          : undefined,
+                      tool.tool === "argocd" ? { connectionId: oidcConnection } : undefined,
                     );
                     window.location.assign(r.url);
                   })
@@ -190,8 +175,8 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
               {tool.tool === "github" && (
                 <small id={`${id}-token-help`} className="muted">
                   Use a fine-grained token limited to the repositories you work on, with Actions
-                  read and write, plus only the Contents, Workflows, Deployments or Environments
-                  permissions you need.
+                  read and write, Contents read for workflow definitions and dispatch inputs, and
+                  only the Deployments or Environments permissions you need.
                 </small>
               )}
             </div>

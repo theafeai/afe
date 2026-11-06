@@ -157,6 +157,7 @@ function fixture({
       return Response.json({
         path: ".github/workflows/deploy.yml",
         sha: "a".repeat(40),
+        content: "on: workflow_dispatch\njobs: {}",
         dispatchable: true,
         inputs: [
           { name: "deploy", type: "boolean", required: true, description: "Deploy now" },
@@ -212,6 +213,18 @@ it("renders typed inputs and requires confirmation before one deliberate dispatc
     confirmed: true,
     params: { workflowId: 42, ref: "main", inputs: { deploy: false, region: "east" } },
   });
+});
+it("shows workflow YAML as read-only text without definition editing controls", async () => {
+  fixture();
+  fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
+  const viewer = await screen.findByText("View workflow YAML");
+  fireEvent.click(viewer);
+  expect(screen.getByText(/on: workflow_dispatch/).closest("pre")).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Workflow YAML" })).toBeNull();
+  expect(
+    screen.queryByText(/Edit workflow|Prepare workflow (save|deletion)|Create workflow/),
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Prepare dispatch" })).toBeTruthy();
 });
 it("disables dispatch when the required grant is absent", async () => {
   fixture({ workflowGrant: false });

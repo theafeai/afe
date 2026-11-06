@@ -259,20 +259,6 @@ const cases: [
   ],
   ["github.enable", { workflowId: 42 }, "PUT", "/actions/workflows/42/enable", undefined],
   ["github.disable", { workflowId: 42 }, "PUT", "/actions/workflows/42/disable", undefined],
-  [
-    "github.workflow_save",
-    { path: ".github/workflows/deploy.yml", branch: "main", sha, message: "Edit", content: yaml },
-    "PUT",
-    "/contents/.github/workflows/deploy.yml",
-    { branch: "main", sha, message: "Edit", content: Buffer.from(yaml).toString("base64") },
-  ],
-  [
-    "github.workflow_delete",
-    { path: ".github/workflows/deploy.yml", branch: "main", sha, message: "Delete" },
-    "DELETE",
-    "/contents/.github/workflows/deploy.yml",
-    { branch: "main", sha, message: "Delete" },
-  ],
   ["github.cancel", { runId: 123, attempt: 1 }, "POST", "/actions/runs/123/cancel", undefined],
   [
     "github.force_cancel",
@@ -482,28 +468,69 @@ it("rejects changed source state between preparation and execution", async () =>
   expect((await execute("github.rerun", params, p.json().version)).statusCode).toBe(409);
   expect(mutations).toHaveLength(0);
 });
-it("rejects workflow traversal and stale file SHAs without sending content upstream", async () => {
+it("removes workflow definition mutations from capabilities and rejects direct API calls", async () => {
+  const caps = await afe.app.inject({ url: q("capabilities"), headers: headers() });
+  expect(caps.statusCode).toBe(200);
+  const actions = caps.json().items.map((c: { action: string }) => c.action);
+  for (const action of ["github.workflow_save", "github.workflow_delete"]) {
+    expect(actions).not.toContain(action);
+    for (const suffix of ["/prepare", ""]) {
+      const response = await afe.app.inject({
+        method: "POST",
+        url: root + suffix,
+        headers: headers(),
+        payload: {
+          connectionId,
+          action,
+          params: {
+            path: ".github/workflows/deploy.yml",
+            branch: "main",
+            sha,
+            message: "Edit",
+            content: yaml,
+          },
+          confirmed: true,
+          requestId: randomUUID(),
+          expectedVersion: "a".repeat(64),
+        },
+      });
+      expect(response.statusCode, response.body).toBe(400);
+      expect(response.json().message).toMatch(/Unknown.*operation/i);
+    }
+  }
+  expect(mutations).toHaveLength(0);
+  expect((await pool.query("SELECT * FROM github_action_requests")).rows).toHaveLength(0);
+});
+it("preserves read-only workflow definitions and dispatch input discovery", async () => {
+  const file = await afe.app.inject({
+    url: q("workflow_file", { id: "42", ref: "main" }),
+    headers: headers(),
+  });
+  expect(file.statusCode, file.body).toBe(200);
+  expect(file.json()).toMatchObject({
+    path: ".github/workflows/deploy.yml",
+    sha,
+    content: yaml,
+    dispatchable: true,
+  });
+  expect(file.json().inputs.map((i: { name: string }) => i.name)).toEqual([
+    "deploy",
+    "size",
+    "region",
+  ]);
+  await seedLegacyToolPolicy(pool, "default", user.user.id, "github", {
+    mode: "source",
+    custom: [],
+    denied: [{ resource: "repository:acme/app", action: "github.dispatch" }],
+  });
   expect(
     (
-      await prepare("github.workflow_save", {
-        path: ".github/workflows/../../secrets.yml",
-        branch: "main",
-        message: "Edit",
-        content: yaml,
+      await afe.app.inject({
+        url: q("workflow_file", { id: "42", ref: "main" }),
+        headers: headers(),
       })
     ).statusCode,
-  ).toBe(400);
-  fileSha = "b".repeat(40);
-  expect(
-    (
-      await prepare("github.workflow_delete", {
-        path: ".github/workflows/deploy.yml",
-        branch: "main",
-        sha,
-        message: "Delete",
-      })
-    ).statusCode,
-  ).toBe(409);
+  ).toBe(403);
   expect(mutations).toHaveLength(0);
 });
 it("keeps personal repositories outside the installation selection hidden", async () => {
@@ -789,7 +816,7 @@ it("uses an explicit hosted identity mapping while keeping tenant account lookup
   tenant = "other";
   expect((await afe.app.inject({ url: q("runs") })).statusCode).toBe(403);
 });
-it("requests OAuth workflow scope only with explicit additional consent", async () => {
+it("never requests OAuth workflow scope, including legacy consent payloads", async () => {
   vi.stubEnv("AFE_USER_GITHUB_CLIENT_ID", "test-client");
   vi.stubEnv("AFE_USER_GITHUB_CLIENT_SECRET", "test-secret");
   const keys = afe.context.keys;
@@ -821,7 +848,7 @@ it("requests OAuth workflow scope only with explicit additional consent", async 
     });
     expect(response.statusCode, response.body).toBe(200);
     const scopes = new URL(response.json().url).searchParams.get("scope")!.split(" ");
-    expect(scopes.includes("workflow")).toBe(workflowAccess);
+    expect(scopes).toEqual(["repo", "read:user"]);
   }
   vi.unstubAllEnvs();
 });

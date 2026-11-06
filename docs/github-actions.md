@@ -7,8 +7,9 @@ workflow/deployment lifecycle in AFE-57, alongside the existing source observati
 connector. Repository code review, issue tracking and organization administration
 are separate product areas.
 
-Define new workflows in repository code under `.github/workflows`. Afe lists and
-operates existing workflows; the GitHub Actions UI does not create workflow files.
+Create and edit workflows in repository code under `.github/workflows`. Afe displays
+existing definitions as read-only YAML and operates existing workflows. Workflow file
+creation, editing and deletion are unavailable in the UI, API and agent operations.
 
 ## Setup and permissions
 
@@ -38,22 +39,21 @@ operates existing workflows; the GitHub Actions UI does not create workflow file
    never returned to the browser. Only Source policies permit linking.
 4. The user must also have the current GitHub source role and token permissions:
 
-   | Operation                                            | Fine-grained token permissions    | Source role / extra rules                                                  |
-   | ---------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------- |
-   | Workflow/run/job controls, caches, artifact deletion | Actions: write; Metadata: read    | Repository write                                                           |
-   | Artifact / archived log download                     | Actions: read; Metadata: read     | Repository read                                                            |
-   | Workflow input schema from YAML                      | Contents: read                    | Repository write; Afe policy allows dispatch/configuration                 |
-   | Edit/delete existing workflow files                  | Contents: write, Workflows: write | Repository write; branch protection applies                                |
-   | Deployment create/status/delete                      | Deployments: write                | Repository write; source deletion restrictions apply                       |
-   | Pending deployment review                            | Deployments: write                | GitHub's `current_user_can_approve` must permit every selected environment |
-   | Environment protection and custom rule configuration | Environments: write               | Repository admin; plan and organization restrictions apply                 |
+   | Operation                                            | Fine-grained token permissions | Source role / extra rules                                                  |
+   | ---------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------- |
+   | Workflow/run/job controls, caches, artifact deletion | Actions: write; Metadata: read | Repository write                                                           |
+   | Artifact / archived log download                     | Actions: read; Metadata: read  | Repository read                                                            |
+   | Workflow definition and input schema                 | Contents: read                 | Repository write; Afe policy allows dispatch                               |
+   | Deployment create/status/delete                      | Deployments: write             | Repository write; source deletion restrictions apply                       |
+   | Pending deployment review                            | Deployments: write             | GitHub's `current_user_can_approve` must permit every selected environment |
+   | Environment protection and custom rule configuration | Environments: write            | Repository admin; plan and organization restrictions apply                 |
 
    GitHub is the final authority on token scopes, organization approval, reviewer
    eligibility and plan-dependent APIs. Afe rechecks repository roles on every
    request, and reports permission or source-state failures without upstream
-   bodies. OAuth uses its existing `repo read:user` scopes; **only** checking
-   “Allow editing workflow files” before signing in requests the additional
-   `workflow` scope. No existing App installation is elevated automatically.
+   bodies. OAuth requests `repo read:user` and never requests the `workflow` scope.
+   Fine-grained tokens need Contents read for workflow source, not Contents or
+   Workflows write. No existing App installation is elevated automatically.
 
 Administrator linking starts in **Source** mode. Profile identifies the
 `github-admin-…` account to manage in **Users**. No separate login or duplicate
@@ -82,10 +82,9 @@ pagination; jobs/log downloads preserve run attempts.
 
 | Surface                        | Capability / exact grant                                                                                                                                                                                                                                |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workflows                      | Discover workflows; inspect state, ref and dispatch schema                                                                                                                                                                                              |
+| Workflows                      | Discover workflows; inspect state, ref, read-only YAML and dispatch schema                                                                                                                                                                              |
 | Manual dispatch                | `github.dispatch`: branch/tag/SHA with string, number, boolean, choice and environment inputs; defaults, required fields and choices validated against YAML at the selected ref                                                                         |
 | Workflow state                 | `github.enable`, `github.disable`                                                                                                                                                                                                                       |
-| Workflow configuration         | `github.workflow_save`, `github.workflow_delete`: edit or remove an existing YAML file immediately under `.github/workflows`; commit message, branch and current blob SHA; provider CAS and branch protection                                           |
 | Runs/jobs/steps                | Run state, conclusion, attempt, job and step progress; inspect earlier attempts without mixing their output                                                                                                                                             |
 | Cancellation                   | `github.cancel`, `github.force_cancel`                                                                                                                                                                                                                  |
 | Re-running                     | `github.rerun`, `github.rerun_failed`, `github.rerun_job`; optional debug logging; jobs are verified against the selected run and attempt                                                                                                               |
@@ -112,9 +111,7 @@ pagination; jobs/log downloads preserve run attempts.
   configuring those integrations and native human environment reviews; it never
   bypasses an integration's decision or GitHub's reviewer rules.
 - Branch/tag policy updates change the name pattern only; GitHub makes the policy type immutable. To change type, delete and create a replacement from the same workspace.
-- GitHub exposes workflow deletion by removing its YAML file through Contents;
-  there is no standalone “delete workflow definition” REST operation.
-- Workflow YAML reads/edits are limited to 128 KiB to bound parsing and request size.
+- Workflow YAML reads are limited to 128 KiB to bound parsing and response size.
 - Branch protection, required reviewers, protected deployment restrictions,
   expired artifacts, fork approval policy, and plan/organization API restrictions
   remain enforced by GitHub and are shown as unavailable/rejected when applicable.
