@@ -27,3 +27,4 @@ export {
   type GitHubActionReceipt,
 } from "./github-actions.ts";
 export * from "./github-operations.ts";
+export * from "./terraform-actions.ts";

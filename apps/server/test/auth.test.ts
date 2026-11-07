@@ -188,7 +188,10 @@ describe("API authentication (AFE-27)", () => {
     it("the admin token reaches every non-personal /api route", async () => {
       for (const r of apiRoutes().filter((r) => r.access !== "public")) {
         const res = await call(r.method, fill(r.url), bearer(ADMIN_TOKEN));
-        if (r.url.startsWith("/api/actions/github/")) {
+        if (
+          /^\/api\/actions\/(github|terraform)\//.test(r.url) ||
+          r.url === "/api/profile/tools/terraform/token"
+        ) {
           expect([400, 403]).toContain(res.statusCode); // Personal source identity and valid scoped input are required.
         } else {
           expect([401, 403], `${r.method} ${r.url}: ${res.statusCode}`).not.toContain(
@@ -201,9 +204,16 @@ describe("API authentication (AFE-27)", () => {
     it("the viewer token can read but not change anything", async () => {
       for (const r of apiRoutes().filter((r) => r.access !== "public")) {
         const res = await call(r.method, fill(r.url), bearer(VIEWER_TOKEN));
-        if (r.access === "admin" || r.url.startsWith("/api/actions/github/")) {
+        if (
+          r.access === "admin" ||
+          /^\/api\/actions\/(github|terraform)\//.test(r.url) ||
+          r.url === "/api/profile/tools/terraform/token"
+        ) {
           expect(
-            r.url.startsWith("/api/actions/github/") ? [400, 403] : [403],
+            /^\/api\/actions\/(github|terraform)\//.test(r.url) ||
+              r.url === "/api/profile/tools/terraform/token"
+              ? [400, 403]
+              : [403],
             `${r.method} ${r.url}`,
           ).toContain(res.statusCode);
         } else {

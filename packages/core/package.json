@@ -11,7 +11,8 @@
     "./mapping": "./src/mapping/index.ts",
     "./drift": "./src/drift/index.ts",
     "./types": "./src/types.ts",
-    "./github-operations": "./src/github-operations.ts"
+    "./github-operations": "./src/github-operations.ts",
+    "./terraform-actions": "./src/terraform-actions.ts"
   },
   "dependencies": {
     "zod": "^4.6.7"

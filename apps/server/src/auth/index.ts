@@ -237,6 +237,12 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
         [
           "/api/actions/github/events/:eventId",
           "/api/actions/github/resources",
+          "/api/actions/terraform/resources",
+          "/api/actions/terraform/connections/:connectionId",
+          "/api/actions/terraform/connections/:connectionId/prepare",
+          "/api/actions/terraform/connections/:connectionId/execute",
+          "/api/actions/terraform/connections/:connectionId/requests",
+          "/api/actions/terraform/connections/:connectionId/requests/:requestId/recover",
           "/api/actions/github/repositories/:owner/:repo",
           "/api/actions/github/repositories/:owner/:repo/prepare",
           "/api/actions/github/repositories/:owner/:repo/requests/:requestId/release",

@@ -803,3 +803,12 @@ See [GitHub operations API and setup](github-actions.md) for repository discover
 resource views, strict preparation/confirmation schemas, request history/recovery
 and scoped artifact/archived-log downloads under `/api/actions/github/`.
 The original event run-controls endpoint remains compatible.
+
+## Terraform delivery operations
+
+Named users with a verified personal Terraform account and Source policy use
+`/api/actions/terraform/*` for shared UI/agent discovery, preparation, confirmed
+execution and request recovery. See [Terraform API and capability matrix](terraform-actions.md#agent-and-ui-api)
+for strict schemas, current-source authorization, state validation, duplicate
+suppression, rate limits and uncertain outcomes. CLI reporter secrets grant no
+operation authority.

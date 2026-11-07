@@ -188,10 +188,12 @@ remain available as a fallback. Arbitrary Google
 sign-in is not treated as proof of GitHub, Vercel or ArgoCD resource access.
 Google can be added as a tool when a Google integration defines its resources.
 
-Terraform CLI reports have no personal upstream identity. Its source mode
-therefore grants managed users no access in open source. Administrators retain
-their existing tenant-wide observation access. A verified Terraform identity
-resolver would be needed before inherited user access could be supported.
+Terraform CLI reports have no personal upstream identity and remain unavailable
+to managed users. Remote HCP Terraform/TFE workspace selections support verified
+personal user-token links and inherited Source permissions. Read access is
+separate from the explicit delivery-operation opt-in. See
+[Terraform setup and permissions](terraform-actions.md#install-and-authorize).
+Administrator observation of existing CLI reports remains unchanged.
 
 SMTP and transactional email are optional and are not required for manual
 provisioning or sign-in.
