@@ -803,3 +803,11 @@ See [GitHub operations API and setup](github-actions.md) for repository discover
 resource views, strict preparation/confirmation schemas, request history/recovery
 and scoped artifact/archived-log downloads under `/api/actions/github/`.
 The original event run-controls endpoint remains compatible.
+
+## Opt-in ArgoCD application operations
+
+See [ArgoCD operations API and setup](argocd-actions.md) for application discovery,
+source-scoped capabilities, strict prepare/execute schemas, explicit per-link consent,
+minimized resource diffs and operational receipt history/recovery under
+`/api/actions/argocd/`. Personal managed-user authentication is required; the
+bootstrap observer token grants no application mutation authority.

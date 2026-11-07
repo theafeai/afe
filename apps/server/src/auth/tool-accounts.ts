@@ -37,7 +37,13 @@ export interface ToolAccount {
   tool: string;
   account_name: string;
   credential_id: string;
-  context: { connectionId?: string; teamId?: string; oidcRevision?: string; expiresAt?: number };
+  context: {
+    connectionId?: string;
+    teamId?: string;
+    actionsEnabled?: boolean;
+    oidcRevision?: string;
+    expiresAt?: number;
+  };
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const binding = (req: FastifyRequest) =>

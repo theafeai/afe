@@ -1,0 +1,11 @@
+{
+  "story": "Managed user enables actions, selects revision/resource/options, prepares and confirms sync through the real Afe API and database against a local fake ArgoCD source.",
+  "upstreamSyncRequests": 1,
+  "visibleAcceptedReceipts": 1,
+  "observationOnlyBlockedBeforeConsent": true,
+  "cancelInitiallyFocused": true,
+  "horizontalOverflow": false,
+  "browserErrors": [],
+  "screenshotWidths": [1440, 390],
+  "themes": ["light", "dark"]
+}

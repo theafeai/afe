@@ -207,3 +207,18 @@ principal and does not transfer the old link or grants. Disconnecting destroys
 the linked credential ciphertext while retaining the identity and policy for
 relinking. GitHub account names and credential references remain in
 `user_tool_accounts`; personal tokens remain encrypted in `credentials`.
+
+## ArgoCD operational receipts (AFE-59)
+
+`argocd_action_requests` stores tenant/request UUID, Afe actor ID, connection ID,
+application and Application namespace, action and source RBAC permission, input
+digest, prepared source-version digest, application UID lock key, request state,
+upstream HTTP status, creation/release times. No input values, source spec,
+manifest/diff values, logs or provider response bodies are stored. Receipts expire
+under tenant retention via `argocd-actions.purge`. Per-link consent is a boolean
+`actionsEnabled` in the existing personal account context, reset by account
+replacement. Credentials remain in the existing encrypted credential repository.
+
+User-requested managed-resource diff payloads are read transiently and reduced to
+resource identity and changed flags. The workspace returns minimized health,
+sync/revision and deployment-history metadata. Log transport remains AFE-54.
