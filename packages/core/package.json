@@ -11,7 +11,9 @@
     "./mapping": "./src/mapping/index.ts",
     "./drift": "./src/drift/index.ts",
     "./types": "./src/types.ts",
-    "./github-operations": "./src/github-operations.ts"
+    "./github-operations": "./src/github-operations.ts",
+    "./argocd-operations": "./src/argocd-operations.ts",
+    "./argocd-catalog": "./src/argocd-catalog.ts"
   },
   "dependencies": {
     "zod": "^4.6.7"

@@ -94,3 +94,8 @@ Actions are separate; shared context is `connectionId`, `repository`, `runId`,
 `runAttempt` and `jobId`. Re-running never relabels a previous attempt's output.
 GitHub REST archived downloads and job/step progress are not advertised as live
 native output. The separate capture feasibility work is preserved.
+
+## ArgoCD extension
+
+[ADR 0016](0016-argocd-delivery-actions.md) extends this contract to the explicit
+[ArgoCD catalog](../argocd-actions.md), using personal source RBAC and per-link consent.

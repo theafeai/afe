@@ -1,3 +1,4 @@
+import { argocdActionsModule } from "../actions/argocd.ts";
 import { githubActionsModule } from "../actions/github.ts";
 import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
@@ -21,6 +22,7 @@ export const defaultModules: ConnectorModule[] = [
   githubModule,
   githubActionsModule,
   argocdModule,
+  argocdActionsModule,
   // In-cluster ArgoCD agent ingest (AFE-28).
   argocdAgentModule,
   vercelModule,

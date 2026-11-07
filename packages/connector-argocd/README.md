@@ -21,3 +21,14 @@ No `sync`, `override`, `action`, `update`, `create`, `delete`, `exec` or
 [ADR 0004](../../docs/decisions/0004-argocd-connection-model.md).
 
 `@afe/connector-argocd/testing` exports a fake ArgoCD HTTPS server for tests.
+
+## Optional application operations
+
+[ArgoCD operations](../../docs/argocd-actions.md) documents the capability matrix, API and setup.
+Keep this connection's collector token read-only. Operations use a separate,
+linked personal identity, current source RBAC and explicit per-link consent;
+`get` enables observation, `sync` enables sync/rollback/termination,
+`action/<group>/<kind>/<name>` enables a specific resource action, `update` enables
+sync-policy changes and `delete` enables application deletion. Grant only the
+project/application operations that identity needs. The original GET-only client
+and outbound agent never use the action transport.

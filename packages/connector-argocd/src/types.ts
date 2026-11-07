@@ -146,6 +146,14 @@ export interface ArgoCdApplication {
     health?: { status?: string; message?: string; lastTransitionTime?: string };
     history?: ArgoCdRevisionHistory[];
     operationState?: ArgoCdOperationState;
+    resources?: {
+      group?: string;
+      kind?: string;
+      namespace?: string;
+      name?: string;
+      status?: string;
+      health?: { status?: string };
+    }[];
     reconciledAt?: string;
     summary?: { images?: string[]; externalURLs?: string[] };
     sourceType?: string;

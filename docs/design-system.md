@@ -359,3 +359,10 @@ Before opening a PR that touches `apps/web`:
 - [ ] Checked in light and dark (switch with the theme control), at desktop width and at 390px; screenshots in the PR
 - [ ] Keyboard: everything reachable with Tab, focus visible, icon buttons labelled
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` pass (includes the design-system check)
+
+## ArgoCD workspace
+
+The ArgoCD workspace uses existing fields, checkboxes, tables, entity lists and
+`OperationDialog` for preparation, explicit consent, confirmation and recovery.
+Action capabilities include a source permission/state explanation. A retained
+callout names acceptance or uncertainty; it never implies deployment completion.

@@ -130,3 +130,14 @@ nothing else, no Secrets) and authenticates to Afe with a per-agent secret.
   Deployment and the RBAC objects from the cluster.
 - **Clock**: requests are signed with a timestamp and rejected when more than
   5 minutes away from Afe's clock; keep the nodes' time synchronised (NTP).
+
+## Optional application operations
+
+[ArgoCD operations](../../argocd-actions.md) documents the capability matrix, API and setup.
+Keep this connection's collector token read-only. Operations use a separate,
+linked personal identity, current source RBAC and explicit per-link consent;
+`get` enables observation, `sync` enables sync/rollback/termination,
+`action/<group>/<kind>/<name>` enables a specific resource action, `update` enables
+sync-policy changes and `delete` enables application deletion. Grant only the
+project/application operations that identity needs. The original GET-only client
+and outbound agent never use the action transport.
