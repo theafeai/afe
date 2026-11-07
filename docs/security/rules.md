@@ -15,8 +15,7 @@ Helpers referenced below live in `@afe/core/security` and `@afe/db`.
 
 The explicit action-route exception in [ADR 0011](../decisions/0011-opt-in-delivery-actions.md)
 supersedes the blanket mutation prohibition below for the documented GitHub delivery
-operations and the explicit [Terraform catalog](../terraform-actions.md)
-([ADR 0016](../decisions/0016-terraform-delivery-actions.md)) only. Observation clients and installation tokens remain read-only.
+operations, the explicit ArgoCD catalog under [ADR 0016](../decisions/0016-argocd-delivery-actions.md), the explicit Vercel catalog under [ADR 0017](../decisions/0017-vercel-delivery-actions.md) and the explicit [Terraform catalog](../terraform-actions.md) ([ADR 0018](../decisions/0018-terraform-delivery-actions.md)). Observation clients and installation tokens remain read-only.
 
 1. Request **read-only** access in every connected tool, wherever the tool
    allows it. Afe never needs to write to a delivery tool.

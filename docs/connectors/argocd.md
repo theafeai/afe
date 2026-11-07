@@ -429,3 +429,14 @@ An agent's health is what it reports; Afe cannot probe it.
 4. The image runs under `pod-security.kubernetes.io/enforce: restricted` and
    the distroless image tag `gcr.io/distroless/nodejs22-debian12:nonroot`
    (the image was not built here: no Docker daemon was available).
+
+## Optional application operations
+
+[ArgoCD operations](../argocd-actions.md) documents the capability matrix, API and setup.
+Keep this connection's collector token read-only. Operations use a separate,
+linked personal identity, current source RBAC and explicit per-link consent;
+`get` enables observation, `sync` enables sync/rollback/termination,
+`action/<group>/<kind>/<name>` enables a specific resource action, `update` enables
+sync-policy changes and `delete` enables application deletion. Grant only the
+project/application operations that identity needs. The original GET-only client
+and outbound agent never use the action transport.

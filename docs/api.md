@@ -804,6 +804,22 @@ resource views, strict preparation/confirmation schemas, request history/recover
 and scoped artifact/archived-log downloads under `/api/actions/github/`.
 The original event run-controls endpoint remains compatible.
 
+## Vercel delivery operations (AFE-58)
+
+The `/api/actions/vercel` routes share scope, capabilities, strict prepared intent,
+confirmation and receipts between UI and managed-user bearer-token agents. See
+[Vercel operations](vercel-actions.md#agent-api) for endpoints, parameter schemas,
+permission requirements and uncertain-outcome recovery. Collection credentials
+remain read-only and cannot enable actions.
+
+## Opt-in ArgoCD application operations
+
+See [ArgoCD operations API and setup](argocd-actions.md) for application discovery,
+source-scoped capabilities, strict prepare/execute schemas, explicit per-link consent,
+minimized resource diffs and operational receipt history/recovery under
+`/api/actions/argocd/`. Personal managed-user authentication is required; the
+bootstrap observer token grants no application mutation authority.
+
 ## Terraform delivery operations
 
 Named users with a verified personal Terraform account and Source policy use

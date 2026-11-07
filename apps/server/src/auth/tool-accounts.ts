@@ -40,11 +40,11 @@ export interface ToolAccount {
   context: {
     connectionId?: string;
     teamId?: string;
+    actionsEnabled?: boolean;
     oidcRevision?: string;
     expiresAt?: number;
     serverUrl?: string;
     accountId?: string;
-    actionsEnabled?: boolean;
   };
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");

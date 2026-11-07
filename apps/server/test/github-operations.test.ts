@@ -92,7 +92,11 @@ beforeEach(async () => {
         { id: 2, full_name: "acme/hidden" },
       ]);
     if (path === "/repos/acme/app")
-      return Response.json({ id: 1, permissions: { push: write, admin: sourceAdmin } });
+      return Response.json({
+        id: 1,
+        default_branch: "trunk",
+        permissions: { push: write, admin: sourceAdmin },
+      });
     if (path === "/repos/acme/app/actions/runs/123/attempts/1") return Response.json(run());
     if (path === "/repos/acme/app/actions/jobs/234/logs")
       return failure
@@ -1140,4 +1144,14 @@ it("denies Source operations after credential revocation", async () => {
   await revokeCredential(pool, "default", id);
   expect((await prepare("github.rerun", { runId: 123, attempt: 1 })).statusCode).toBe(403);
   expect(mutations).toHaveLength(0);
+});
+
+it("returns the source repository default branch within the authorized repository scope", async () => {
+  const response = await afe.app.inject({
+    method: "GET",
+    url: q("repository"),
+    headers: headers(),
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toEqual({ defaultBranch: "trunk" });
 });

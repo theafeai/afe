@@ -33,7 +33,7 @@ deny rules are preserved. Saving removes obsolete grants; operators should
 back them up first when needed. Disabled accounts remain disabled. This changes
 server authorization immediately on upgrade, without waiting for a migration.
 
-[ADR 0016](0016-terraform-delivery-actions.md) adds a verified personal identity
+[ADR 0016](0018-terraform-delivery-actions.md) adds a verified personal identity
 for explicitly selected remote Terraform workspaces. CLI Terraform reports lack a
 verifiable personal source identity; managed users receive no access to those reports. A custom grant is not a fallback. Existing
 administrator observation remains available.

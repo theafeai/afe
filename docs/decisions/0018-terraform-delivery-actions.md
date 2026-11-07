@@ -1,4 +1,4 @@
-# ADR 0016: Opt-in personal Terraform delivery operations
+# ADR 0018: Opt-in personal Terraform delivery operations
 
 - Status: Accepted (authorized by AFE-60 under AFE-56)
 - Date: 2026-11-07

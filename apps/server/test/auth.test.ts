@@ -189,7 +189,7 @@ describe("API authentication (AFE-27)", () => {
       for (const r of apiRoutes().filter((r) => r.access !== "public")) {
         const res = await call(r.method, fill(r.url), bearer(ADMIN_TOKEN));
         if (
-          /^\/api\/actions\/(github|terraform)\//.test(r.url) ||
+          /^\/api\/actions\/(github|vercel|argocd|terraform)\//.test(r.url) ||
           r.url === "/api/profile/tools/terraform/token"
         ) {
           expect([400, 403]).toContain(res.statusCode); // Personal source identity and valid scoped input are required.
@@ -206,11 +206,11 @@ describe("API authentication (AFE-27)", () => {
         const res = await call(r.method, fill(r.url), bearer(VIEWER_TOKEN));
         if (
           r.access === "admin" ||
-          /^\/api\/actions\/(github|terraform)\//.test(r.url) ||
+          /^\/api\/actions\/(github|vercel|argocd|terraform)\//.test(r.url) ||
           r.url === "/api/profile/tools/terraform/token"
         ) {
           expect(
-            /^\/api\/actions\/(github|terraform)\//.test(r.url) ||
+            /^\/api\/actions\/(github|vercel|argocd|terraform)\//.test(r.url) ||
               r.url === "/api/profile/tools/terraform/token"
               ? [400, 403]
               : [403],

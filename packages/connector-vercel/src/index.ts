@@ -95,3 +95,9 @@ export {
   type PollResult,
   type VercelPollerOptions,
 } from "./polling.ts";
+export {
+  VercelActionClient,
+  parseVercelIntent,
+  vercelOperationSchema,
+  sourceId,
+} from "./operations.ts";

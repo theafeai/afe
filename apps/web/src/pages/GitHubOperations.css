@@ -637,3 +637,15 @@ details.gh-section[open] > summary {
 .gh-check-status > .state {
   margin: 0;
 }
+
+/* Ref menus extend beyond the workflow row without being clipped by the list. */
+.gh-list:has(.gh-ref-picker) {
+  overflow: visible;
+}
+.gh-ref-picker {
+  display: grid;
+  gap: var(--space-2);
+}
+.gh-ref-picker .gh-repository-menu {
+  width: min(26rem, calc(100vw - 4 * var(--space-4)));
+}

@@ -208,6 +208,33 @@ the linked credential ciphertext while retaining the identity and policy for
 relinking. GitHub account names and credential references remain in
 `user_tool_accounts`; personal tokens remain encrypted in `credentials`.
 
+### Vercel action consent and operational receipts (AFE-58)
+
+`vercel_action_credentials` stores tenant/user/connection/project identifiers,
+allowed catalog operations and a credential reference; the separate personal
+action token is encrypted through the standard credential repository. It is
+revalidated at use and revoked on replacement, disabling or user deletion.
+`vercel_action_requests` stores tenant, actor, connection, project, operation,
+request UUID, intent digest, project lock key, state, timestamps, upstream HTTP
+status, target deployment ID and optional new deployment ID. No input values, arbitrary provider
+responses, Git source, environment values or credentials are persisted. These
+receipts expire under the tenant retention policy and are not an audit log.
+
+## ArgoCD operational receipts (AFE-59)
+
+`argocd_action_requests` stores tenant/request UUID, Afe actor ID, connection ID,
+application and Application namespace, action and source RBAC permission, input
+digest, prepared source-version digest, application UID lock key, request state,
+upstream HTTP status, creation/release times. No input values, source spec,
+manifest/diff values, logs or provider response bodies are stored. Receipts expire
+under tenant retention via `argocd-actions.purge`. Per-link consent is a boolean
+`actionsEnabled` in the existing personal account context, reset by account
+replacement. Credentials remain in the existing encrypted credential repository.
+
+User-requested managed-resource diff payloads are read transiently and reduced to
+resource identity and changed flags. The workspace returns minimized health,
+sync/revision and deployment-history metadata. Log transport remains AFE-54.
+
 ## Remote Terraform operations (AFE-60)
 
 Remote connection config stores the server origin, organization and workspace ID.

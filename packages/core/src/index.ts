@@ -27,4 +27,6 @@ export {
   type GitHubActionReceipt,
 } from "./github-actions.ts";
 export * from "./github-operations.ts";
+export * from "./vercel-operations.ts";
+export * from "./argocd-operations.ts";
 export * from "./terraform-actions.ts";
