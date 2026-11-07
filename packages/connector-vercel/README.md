@@ -55,4 +55,4 @@ Owner is required by Afe for domain assignment/configuration, and upstream
 role/token/plan restrictions remain authoritative for every operation.
 The action transport has fixed API origin, bounded responses, a 15-second timeout,
 manual redirects and no retries. Neither provider payloads nor token values are
-returned in operational receipts. See [ADR 0016](../../docs/decisions/0016-vercel-delivery-actions.md).
+returned in operational receipts. See [ADR 0017](../../docs/decisions/0017-vercel-delivery-actions.md).

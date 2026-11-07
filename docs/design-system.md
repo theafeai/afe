@@ -293,6 +293,14 @@ Escape and cancellation are blocked during submission.
 - **Pickers** with many options (the GitHub repository picker) are a labelled
   button that opens a search popover (`role="dialog"`), closed by Escape or a
   click outside, returning focus to the button.
+  The workflow ref picker uses the same popover: it displays the selected ref
+  when closed and opens with empty, focused search. Branches and tags are merged
+  across pages, deduplicated and sorted alphabetically. Escape, outside click or
+  focus leaving dismisses without changing selection. Tab and Enter select an
+  option; entering an explicit ref or SHA also works. Loading a selected ref
+  remains explicit before dispatch so its input schema matches the dispatch ref.
+  `.gh-ref-picker` keeps the menu within the viewport and allows it to extend
+  beyond the workflow list without clipping.
 - **Row actions that repeat on every row** of a long list are shown on hover
   and focus only (see `.event-row.has-action`); touch screens always show them.
 - **Identifiers**: short SHA (7 characters) in `<code>`, full value in `title`.
@@ -364,3 +372,10 @@ The Vercel delivery workspace uses the existing section, entity-list, inline-for
 KeyValue and OperationDialog patterns. Scope and preparation are refreshed before
 a consequential operation; the dialog shows project/build/parameters and retains
 the request UUID after an ambiguous network response.
+
+## ArgoCD workspace
+
+The ArgoCD workspace uses existing fields, checkboxes, tables, entity lists and
+`OperationDialog` for preparation, explicit consent, confirmation and recovery.
+Action capabilities include a source permission/state explanation. A retained
+callout names acceptance or uncertainty; it never implies deployment completion.

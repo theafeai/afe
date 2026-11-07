@@ -52,6 +52,7 @@ export interface GitHubOperationContext {
   connectionId: string;
   repository: string;
   path: string;
+  defaultBranch?: string;
   write: boolean;
   admin: boolean;
   grants: string[];
@@ -166,7 +167,7 @@ export class GitHubOperations {
       bound = !!found.rowCount;
     }
     if (!bound) throw fail(404, "Repository is outside this connection's selection.");
-    const c = {
+    const c: GitHubOperationContext = {
       tid,
       uid,
       actorId: req.principal!.id,
@@ -179,11 +180,12 @@ export class GitHubOperations {
       grants: GITHUB_OPERATION_NAMES.filter((action) => permitsGitHubAction(policy, repo, action)),
     };
     const upstream = (
-      await this.request<{ permissions?: { push?: boolean; maintain?: boolean; admin?: boolean } }>(
-        c,
-        c.path,
-      )
+      await this.request<{
+        default_branch?: string;
+        permissions?: { push?: boolean; maintain?: boolean; admin?: boolean };
+      }>(c, c.path)
     ).data;
+    c.defaultBranch = upstream.default_branch;
     c.admin = upstream.permissions?.admin === true;
     c.write =
       c.admin || upstream.permissions?.push === true || upstream.permissions?.maintain === true;
@@ -856,6 +858,11 @@ export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContex
         view = q.view ?? "workflows";
       const page = Number(q.page ?? 1);
       if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw fail(400, "Invalid page.");
+      if (view === "repository") {
+        if (typeof c.defaultBranch !== "string" || !c.defaultBranch)
+          throw fail(502, "GitHub did not return a default branch.");
+        return { defaultBranch: c.defaultBranch };
+      }
       if (view === "capabilities") {
         const stateReasons: Partial<Record<GitHubOperation, string>> = {};
         if (q.runId) {

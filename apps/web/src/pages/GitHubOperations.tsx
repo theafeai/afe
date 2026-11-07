@@ -1211,23 +1211,178 @@ type PanelProps = {
   ) => React.ReactNode;
   can: (a: GitHubOperation) => boolean;
 };
+/** Selection survives dismissal; search exists only while browsing refs. */
+function WorkflowRefPicker({
+  value,
+  onSelect,
+  refs,
+  id,
+}: {
+  value: string;
+  onSelect: (value: string) => void;
+  refs: ReturnType<typeof useAsync<string[]>>;
+  id: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const picker = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const query = search.trim();
+  const matches = (refs.data ?? []).filter((name) =>
+    name.toLowerCase().includes(query.toLowerCase()),
+  );
+  useEffect(() => {
+    if (!open) return;
+    input.current?.focus();
+    const away = (event: MouseEvent) => {
+      if (!picker.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  function close() {
+    setOpen(false);
+    trigger.current?.focus();
+  }
+  function select(name: string) {
+    onSelect(name);
+    close();
+  }
+  return (
+    <div
+      className="field gh-repo-picker gh-ref-picker"
+      ref={picker}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.preventDefault();
+          close();
+        }
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
+      <span>Workflow branch, tag or SHA</span>
+      <button
+        type="button"
+        className="btn gh-repo-trigger"
+        ref={trigger}
+        aria-label={`Workflow branch, tag or SHA: ${value}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => {
+          if (open) close();
+          else {
+            setSearch("");
+            setOpen(true);
+          }
+        }}
+      >
+        <strong>{value}</strong>
+        {icons.chevrons}
+      </button>
+      {open && (
+        <div
+          className="gh-repository-menu"
+          id={id}
+          role="dialog"
+          aria-label="Choose a workflow ref"
+        >
+          <Field label="Search branches and tags">
+            <input
+              type="search"
+              ref={input}
+              value={search}
+              placeholder="Search or enter a tag or SHA"
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  if (query) select(query);
+                }
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  picker.current
+                    ?.querySelector("ul")
+                    ?.querySelector<HTMLButtonElement>("button")
+                    ?.focus();
+                }
+              }}
+            />
+          </Field>
+          {refs.loading && <Loading label="Loading branches and tags…" />}
+          {refs.error && <ErrorBox error={refs.error} onRetry={refs.reload} />}
+          {!refs.loading && !refs.error && !matches.length && (
+            <Empty title="No matching branches or tags">
+              Try another search, or enter a ref or SHA below.
+            </Empty>
+          )}
+          <ul className="gh-repository-options" aria-label="Workflow refs">
+            {matches.map((name) => (
+              <li key={name}>
+                <button
+                  type="button"
+                  className="gh-tab gh-repository-choice"
+                  aria-pressed={name === value}
+                  onClick={() => select(name)}
+                >
+                  {name}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {query && !matches.includes(query) && (
+            <button type="button" className="btn" onClick={() => select(query)}>
+              Use ref {query}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function WorkflowPanel({ item, read, prepare, button, can, revision }: PanelProps) {
-  const [ref, setRef] = useState("main"),
-    [loadedRef, setLoadedRef] = useState("main"),
+  const repository = useAsync(() => read<{ defaultBranch: string }>("repository"), [item.id]);
+  if (repository.error) return <ErrorBox error={repository.error} onRetry={repository.reload} />;
+  if (!repository.data) return <Loading label="Loading repository default branch…" />;
+  return (
+    <WorkflowDispatchPanel
+      {...{ item, read, prepare, button, can, revision }}
+      defaultRef={repository.data.defaultBranch}
+    />
+  );
+}
+function WorkflowDispatchPanel({
+  item,
+  read,
+  prepare,
+  button,
+  can,
+  revision,
+  defaultRef,
+}: PanelProps & { defaultRef: string }) {
+  const [ref, setRef] = useState(defaultRef),
+    [loadedRef, setLoadedRef] = useState(defaultRef),
     [inputs, setInputs] = useState<Record<string, string | boolean | number>>({});
-  const [refPage, setRefPage] = useState(1);
   const refs = useAsync(
-    async () => {
-      const [branches, tags] = await Promise.all([
-        read<Page>("branches", { page: String(refPage) }),
-        read<Page>("tags", { page: String(refPage) }),
-      ]);
-      return {
-        items: [...branches.items, ...tags.items],
-        hasMore: branches.hasMore || tags.hasMore,
-      };
+    async (signal) => {
+      // Merge every page before sorting so search also finds branches beyond page one.
+      const lists = await Promise.all(
+        ["branches", "tags"].map(async (view) => {
+          const names: string[] = [];
+          for (let page = 1; ; page++) {
+            if (signal.aborted) return names;
+            const result = await read<Page>(view, { page: String(page) });
+            for (const item of result.items) if (item.name) names.push(item.name);
+            if (!result.hasMore) return names;
+          }
+        }),
+      );
+      return [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b));
     },
-    [refPage],
+    [item.id],
     revision,
   );
   const file = useAsync(
@@ -1268,41 +1423,16 @@ function WorkflowPanel({ item, read, prepare, button, can, revision }: PanelProp
             file.reload();
           }}
         >
-          <Field label="Workflow branch, tag or SHA">
-            <input
-              value={ref}
-              required
-              list={`workflow-refs-${item.id}`}
-              onChange={(e) => setRef(e.target.value)}
-            />
-            <datalist id={`workflow-refs-${item.id}`}>
-              {refs.data?.items.map((r, i) => (
-                <option key={`${r.name}:${i}`} value={r.name} />
-              ))}
-            </datalist>
-          </Field>
+          <WorkflowRefPicker
+            value={ref}
+            onSelect={setRef}
+            refs={refs}
+            id={`workflow-refs-${item.id}`}
+          />
           <div className="toolbar">
             <button className="btn">Load ref and inputs</button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={refPage === 1}
-              onClick={() => setRefPage((p) => p - 1)}
-            >
-              Previous refs
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={!refs.data?.hasMore}
-              onClick={() => setRefPage((p) => p + 1)}
-            >
-              More refs
-            </button>
           </div>
         </form>
-        {refs.error && <ErrorBox error={refs.error} />}
-        {refs.loading && <Loading label="Loading branches and tags…" />}
         {environments.loading && <Loading label="Loading environments…" />}
         {environments.error && (
           <ErrorBox error={environments.error} onRetry={environments.reload} />
@@ -1315,6 +1445,7 @@ function WorkflowPanel({ item, read, prepare, button, can, revision }: PanelProp
             onSubmit={(e) => {
               e.preventDefault();
               if (
+                ref !== loadedRef ||
                 file.loading ||
                 file.error ||
                 !file.data?.dispatchable ||
@@ -1399,6 +1530,7 @@ function WorkflowPanel({ item, read, prepare, button, can, revision }: PanelProp
               <button
                 className="btn btn-primary"
                 disabled={
+                  ref !== loadedRef ||
                   !can("github.dispatch") ||
                   file.loading ||
                   !!file.error ||

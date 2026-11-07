@@ -59,3 +59,4 @@ export {
 export * from "./capture/index.ts";
 // In-cluster agent wire protocol (AFE-28).
 export * from "./agent-protocol.ts";
+export * from "./operations.ts";

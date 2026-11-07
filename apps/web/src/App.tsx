@@ -1,4 +1,5 @@
 import { VercelOperationsPage } from "./pages/VercelOperations.tsx";
+import { ArgoCdOperationsPage } from "./pages/ArgoCdOperations.tsx";
 import { GitHubOperationsPage } from "./pages/GitHubOperations.tsx";
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
 import { AccountEmailPage } from "./pages/AccountEmail.tsx";
@@ -40,6 +41,7 @@ export function Routes() {
   const { pathname } = useLocation();
   const { admin } = useAccess();
   if (pathname === "/vercel") return <VercelOperationsPage />;
+  if (pathname === "/argocd") return <ArgoCdOperationsPage />;
   if (pathname === "/github") return <GitHubOperationsPage />;
   if (pathname === "/users") return <UsersPage />;
   if (pathname === "/profile") return <ProfilePage />;
@@ -81,6 +83,7 @@ const NAV = [
   { to: "/events", label: "Events", icon: icons.events, group: "observe" },
   { to: "/vercel", label: "Vercel deployments", icon: icons.deployments, group: "observe" },
   { to: "/github", label: "GitHub Actions", icon: icons.actions, group: "observe" },
+  { to: "/argocd", label: "ArgoCD", icon: icons.connections, group: "observe" },
   { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },
   { to: "/drift", label: "Drift", icon: icons.drift, group: "observe" },
   { to: "/connections", label: "Connections", icon: icons.connections, group: "setup" },
@@ -132,7 +135,15 @@ function ThemeSwitch() {
   );
 }
 
-function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () => void }) {
+function Nav({
+  session,
+  profile,
+  onLogout,
+}: {
+  session: SessionInfo | null;
+  profile: ProfileInfo | null;
+  onLogout: () => void;
+}) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [pathname]);
@@ -160,7 +171,13 @@ function Nav({ session, onLogout }: { session: SessionInfo | null; onLogout: () 
       </div>
       <nav aria-label="Main" id="main-nav">
         {NAV_GROUPS.map((g) => {
-          const groupItems = NAV.filter((n) => n.group === g.id);
+          const groupItems = NAV.filter(
+            (n) =>
+              n.group === g.id &&
+              (n.to !== "/argocd" ||
+                !session?.principal.managedUser ||
+                profile?.tools.some((t) => t.tool === "argocd")),
+          );
           if (groupItems.length === 0) return null;
           return (
             <div className="nav-group" key={g.id}>
@@ -293,7 +310,11 @@ function Shell() {
   }
   return (
     <div className="app">
-      <Nav session={auth.status === "signed-in" ? auth.session : null} onLogout={logout} />
+      <Nav
+        session={auth.status === "signed-in" ? auth.session : null}
+        profile={profile}
+        onLogout={logout}
+      />
       <main id="main" tabIndex={-1}>
         {auth.status === "unknown" ? (
           sessionError ? (

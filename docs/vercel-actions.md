@@ -3,7 +3,7 @@
 AFE-58 implements the Vercel delivery workspace at `/vercel`. UI and managed-user
 bearer-token agents use the same catalog, scope checks, preparation and execution.
 The original observation connection and personal Profile read link never write.
-See [ADR 0016](decisions/0016-vercel-delivery-actions.md).
+See [ADR 0017](decisions/0017-vercel-delivery-actions.md).
 
 ## Capability matrix
 

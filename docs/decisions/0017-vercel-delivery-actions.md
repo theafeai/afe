@@ -1,4 +1,4 @@
-# ADR 0016: Opt-in personal Vercel delivery operations
+# ADR 0017: Opt-in personal Vercel delivery operations
 
 - Status: Accepted (authorized by AFE-58 under AFE-56)
 - Date: 2026-11-07

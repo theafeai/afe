@@ -219,3 +219,18 @@ request UUID, intent digest, project lock key, state, timestamps, upstream HTTP
 status, target deployment ID and optional new deployment ID. No input values, arbitrary provider
 responses, Git source, environment values or credentials are persisted. These
 receipts expire under the tenant retention policy and are not an audit log.
+
+## ArgoCD operational receipts (AFE-59)
+
+`argocd_action_requests` stores tenant/request UUID, Afe actor ID, connection ID,
+application and Application namespace, action and source RBAC permission, input
+digest, prepared source-version digest, application UID lock key, request state,
+upstream HTTP status, creation/release times. No input values, source spec,
+manifest/diff values, logs or provider response bodies are stored. Receipts expire
+under tenant retention via `argocd-actions.purge`. Per-link consent is a boolean
+`actionsEnabled` in the existing personal account context, reset by account
+replacement. Credentials remain in the existing encrypted credential repository.
+
+User-requested managed-resource diff payloads are read transiently and reduced to
+resource identity and changed flags. The workspace returns minimized health,
+sync/revision and deployment-history metadata. Log transport remains AFE-54.
