@@ -1,0 +1,12 @@
+{
+  "checks": "Default branch, arrow opening, alphabetical pagination, filtering, Escape/outside dismissal, keyboard selection, ref loading, dispatch payload, empty state, loading, error retry, theme and viewport checks passed",
+  "errors": [],
+  "workflowReads": [
+    "/api/actions/github/repositories/acme/app?connectionId=c&view=workflow_file&id=42&ref=trunk",
+    "/api/actions/github/repositories/acme/app?connectionId=c&view=workflow_file&id=42&ref=trunk",
+    "/api/actions/github/repositories/acme/app?connectionId=c&view=workflow_file&id=42&ref=release",
+    "/api/actions/github/repositories/acme/app?connectionId=c&view=workflow_file&id=42&ref=trunk",
+    "/api/actions/github/repositories/acme/app?connectionId=c&view=workflow_file&id=42&ref=trunk"
+  ],
+  "preparedRef": "release"
+}

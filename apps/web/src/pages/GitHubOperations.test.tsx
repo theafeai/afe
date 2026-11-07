@@ -16,6 +16,9 @@ beforeAll(() => {
 afterEach(cleanup);
 const root = "/api/actions/github/repositories/acme/app";
 function fixture({
+  defaultBranch = "main",
+  branchPages = [["main", "release", "develop"]],
+  refsError = false,
   uncertain = false,
   workflowGrant = true,
   runError = false,
@@ -155,6 +158,7 @@ function fixture({
         page: 1,
         hasMore: false,
       });
+    if (view === "repository") return Response.json({ defaultBranch });
     if (view === "workflow_file")
       return Response.json({
         path: ".github/workflows/deploy.yml",
@@ -186,8 +190,16 @@ function fixture({
         page: 1,
         hasMore: false,
       });
-    if (view === "branches" || view === "tags")
-      return Response.json({ items: [{ id: 1, name: "main" }], page: 1, hasMore: false });
+    if (view === "branches" || view === "tags") {
+      if (refsError) return Response.json({ message: "Refs unavailable" }, { status: 503 });
+      const page = Number(q.get("page") ?? 1);
+      const names = view === "branches" ? (branchPages[page - 1] ?? []) : ["v1.0"];
+      return Response.json({
+        items: names.map((name, id) => ({ name, id })),
+        page,
+        hasMore: view === "branches" && page < branchPages.length,
+      });
+    }
     if (view === "environments")
       return Response.json({ items: [{ id: 9, name: "production" }], page: 1, hasMore: false });
     throw new Error(`Unexpected request ${url}`);
@@ -803,9 +815,8 @@ it("clears old ref inputs and waits for the newly selected ref before dispatch",
   });
   fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
   await screen.findByRole("button", { name: "Prepare dispatch" });
-  fireEvent.change(screen.getByLabelText("Workflow branch, tag or SHA"), {
-    target: { value: "release" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: "Workflow branch, tag or SHA: main" }));
+  fireEvent.click(await screen.findByRole("button", { name: "release" }));
   fireEvent.click(screen.getByRole("button", { name: "Load ref and inputs" }));
   expect(screen.queryByRole("button", { name: "Prepare dispatch" })).toBeNull();
   expect(screen.queryByLabelText(/region/)).toBeNull();
@@ -853,4 +864,116 @@ it("retains run details while refreshing and blocks actions until checks finish"
       ).disabled,
     ).toBe(false),
   );
+});
+
+it("uses the repository default, browses every page alphabetically and resets search on reopening", async () => {
+  const mutations = fixture({
+    defaultBranch: "trunk",
+    branchPages: [
+      ["zebra", "trunk"],
+      ["alpha", "release"],
+    ],
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
+  const trigger = await screen.findByRole("button", { name: "Workflow branch, tag or SHA: trunk" });
+  fireEvent.click(trigger);
+  const search = screen.getByRole("searchbox", { name: "Search branches and tags" });
+  expect(document.activeElement).toBe(search);
+  expect((search as HTMLInputElement).value).toBe("");
+  await screen.findByRole("button", { name: "alpha" });
+  expect(
+    within(screen.getByRole("list", { name: "Workflow refs" }))
+      .getAllByRole("button")
+      .map((b) => b.textContent),
+  ).toEqual(["alpha", "release", "trunk", "v1.0", "zebra"]);
+  fireEvent.change(search, { target: { value: "REL" } });
+  expect(
+    within(screen.getByRole("list", { name: "Workflow refs" }))
+      .getAllByRole("button")
+      .map((b) => b.textContent),
+  ).toEqual(["release"]);
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect(document.activeElement).toBe(trigger);
+  expect(trigger.textContent).toContain("trunk");
+  fireEvent.click(trigger);
+  const again = screen.getByRole("searchbox", { name: "Search branches and tags" });
+  expect((again as HTMLInputElement).value).toBe("");
+  fireEvent.change(again, { target: { value: "no-such-branch" } });
+  expect(screen.getByText("No matching branches or tags")).toBeTruthy();
+  fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole("dialog", { name: "Choose a workflow ref" })).toBeNull();
+  expect(trigger.textContent).toContain("trunk");
+  fireEvent.click(trigger);
+  const reopenedSearch = screen.getByRole("searchbox", { name: "Search branches and tags" });
+  fireEvent.change(reopenedSearch, { target: { value: "release" } });
+  fireEvent.keyDown(reopenedSearch, { key: "ArrowDown" });
+  const releaseOption = screen.getByRole("button", { name: "release" });
+  expect(document.activeElement).toBe(releaseOption);
+  fireEvent.click(releaseOption);
+  expect(trigger.textContent).toContain("release");
+  expect(
+    (screen.getByRole("button", { name: "Prepare dispatch" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Load ref and inputs" }));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Prepare dispatch" }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Prepare dispatch" }));
+  const confirm = await screen.findByRole("dialog", { name: "Dispatch workflow" });
+  await waitFor(() => expect(confirm.getAttribute("aria-busy")).toBe("false"));
+  fireEvent.click(within(confirm).getByRole("button", { name: "Dispatch workflow" }));
+  await waitFor(() => expect(mutations).toHaveLength(1));
+  expect(mutations[0]).toMatchObject({ params: { workflowId: 42, ref: "release" } });
+});
+it("loads workflow inputs and dispatches on a non-main default without opening the picker", async () => {
+  const reads: string[] = [];
+  fixture({
+    defaultBranch: "develop",
+    beforeRead: async (url) => {
+      reads.push(url);
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
+  await screen.findByRole("button", { name: "Prepare dispatch" });
+  expect(
+    reads
+      .filter((url) => url.includes("view=workflow_file"))
+      .every((url) => url.includes("ref=develop")),
+  ).toBe(true);
+  expect(reads.some((url) => url.includes("view=workflow_file"))).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Prepare dispatch" }));
+  expect((await screen.findByRole("dialog", { name: "Dispatch workflow" })).textContent).toContain(
+    "develop",
+  );
+});
+it("shows ref loading, errors and retry and permits explicit tags or SHAs by keyboard", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fixture({
+    refsError: true,
+    beforeRead: async (url) => {
+      if (url.includes("view=branches") || url.includes("view=tags")) await gate;
+    },
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Open details" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Workflow branch, tag or SHA: main" }));
+  expect(screen.getByText("Loading branches and tags…")).toBeTruthy();
+  await act(async () => release());
+  await screen.findByText("Refs unavailable");
+  expect(
+    within(screen.getByRole("dialog", { name: "Choose a workflow ref" })).getByRole("button", {
+      name: "Try again",
+    }),
+  ).toBeTruthy();
+  const search = screen.getByRole("searchbox", { name: "Search branches and tags" });
+  fireEvent.change(search, { target: { value: "a".repeat(40) } });
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(
+    screen.getByRole("button", { name: `Workflow branch, tag or SHA: ${"a".repeat(40)}` }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
