@@ -12,6 +12,7 @@
     "./drift": "./src/drift/index.ts",
     "./types": "./src/types.ts",
     "./github-operations": "./src/github-operations.ts",
+    "./vercel-operations": "./src/vercel-operations.ts",
     "./argocd-operations": "./src/argocd-operations.ts",
     "./argocd-catalog": "./src/argocd-catalog.ts"
   },

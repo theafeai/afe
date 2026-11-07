@@ -38,6 +38,7 @@ async function listFiles(dir: string, prefix = ""): Promise<string[]> {
  */
 export const CLIENT_ROUTE_ROOTS = [
   "github",
+  "vercel",
   "argocd",
   "events",
   "deployments",

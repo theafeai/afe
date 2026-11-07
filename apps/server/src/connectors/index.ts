@@ -1,3 +1,4 @@
+import { vercelActionsModule } from "../actions/vercel.ts";
 import { argocdActionsModule } from "../actions/argocd.ts";
 import { githubActionsModule } from "../actions/github.ts";
 import type { ConnectorModule } from "../context.ts";
@@ -26,6 +27,7 @@ export const defaultModules: ConnectorModule[] = [
   // In-cluster ArgoCD agent ingest (AFE-28).
   argocdAgentModule,
   vercelModule,
+  vercelActionsModule,
   terraformModule,
   // Connection health (AFE-13): collects every module's `health` hooks.
   healthModule,

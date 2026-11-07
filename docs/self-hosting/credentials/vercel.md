@@ -61,3 +61,12 @@ Stored encrypted in Afe's database, never in `.env`.
 - **Webhook secret**: Vercel does not rotate a webhook's secret in place; create
   a new webhook, enter its secret into Afe, then delete the old webhook.
 - **Revoke**: delete the token (and webhook). Afe marks the connection revoked.
+
+## Optional personal delivery operations
+
+Keep the observation integration/token unchanged. Vercel delivery operations
+require a managed user's Source policy, linked personal read identity and a
+**separate** encrypted action token with explicit project/operation consent.
+See [setup and capability inventory](../../vercel-actions.md#install-and-authorize).
+Tokens must identify the same Vercel user/team as the read link. Narrow source
+roles and expiry; never give action authority to a collector credential.

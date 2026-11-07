@@ -1,3 +1,4 @@
+import { VercelOperationsPage } from "./pages/VercelOperations.tsx";
 import { ArgoCdOperationsPage } from "./pages/ArgoCdOperations.tsx";
 import { GitHubOperationsPage } from "./pages/GitHubOperations.tsx";
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
@@ -39,6 +40,7 @@ import { useTheme, type ThemeChoice } from "./theme.ts";
 export function Routes() {
   const { pathname } = useLocation();
   const { admin } = useAccess();
+  if (pathname === "/vercel") return <VercelOperationsPage />;
   if (pathname === "/argocd") return <ArgoCdOperationsPage />;
   if (pathname === "/github") return <GitHubOperationsPage />;
   if (pathname === "/users") return <UsersPage />;
@@ -79,6 +81,7 @@ export function Routes() {
 const NAV = [
   { to: "/", label: "Environments", icon: icons.environments, group: "observe" },
   { to: "/events", label: "Events", icon: icons.events, group: "observe" },
+  { to: "/vercel", label: "Vercel deployments", icon: icons.deployments, group: "observe" },
   { to: "/github", label: "GitHub Actions", icon: icons.actions, group: "observe" },
   { to: "/argocd", label: "ArgoCD", icon: icons.connections, group: "observe" },
   { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },

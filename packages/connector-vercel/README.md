@@ -39,3 +39,20 @@ documented exception in docs/security/rules.md R1.3.
   docs/connectors/vercel.md "Event capture".
 - `testing.ts`: `FakeVercelApi`, a local fake used in tests, and
   `MemoryVercelCaptureStore`.
+
+## Optional action transport
+
+`VercelActionClient` is separate from the GET-only observer. It is used only by
+explicitly confirmed personal operations in [the capability matrix](../../docs/vercel-actions.md).
+The server supplies a separate encrypted personal action token, narrowed by
+current source user/team/project access and per-project operation consent.
+Read needs User/Team/Projects/Deployments and project-domain/alias visibility;
+write needs Deployments for deploy/redeploy/cancel/delete, Projects/production
+traffic rights for promote/rollback, Aliases/Domains for assignment, Projects
+write for the two configuration flags. Exact integration console labels vary;
+this implementation does not request or upgrade OAuth integration permissions.
+Owner is required by Afe for domain assignment/configuration, and upstream
+role/token/plan restrictions remain authoritative for every operation.
+The action transport has fixed API origin, bounded responses, a 15-second timeout,
+manual redirects and no retries. Neither provider payloads nor token values are
+returned in operational receipts. See [ADR 0017](../../docs/decisions/0017-vercel-delivery-actions.md).

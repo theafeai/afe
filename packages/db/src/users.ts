@@ -81,6 +81,10 @@ export async function deleteLocalUser(
       "DELETE FROM user_tool_accounts WHERE tenant_id=$1 AND user_id=$2 RETURNING credential_id",
       [tenantId, id],
     );
+    const vercelActions = await db.query<{ credential_id: string }>(
+      "DELETE FROM vercel_action_credentials WHERE tenant_id=$1 AND user_id=$2 RETURNING credential_id",
+      [tenantId, id],
+    );
     const oidc = await db.query<{ credential_id: string }>(
       "DELETE FROM user_argocd_oidc_states WHERE tenant_id=$1 AND user_id=$2 RETURNING credential_id",
       [tenantId, id],
@@ -91,7 +95,7 @@ export async function deleteLocalUser(
        RETURNING o.credential_id`,
       [tenantId, id],
     );
-    for (const row of [...accounts.rows, ...oidc.rows, ...emails.rows]) {
+    for (const row of [...accounts.rows, ...vercelActions.rows, ...oidc.rows, ...emails.rows]) {
       await revokeCredential(db, tenantId, row.credential_id);
     }
     await db.query("DELETE FROM user_email_links WHERE tenant_id=$1 AND user_id=$2", [

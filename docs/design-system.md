@@ -368,6 +368,11 @@ Before opening a PR that touches `apps/web`:
 - [ ] Keyboard: everything reachable with Tab, focus visible, icon buttons labelled
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` pass (includes the design-system check)
 
+The Vercel delivery workspace uses the existing section, entity-list, inline-form,
+KeyValue and OperationDialog patterns. Scope and preparation are refreshed before
+a consequential operation; the dialog shows project/build/parameters and retains
+the request UUID after an ambiguous network response.
+
 ## ArgoCD workspace
 
 The ArgoCD workspace uses existing fields, checkboxes, tables, entity lists and
