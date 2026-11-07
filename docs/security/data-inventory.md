@@ -207,3 +207,15 @@ principal and does not transfer the old link or grants. Disconnecting destroys
 the linked credential ciphertext while retaining the identity and policy for
 relinking. GitHub account names and credential references remain in
 `user_tool_accounts`; personal tokens remain encrypted in `credentials`.
+
+### Vercel action consent and operational receipts (AFE-58)
+
+`vercel_action_credentials` stores tenant/user/connection/project identifiers,
+allowed catalog operations and a credential reference; the separate personal
+action token is encrypted through the standard credential repository. It is
+revalidated at use and revoked on replacement, disabling or user deletion.
+`vercel_action_requests` stores tenant, actor, connection, project, operation,
+request UUID, intent digest, project lock key, state, timestamps, upstream HTTP
+status, target deployment ID and optional new deployment ID. No input values, arbitrary provider
+responses, Git source, environment values or credentials are persisted. These
+receipts expire under the tenant retention policy and are not an audit log.

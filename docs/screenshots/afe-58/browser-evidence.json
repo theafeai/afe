@@ -1,0 +1,60 @@
+{
+  "errors": [],
+  "responses": [
+    {
+      "path": "/api/actions/vercel/resources",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront/credential",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront/prepare",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront/prepare",
+      "status": 200
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront",
+      "status": 202
+    },
+    {
+      "path": "/api/actions/vercel/connections/e0231684-5b1f-42ed-8cc2-11ea0d65a6ce/projects/prj_storefront",
+      "status": 200
+    }
+  ],
+  "layouts": [
+    {
+      "width": 1440,
+      "scroll": 1425
+    },
+    {
+      "width": 1440,
+      "scroll": 1425
+    },
+    {
+      "width": 390,
+      "scroll": 375
+    },
+    {
+      "width": 390,
+      "scroll": 375
+    }
+  ],
+  "story": "Session login → selected project → opt-in action credential → deployment selection → review dialog → confirmed redeploy → PostgreSQL receipt → new build context; local fake Vercel only."
+}

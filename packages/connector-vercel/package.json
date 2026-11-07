@@ -9,6 +9,7 @@
     "./testing": "./src/testing.ts"
   },
   "dependencies": {
-    "@afe/core": "workspace:*"
+    "@afe/core": "workspace:*",
+    "zod": "^4.6.7"
   }
 }

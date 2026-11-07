@@ -803,3 +803,11 @@ See [GitHub operations API and setup](github-actions.md) for repository discover
 resource views, strict preparation/confirmation schemas, request history/recovery
 and scoped artifact/archived-log downloads under `/api/actions/github/`.
 The original event run-controls endpoint remains compatible.
+
+## Vercel delivery operations (AFE-58)
+
+The `/api/actions/vercel` routes share scope, capabilities, strict prepared intent,
+confirmation and receipts between UI and managed-user bearer-token agents. See
+[Vercel operations](vercel-actions.md#agent-api) for endpoints, parameter schemas,
+permission requirements and uncertain-outcome recovery. Collection credentials
+remain read-only and cannot enable actions.

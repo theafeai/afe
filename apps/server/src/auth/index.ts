@@ -237,6 +237,11 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
         [
           "/api/actions/github/events/:eventId",
           "/api/actions/github/resources",
+          "/api/actions/vercel/resources",
+          "/api/actions/vercel/connections/:connectionId/projects/:projectId",
+          "/api/actions/vercel/connections/:connectionId/projects/:projectId/credential",
+          "/api/actions/vercel/connections/:connectionId/projects/:projectId/prepare",
+          "/api/actions/vercel/connections/:connectionId/projects/:projectId/requests/:requestId/release",
           "/api/actions/github/repositories/:owner/:repo",
           "/api/actions/github/repositories/:owner/:repo/prepare",
           "/api/actions/github/repositories/:owner/:repo/requests/:requestId/release",
