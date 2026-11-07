@@ -234,3 +234,22 @@ replacement. Credentials remain in the existing encrypted credential repository.
 User-requested managed-resource diff payloads are read transiently and reduced to
 resource identity and changed flags. The workspace returns minimized health,
 sync/revision and deployment-history metadata. Log transport remains AFE-54.
+
+## Remote Terraform operations (AFE-60)
+
+Remote connection config stores the server origin, organization and workspace ID.
+Personal Terraform tokens are encrypted in `credentials` as `user_terraform_token`;
+`user_tool_accounts` retains only the public account name, source user ID, server
+origin, operation opt-in and credential reference. No token is returned.
+
+`terraform_action_requests` stores tenant/request/actor/connection IDs, action,
+resource key, prepared-state and input hashes, state, source HTTP status, optional
+created run ID and creation time. The hourly retention job deletes expired rows.
+Sanitized actor/target/outcome IDs and state may appear in application logs.
+No inputs, variables, source bodies, state/plan/output values, credentials or logs
+are stored in receipts or events. Requests and reads never fabricate deployment
+events. Workspace/run/policy metadata and aggregate plan change counts are
+transient reads shown only to the verified source user. Full plans, outputs,
+configuration archives, state files and log content are not fetched. Provider
+responses can contain signed log URLs; these remain transient and are never
+returned or logged.

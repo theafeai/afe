@@ -819,3 +819,12 @@ source-scoped capabilities, strict prepare/execute schemas, explicit per-link co
 minimized resource diffs and operational receipt history/recovery under
 `/api/actions/argocd/`. Personal managed-user authentication is required; the
 bootstrap observer token grants no application mutation authority.
+
+## Terraform delivery operations
+
+Named users with a verified personal Terraform account and Source policy use
+`/api/actions/terraform/*` for shared UI/agent discovery, preparation, confirmed
+execution and request recovery. See [Terraform API and capability matrix](terraform-actions.md#agent-and-ui-api)
+for strict schemas, current-source authorization, state validation, duplicate
+suppression, rate limits and uncertain outcomes. CLI reporter secrets grant no
+operation authority.

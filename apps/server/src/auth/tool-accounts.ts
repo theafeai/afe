@@ -43,6 +43,8 @@ export interface ToolAccount {
     actionsEnabled?: boolean;
     oidcRevision?: string;
     expiresAt?: number;
+    serverUrl?: string;
+    accountId?: string;
   };
 }
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -71,7 +73,7 @@ export async function toolAccounts(
     )
   ).rows;
 }
-async function saveAccount(
+export async function saveAccount(
   ctx: ServerContext,
   tid: string,
   uid: string,
@@ -120,6 +122,14 @@ export async function sourceAccess(
 ): Promise<EventAccessRule[]> {
   const stored = await getCredential(ctx.pool, ctx.keys, tid, account.credential_id);
   if (!stored) return [];
+  if (account.tool === "terraform") {
+    const { terraformSourceAccess } = await import("../actions/terraform-identity.ts");
+    const user = await ctx.pool.query<{ user_id: string }>(
+      "SELECT user_id FROM user_tool_accounts WHERE tenant_id=$1 AND tool='terraform' AND credential_id=$2",
+      [tid, account.credential_id],
+    );
+    return user.rows[0] ? terraformSourceAccess(ctx, tid, user.rows[0].user_id) : [];
+  }
   if (account.tool === "github") {
     const http = new GitHubHttp({ maxRetries: 0 });
     const rules: EventAccessRule[] = [];
@@ -228,7 +238,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
               ? vercelConfig()
               : oidcConnections.length),
         ),
-        sourceAvailable: tool !== "terraform",
+        sourceAvailable: true,
         sourceEnabled: policy.mode === "source",
       });
     }

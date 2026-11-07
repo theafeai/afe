@@ -29,3 +29,10 @@ worker in one process), `server`, `worker`, `migrate`, `reencrypt-credentials`.
 Images are published for `linux/amd64` and `linux/arm64` on every tagged
 release, with SLSA build provenance and an SBOM attached. Verify an image with
 `gh attestation verify oci://ghcr.io/theafeai/afe:<version> --owner theafeai`.
+
+## Remote Terraform operations
+
+Follow [Terraform delivery setup](../terraform-actions.md#install-and-authorize)
+to select HCP/TFE workspaces, link named users with least-privilege personal
+tokens, configure TFE network/CA trust and opt in to delivery operations. Existing
+CLI reporters require no credential or permission changes.

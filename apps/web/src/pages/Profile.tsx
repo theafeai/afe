@@ -28,6 +28,7 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
   const id = useId();
   const name = toolLabel(tool.tool);
   const [token, setToken] = useState("");
+  const [actionsEnabled, setActionsEnabled] = useState(false);
   const [context, setContext] = useState("");
   const [oidcConnection, setOidcConnection] = useState(tool.oidcConnections?.[0]?.id ?? "");
   const [error, setError] = useState<{ title: string; error: Error } | null>(null);
@@ -48,7 +49,7 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
       setBusy(null);
     }
   }
-  const tokenForm = ["github", "vercel", "argocd"].includes(tool.tool);
+  const tokenForm = ["github", "vercel", "argocd", "terraform"].includes(tool.tool);
   const disconnect = tool.linked && (
     <button
       type="button"
@@ -146,8 +147,11 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
               void run("link", async () => {
                 await request("POST", `/api/profile/tools/${tool.tool}/token`, {
                   token,
-                  ...(tool.tool === "argocd"
-                    ? { connectionId: context }
+                  ...(["argocd", "terraform"].includes(tool.tool)
+                    ? {
+                        connectionId: context,
+                        ...(tool.tool === "terraform" ? { actionsEnabled } : {}),
+                      }
                     : context
                       ? { teamId: context }
                       : {}),
@@ -183,22 +187,43 @@ function ToolAccount({ tool, reload }: { tool: ProfileTool; reload: () => void }
             {tool.tool !== "github" && (
               <div className="field">
                 <label htmlFor={`${id}-context`}>
-                  {tool.tool === "argocd" ? "Connection ID" : "Team ID (optional)"}
+                  {["argocd", "terraform"].includes(tool.tool)
+                    ? "Connection ID"
+                    : "Team ID (optional)"}
                 </label>
                 <input
                   id={`${id}-context`}
-                  required={tool.tool === "argocd"}
+                  required={["argocd", "terraform"].includes(tool.tool)}
                   spellCheck={false}
                   value={context}
                   onChange={(e) => setContext(e.target.value)}
                   aria-describedby={`${id}-context-help`}
                 />
                 <small id={`${id}-context-help`} className="muted">
-                  {tool.tool === "argocd"
-                    ? "Ask your administrator for the ID of the ArgoCD connection."
-                    : "Leave empty for a personal Vercel account."}
+                  {tool.tool === "terraform"
+                    ? "Ask your administrator for a remote HCP Terraform or Terraform Enterprise connection ID. CLI reporters cannot be controlled."
+                    : tool.tool === "argocd"
+                      ? "Ask your administrator for the ID of the ArgoCD connection."
+                      : "Leave empty for a personal Vercel account."}
                 </small>
               </div>
+            )}
+            {tool.tool === "terraform" && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={actionsEnabled}
+                  onChange={(e) => setActionsEnabled(e.target.checked)}
+                />
+                Enable delivery operations with my personal Terraform user token
+              </label>
+            )}
+            {tool.tool === "terraform" && (
+              <p className="muted small">
+                Leave unchecked for read-only access. Use a user token with the least workspace
+                permissions you need. Team and organization tokens are not accepted. Linking
+                replaces the previous token and operation opt-in.
+              </p>
             )}
             <div className="button-row">
               <button type="submit" className="btn btn-primary" disabled={busy !== null}>

@@ -40,6 +40,7 @@ export const CLIENT_ROUTE_ROOTS = [
   "github",
   "vercel",
   "argocd",
+  "terraform",
   "events",
   "deployments",
   "connections",

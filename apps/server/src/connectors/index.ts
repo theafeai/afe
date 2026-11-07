@@ -1,5 +1,6 @@
 import { vercelActionsModule } from "../actions/vercel.ts";
 import { argocdActionsModule } from "../actions/argocd.ts";
+import { terraformActionsModule } from "../actions/terraform.ts";
 import { githubActionsModule } from "../actions/github.ts";
 import type { ConnectorModule } from "../context.ts";
 import { eventsApiModule } from "../api/events.ts";
@@ -29,6 +30,7 @@ export const defaultModules: ConnectorModule[] = [
   vercelModule,
   vercelActionsModule,
   terraformModule,
+  terraformActionsModule,
   // Connection health (AFE-13): collects every module's `health` hooks.
   healthModule,
   // Event query API (AFE-14).

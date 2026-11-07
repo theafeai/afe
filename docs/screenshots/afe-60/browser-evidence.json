@@ -1,0 +1,96 @@
+{
+  "errors": [],
+  "evidence": [
+    {
+      "view": "profile",
+      "theme": "Light",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "view": "profile",
+      "theme": "Dark",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "view": "profile",
+      "theme": "Light",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "view": "profile",
+      "theme": "Dark",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "view": "workspace",
+      "theme": "Light",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "view": "workspace",
+      "theme": "Dark",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "view": "workspace",
+      "theme": "Light",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "view": "workspace",
+      "theme": "Dark",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "flow": "Profile linking → workspace discovery → prepare → explicit confirm → provider apply → accepted receipt → source applying state",
+      "mutation": {
+        "path": "/api/v2/runs/run-Q8k4n7X2m9Lp/actions/apply",
+        "method": "POST"
+      }
+    },
+    {
+      "state": "empty",
+      "visible": true
+    },
+    {
+      "state": "provider rate limit",
+      "visible": true
+    },
+    {
+      "view": "setup",
+      "theme": "Light",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "view": "setup",
+      "theme": "Dark",
+      "width": 1440,
+      "overflow": false
+    },
+    {
+      "view": "setup",
+      "theme": "Light",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "view": "setup",
+      "theme": "Dark",
+      "width": 390,
+      "overflow": false
+    },
+    {
+      "flow": "Administrator remote selection saved; static credentials denied Terraform operations",
+      "status": "verified"
+    }
+  ]
+}

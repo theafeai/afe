@@ -1,5 +1,6 @@
 import { VercelOperationsPage } from "./pages/VercelOperations.tsx";
 import { ArgoCdOperationsPage } from "./pages/ArgoCdOperations.tsx";
+import { TerraformOperationsPage } from "./pages/TerraformOperations.tsx";
 import { GitHubOperationsPage } from "./pages/GitHubOperations.tsx";
 import { AccessContext, useAccess, type ProfileInfo } from "./access.tsx";
 import { AccountEmailPage } from "./pages/AccountEmail.tsx";
@@ -42,6 +43,7 @@ export function Routes() {
   const { admin } = useAccess();
   if (pathname === "/vercel") return <VercelOperationsPage />;
   if (pathname === "/argocd") return <ArgoCdOperationsPage />;
+  if (pathname === "/terraform") return <TerraformOperationsPage />;
   if (pathname === "/github") return <GitHubOperationsPage />;
   if (pathname === "/users") return <UsersPage />;
   if (pathname === "/profile") return <ProfilePage />;
@@ -82,6 +84,7 @@ const NAV = [
   { to: "/", label: "Environments", icon: icons.environments, group: "observe" },
   { to: "/events", label: "Events", icon: icons.events, group: "observe" },
   { to: "/vercel", label: "Vercel deployments", icon: icons.deployments, group: "observe" },
+  { to: "/terraform", label: "Terraform", icon: icons.actions, group: "observe" },
   { to: "/github", label: "GitHub Actions", icon: icons.actions, group: "observe" },
   { to: "/argocd", label: "ArgoCD", icon: icons.connections, group: "observe" },
   { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },
