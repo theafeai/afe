@@ -12,6 +12,6 @@
   },
   "dependencies": {
     "@afe/core": "workspace:*",
-    "undici": "^7.30.1"
+    "undici": "^8.12.3"
   }
 }
