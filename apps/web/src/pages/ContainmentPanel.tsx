@@ -1,7 +1,7 @@
 import type { CanonicalEvent } from "@afe/core/types";
 import { ApiError } from "../api/client.ts";
 import { fetchContainment, type Contained } from "../api/containment.ts";
-import { ErrorBox, Loading, ToolBadge, useAsync } from "../components.tsx";
+import { ErrorBox, Loading, StatusWord, ToolBadge, useAsync } from "../components.tsx";
 import { formatDateTime, shortHash } from "../format.ts";
 import { Link } from "../router.tsx";
 
@@ -19,9 +19,23 @@ export function containmentSubject(
 }
 
 function ContainedBadge({ value }: { value: Contained }) {
-  if (value === true) return <span className="badge outcome outcome-succeeded">Included</span>;
-  if (value === false) return <span className="badge outcome outcome-failed">Not included</span>;
-  return <span className="badge">Unknown</span>;
+  if (value === true)
+    return (
+      <StatusWord tone="ok" className="outcome">
+        Included
+      </StatusWord>
+    );
+  if (value === false)
+    return (
+      <StatusWord tone="bad" className="outcome">
+        Not included
+      </StatusWord>
+    );
+  return (
+    <StatusWord tone="idle" className="outcome">
+      Unknown
+    </StatusWord>
+  );
 }
 
 /** "Where is this commit live?" (AFE-22), for events with a commit and a GitHub repository. */

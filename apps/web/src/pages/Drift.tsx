@@ -19,7 +19,17 @@ import {
   type DriftFindingSummary,
 } from "../api/drift.ts";
 import { mappingApi, type MappingState } from "../api/mapping.ts";
-import { Empty, ErrorBox, Loading, ToolBadge, useAsync, useDocumentTitle } from "../components.tsx";
+import {
+  Empty,
+  ErrorBox,
+  Loading,
+  StatusWord,
+  ToolBadge,
+  ToolLegend,
+  useAsync,
+  useDocumentTitle,
+  type StatusTone,
+} from "../components.tsx";
 import { formatDateTime, humanize, shortHash } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 
@@ -31,15 +41,27 @@ export function typeLabel(type: string): string {
   return DRIFT_TYPE_LABELS[type] ?? humanize(type);
 }
 
+const SEVERITY_TONE: Record<string, StatusTone> = { critical: "bad", high: "bad", medium: "warn" };
+
 export function SeverityBadge({ severity }: { severity: string }) {
-  return <span className={`badge severity severity-${severity}`}>{capitalize(severity)}</span>;
+  return (
+    <StatusWord
+      tone={SEVERITY_TONE[severity] ?? "idle"}
+      className={`severity severity-${severity}`}
+    >
+      {capitalize(severity)}
+    </StatusWord>
+  );
 }
 
 function DriftStatus({ status }: { status: string }) {
   return (
-    <span className={`badge drift-status drift-status-${status}`}>
+    <StatusWord
+      tone={status === "open" ? "warn" : "ok"}
+      className={`drift-status drift-status-${status}`}
+    >
       {status === "open" ? "Open" : "Resolved"}
-    </span>
+    </StatusWord>
   );
 }
 
@@ -197,6 +219,7 @@ export function DriftPage() {
           </p>
         )}
       </header>
+      <ToolLegend />
       <ScopeNotice drift />
       <Filters
         filters={filters}

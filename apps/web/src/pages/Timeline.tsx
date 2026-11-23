@@ -15,6 +15,7 @@ import {
   toolLabel,
   useAsync,
   useDocumentTitle,
+  ToolLegend,
 } from "../components.tsx";
 import { FilterBar } from "../FilterBar.tsx";
 import {
@@ -218,6 +219,15 @@ export function Timeline() {
           </p>
         </div>
       </header>
+      <ToolLegend
+        sources={connections.data?.connections.map((c) => c.source) ?? []}
+        keys={
+          <span>
+            <i className="key-gap" aria-hidden="true" />
+            Observation gap
+          </span>
+        }
+      />
 
       {connections.data && <GapBanners connections={connections.data.connections} />}
       {connections.error && (

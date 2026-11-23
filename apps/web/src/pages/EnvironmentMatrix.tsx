@@ -36,6 +36,7 @@ import {
   toolLabel,
   useAsync,
   useDocumentTitle,
+  ToolLegend,
 } from "../components.tsx";
 import { formatDateTime } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
@@ -494,6 +495,7 @@ export function EnvironmentMatrix() {
           </button>
         </div>
       </header>
+      <ToolLegend sources={connections.data?.connections.map((c) => c.source) ?? []} />
       <ScopeNotice />
 
       {connections.data && <GapBanners connections={connections.data.connections} />}
