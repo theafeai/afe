@@ -1,6 +1,9 @@
 # ADR 0015: Ink design language
 
-- Status: Accepted
+- Status: Accepted. Superseded in part by [ADR 0017](0017-spectrum-design-language.md):
+  the palette (colours only for signal), the selection blue, outline status glyphs,
+  lime confidence, the typeface and title size, the logo, the tool-row rule and the
+  shadow rule
 - Date: 2026-11-03
 - Linear: AFE-86 (also covers AFE-83 and AFE-85)
 - Supersedes: in [ADR 0009](0009-web-ui-design-system.md) the indigo accent, the Inter
