@@ -47,6 +47,10 @@ secret masking. See [GitHub connector](../connectors/github.md#workflow-progress
 | Setup overrides (M2, D-0012)             | per environment and field: the admin's value, `set_by` (principal id), `set_by_name` (display name), `set_at`, the inferred value kept against                                                                                       | `setup_overrides`                                     | Confidential; names a person         |
 | Logs (stdout, not the DB)                | request method/path/status, delivery ids, error kinds                                                                                                                                                                                | –                                                     | Low (redacted)                       |
 
+Locally managed users see inferred setup and overrides only for environments
+their own events reach, without reasons, evidence, cadence, raw tool values,
+`set_by`/`set_by_name` or `set_at` (`GET /api/setup`, docs/api.md).
+
 Raw payloads are stored as received, after removing the fields listed in "What
 Afe deliberately does not store" when a source includes them; connectors list
 the paths they strip and test it.
@@ -247,6 +251,10 @@ Migrations `0037`–`0039` (D-0024/D-0025, security review P4 and P7).
   replay, job log reads, artifact and archive downloads, workflow-source reads,
   automations and notification sends never use the cache; they check access live
   (ADR 0014).
+- A refresh that was running when the user's access was invalidated never writes
+  its rules (per-user invalidation generation, checked before and after the
+  write). A failed identity read during a refresh denies instead of skipping
+  the organization membership re-check.
 - `user_source_access.rules` is never shown to other users or administrators and
   never leaves the server. Access-scoped correlation snapshots are kept only in
   process memory, keyed by tenant and the SHA-256 of the sorted rules, and hold

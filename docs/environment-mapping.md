@@ -140,7 +140,7 @@ Nothing stored is changed or deleted:
   old buckets creates the environments and switches the built-in rules on,
   or adds rules.
 - Until the first inference run (at most ten minutes after start, or
-  immediately on `POST /api/setup/infer`, or queued by the first
+  immediately on `POST /api/setup/infer`, or queued by an admin's first
   `GET /api/setup`) such a tenant's environments are unmapped.
 
 ## Inferred setup
@@ -214,8 +214,9 @@ and order disagreements are not reported.
 ### When it runs
 
 Job `setup.infer`: every ten minutes for every tenant with events, one tenant
-at a time; on demand for one tenant (`POST /api/setup/infer`, and the first
-`GET /api/setup` of a tenant that has never been inferred). Each run replaces
+at a time; on demand for one tenant (`POST /api/setup/infer`, and an admin's
+first `GET /api/setup` of a tenant that has never been inferred; viewers'
+reads never queue a run). Each run replaces
 the tenant's facts atomically; facts of environments that no longer appear
 in the retained events are deleted, so inferred data never outlives the
 events it came from.

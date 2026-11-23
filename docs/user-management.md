@@ -118,7 +118,11 @@ not derive or persist alternate drift state from a partial graph.
 
 Mapping exposes only services/environments seen in the most recent 1,000 permitted
 deployment events. Rule patterns, configuration descriptions and revisions are
-not disclosed. Rule previews, mapping edits, drift settings, raw evidence and
+not disclosed. The setup view (`GET /api/setup`) is reduced the same way: only
+those environments, with each field's value and whether Afe inferred it or an
+admin set it, but no reasons, evidence, cadence, raw tool values or the name
+of the admin who set a value (see [api.md](api.md#get-apisetup-viewer)). Setup
+changes stay admin-only. Rule previews, mapping edits, drift settings, raw evidence and
 remote commit-containment comparisons remain unavailable to managed users.
 Standalone open-source Afe does not provide audit exports.
 
@@ -161,7 +165,11 @@ metadata.
   period. A missing or expired entry never widens access.
 - Local changes apply at once: unlinking or relinking, any change to the user's
   GitHub policy or deny rules, disabling and deleting the user drop the cached
-  entry before the request returns.
+  entry before the request returns. A refresh already running at that moment
+  never stores its result (it was fetched before the change).
+- If Afe cannot read a Sign in with GitHub user's identity row during a refresh,
+  the refresh fails and denies; it never skips the organization membership
+  re-check.
 - Users with the same access in the same tenant can share a computed snapshot;
   the snapshot holds no per-user data and is never shared across tenants.
 - The cached list is never shown to other users. See the

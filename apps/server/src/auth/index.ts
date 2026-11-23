@@ -296,7 +296,10 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
           "/api/drift/summary",
           "/api/mapping",
           "/api/mapping/unmapped",
-        ].includes(routeUrl ?? "");
+        ].includes(routeUrl ?? "") ||
+        // Read-only and reduced to what the user can see (setup/routes.ts
+        // `scopedSetupView`). PATCH /api/setup stays closed to managed users.
+        (routeUrl === "/api/setup" && (req.method === "GET" || req.method === "HEAD"));
       if (!allowed)
         return reply
           .code(403)

@@ -617,8 +617,12 @@ describe("setup API: inferred setup and admin overrides (D-0012)", () => {
     await pool.end();
   });
 
-  it("queues inference on first read, then shows every field with its provenance", async () => {
-    const first = (await call("GET", "/api/setup", V)).json();
+  it("queues inference on an admin's first read, then shows every field with its provenance", async () => {
+    // A viewer's read has no side effect (QA L1).
+    const viewed = (await call("GET", "/api/setup", V)).json();
+    expect(viewed.computedAt).toBeNull();
+    expect(jobs.sent.map((j) => j.name)).not.toContain(SETUP_INFER_JOB);
+    const first = (await call("GET", "/api/setup", A)).json();
     expect(first.computedAt).toBeNull();
     expect(jobs.sent.map((j) => j.name)).toContain(SETUP_INFER_JOB);
     await jobs.drain();

@@ -6,7 +6,8 @@
  *   as `{value, origin, via?, confidence?, reason?, evidence?, setBy?, setAt?,
  *   inferred}`, plus `noticed` (inference that disagrees with an admin value,
  *   or environments that appeared since the admin adjusted the setup).
- *   Reported, never applied.
+ *   Reported, never applied. Locally managed users get the read-only
+ *   `scopedSetupView` instead. Only an admin's read queues the first run.
  * - `PATCH /api/setup` (admin): set, clear ("Use Afe's guess") or keep
  *   ("Keep yours") overrides, atomically, audited as one
  *   `config.mapping.changed` event (entity `setup`).
@@ -15,7 +16,7 @@
  * Only admin routes write overrides; the tenant is always the principal's.
  */
 import type { FastifyInstance } from "fastify";
-import type { JsonObject } from "@afe/core";
+import { hasRole, type JsonObject } from "@afe/core";
 import {
   BATCHING_VALUES,
   environmentSubject,
@@ -27,6 +28,7 @@ import {
 } from "@afe/core/setup";
 import { clearSetupOverrides, setSetupOverride } from "@afe/db";
 import { requestTenant } from "../auth/index.ts";
+import { requestEventAccess } from "../auth/permissions.ts";
 import type { ServerContext } from "../context.ts";
 import { auditedMappingChange, HttpError, parse, send, setupActorOf } from "../mapping/routes.ts";
 import type { LoadedMapping, MappingService } from "../mapping/service.ts";
@@ -45,6 +47,59 @@ function view(loaded: LoadedMapping) {
   };
 }
 
+/**
+ * What a locally managed user sees (QA M1). Environment facts are computed from
+ * every repository in the tenant, so a managed user gets only:
+ * - environments their own events are placed in (the `GET /api/mapping`
+ *   reduction), included ones only;
+ * - per field, the effective value, its origin (`via`) and confidence. No
+ *   reason, evidence, Afe's separate guess (`inferred: null`) or first-seen
+ *   time, since those carry counts, names and timing from other repositories;
+ * - no `cadence` (deployment counts and intervals) and no `sources` (raw tool
+ *   values; `GET /api/mapping` hides rules from them too);
+ * - no `setBy`/`setAt` unless the caller is an admin (managed users are viewers
+ *   today, so never);
+ * - no `noticed` (an admin workflow), `revision: 0`, `fields: []`, `readOnly: true`.
+ */
+export function scopedSetupView(
+  loaded: LoadedMapping,
+  visible: ReadonlySet<string>,
+  showAuthors: boolean,
+) {
+  const field = <T>(v: SetupValue<T>) => ({
+    value: v.value,
+    origin: v.origin,
+    ...(v.via ? { via: v.via } : {}),
+    ...(v.confidence ? { confidence: v.confidence } : {}),
+    ...(showAuthors && v.setBy !== undefined ? { setBy: v.setBy } : {}),
+    ...(showAuthors && v.setAt ? { setAt: v.setAt } : {}),
+    inferred: null,
+  });
+  return {
+    readOnly: true,
+    revision: 0,
+    computedAt: loaded.setup.computedAt,
+    environments: loaded.setup.environments
+      .filter((e) => e.included.value && visible.has(e.id))
+      .map((e) => ({
+        id: e.id,
+        origin: e.origin,
+        family: e.family,
+        kind: e.kind,
+        included: field(e.included),
+        name: field(e.name),
+        order: field(e.order),
+        productionLike: field(e.productionLike),
+        gating: field(e.gating),
+        batching: field(e.batching),
+      })),
+    noticed: [],
+    fields: [],
+    gatingValues: GATING_VALUES,
+    batchingValues: BATCHING_VALUES,
+  };
+}
+
 const fieldOf = (e: EffectiveEnvironment, field: (typeof OVERRIDE_FIELDS)[number]) =>
   e[field] as SetupValue<unknown>;
 
@@ -58,10 +113,18 @@ export function registerSetupRoutes(
 
   app.get("/api/setup", async (req) => {
     const tenantId = requestTenant(req);
+    const isAdmin = Boolean(req.principal && hasRole(req.principal, "admin"));
     const loaded = await service.load(tenantId);
-    // Never inferred yet (new tenant or just upgraded): start a run.
-    if (!loaded.setup.computedAt) await queueInference(tenantId).catch(() => {});
-    return view(loaded);
+    // Never inferred yet (new tenant or just upgraded): an admin's read starts a
+    // run. Viewers' reads have no side effect; the scheduled job covers them.
+    if (!loaded.setup.computedAt && isAdmin) await queueInference(tenantId).catch(() => {});
+    const access = await requestEventAccess(ctx.pool, req, ctx);
+    if (access === undefined) return view(loaded);
+    const events = await service.recentDeploymentEvents(tenantId, 1000, access);
+    const placements = await service.placements(tenantId, events);
+    const visible = new Set<string>();
+    for (const p of placements.values()) if (p.environment) visible.add(p.environment.id);
+    return scopedSetupView(loaded, visible, isAdmin);
   });
 
   app.patch("/api/setup", async (req, reply) => {

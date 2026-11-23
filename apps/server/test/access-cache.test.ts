@@ -164,6 +164,60 @@ describe("AccessCache", () => {
     expect(rows.size).toBe(0);
     expect(dropped).toEqual([["default", accessFingerprint([repo("acme/a")])]]);
   });
+  it("a refresh in flight during invalidation never writes its stale rules (L3)", async () => {
+    const { pool, rows } = fakePool();
+    const cache = new AccessCache(pool);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const running = cache.refresh("default", USER, "github", CRED, async () => {
+      await gate;
+      return [repo("acme/before-change")];
+    });
+    await cache.invalidate(pool, "default", USER);
+    release();
+    // The request that started before the change still gets its answer...
+    expect(await running).toEqual([repo("acme/before-change")]);
+    // ...but nothing is cached for later reads.
+    expect(rows.size).toBe(0);
+    expect(await cache.read("default", USER, "github", CRED)).toBe(null);
+    // A refresh that starts after the change is stored as usual.
+    await cache.refresh("default", USER, "github", CRED, async () => [repo("acme/after")]);
+    expect(await cache.read("default", USER, "github", CRED)).toEqual([repo("acme/after")]);
+  });
+
+  it("an invalidation that lands while the write runs deletes the written row (L3)", async () => {
+    const { pool, rows } = fakePool();
+    const cache = new AccessCache(pool);
+    const query = pool.query as unknown as ReturnType<typeof vi.fn>;
+    const original = query.getMockImplementation() as (
+      sql: string,
+      params: unknown[],
+    ) => Promise<unknown>;
+    query.mockImplementation(async (sql: string, params: unknown[]) => {
+      const result = await original(sql, params);
+      if (sql.includes("INSERT INTO user_source_access")) cache.forgetUser("default", USER);
+      return result;
+    });
+    await cache.refresh("default", USER, "github", CRED, async () => [repo("acme/a")]);
+    expect(rows.size).toBe(0);
+    expect(await cache.read("default", USER, "github", CRED)).toBe(null);
+  });
+
+  it("invalidating one user does not stop another user's refresh from caching", async () => {
+    const OTHER = "44444444-4444-4444-8444-444444444444";
+    const { pool } = fakePool();
+    const cache = new AccessCache(pool);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const running = cache.refresh("default", OTHER, "github", CRED, async () => {
+      await gate;
+      return [repo("acme/other")];
+    });
+    cache.forgetUser("default", USER);
+    release();
+    await running;
+    expect(await cache.read("default", OTHER, "github", CRED)).toEqual([repo("acme/other")]);
+  });
 });
 
 describe("requestEventAccess (P4 fail closed)", () => {
@@ -209,6 +263,24 @@ describe("requestEventAccess (P4 fail closed)", () => {
     const upstream = vi.spyOn(toolAccess, "sourceAccess");
     expect(await requestEventAccess(pool, request(), context(pool, access))).toEqual([]);
     expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("a failed identity read denies instead of skipping the membership re-check (L2)", async () => {
+    const { pool, rows } = fakePool();
+    const query = pool.query as unknown as ReturnType<typeof vi.fn>;
+    const original = query.getMockImplementation() as (
+      sql: string,
+      params: unknown[],
+    ) => Promise<unknown>;
+    query.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (sql.includes("FROM user_external_identities")) throw new Error("db unavailable");
+      return original(sql, params);
+    });
+    const access = new AccessCache(pool);
+    vi.spyOn(toolAccess, "toolAccounts").mockResolvedValue([account]);
+    vi.spyOn(toolAccess, "sourceAccess").mockResolvedValue([repo("acme/a")]);
+    expect(await requestEventAccess(pool, request(), context(pool, access))).toEqual([]);
+    expect(rows.size).toBe(0);
   });
 
   it("unrestricted principals stay undefined; managed users without accounts get []", async () => {

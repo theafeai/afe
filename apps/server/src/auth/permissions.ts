@@ -88,12 +88,9 @@ export async function githubRefreshChecks(
   userId: string,
   account: ToolAccount,
 ): Promise<void> {
-  let identity = null;
-  try {
-    identity = await getExternalIdentityForUser(ctx.pool, tenantId, userId, "github");
-  } catch {
-    return; // Accounts without a stored identity row (tests, legacy) skip both checks.
-  }
+  // A failed read throws: the refresh fails and denies (L2). It never skips the
+  // membership re-check. No identity row (links made before 0037) means backfill.
+  const identity = await getExternalIdentityForUser(ctx.pool, tenantId, userId, "github");
   if (!identity) {
     await backfillIdentity(ctx, tenantId, userId, account);
     return;

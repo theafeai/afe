@@ -33,8 +33,21 @@ const GITHUB_ERRORS: Record<string, string> = {
   failed: "GitHub sign-in failed. Try again.",
 };
 
+/** The message for a failed start of GitHub sign-in (QA L4). */
+export function githubStartError(err: unknown): string {
+  if (err instanceof ApiError && err.status === 429) return GITHUB_ERRORS.rate_limited!;
+  if (err instanceof ApiError && err.status === 409) return GITHUB_ERRORS.unavailable!;
+  return GITHUB_ERRORS.failed!;
+}
+
 /** "Sign in with GitHub", shown only when the server has it enabled (M1). */
-function GitHubSignIn({ next }: { next: string | null }) {
+function GitHubSignIn({
+  next,
+  onError,
+}: {
+  next: string | null;
+  onError: (message: string | null) => void;
+}) {
   const [available, setAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -47,13 +60,15 @@ function GitHubSignIn({ next }: { next: string | null }) {
   if (!available) return null;
   const start = async () => {
     setBusy(true);
+    onError(null);
     try {
       const { url } = await request<{ url: string }>("POST", "/api/login/github", {
         next: next && !next.startsWith("/api/") ? next : "/",
       });
       window.location.assign(url);
-    } catch {
+    } catch (err) {
       setBusy(false);
+      onError(githubStartError(err));
     }
   };
   return (
@@ -131,7 +146,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
-        <GitHubSignIn next={safeNext(params.get("next"))} />
+        <GitHubSignIn next={safeNext(params.get("next"))} onError={setError} />
         {error && (
           <div className="callout callout-error" role="alert">
             <strong>Not signed in.</strong> {error}

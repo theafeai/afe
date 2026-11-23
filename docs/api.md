@@ -772,9 +772,35 @@ admin's environment row) or `none`. `inferred` is Afe's own guess, also when
 an admin value wins ("Use Afe's guess"). Environments are in effective order;
 ones the admin excluded are listed with `included.value: false`. `kind` is
 legacy; read `productionLike`. Mapping environments (`GET /api/mapping`,
-placements) carry `productionLike` too. The first read of a tenant never
-inferred queues a run. Locally managed users get `403` (not yet integrated
-with per-user resource authorization).
+placements) carry `productionLike` too. An admin's first read of a tenant
+never inferred queues a run; viewers' reads have no side effect (the
+scheduled run covers them).
+
+Locally managed users get a read-only view reduced to what they can see:
+
+```json
+{
+  "readOnly": true, "revision": 0, "computedAt": "…",
+  "environments": [
+    { "id": "production", "origin": "inferred", "family": false, "kind": "production",
+      "included": { "value": true, "origin": "none", "inferred": null },
+      "name": { "value": "production", "origin": "inferred", "confidence": "certain", "inferred": null },
+      "order": {...}, "productionLike": {...}, "gating": {...}, "batching": {...} }
+  ],
+  "noticed": [], "fields": [],
+  "gatingValues": [...], "batchingValues": [...]
+}
+```
+
+- Only included environments their own events are placed in (the most
+  recent 1,000 permitted deployment events, as for `GET /api/mapping`).
+- Per field only `value`, `origin`, `via` and `confidence`. No `reason`,
+  `evidence`, `inferred` guess, `firstInferredAt`, `cadence` or `sources`:
+  inference reads every repository in the tenant, so those carry counts,
+  names and timing from repositories the user may not read.
+- No `setBy`/`setAt` unless the caller is an admin (managed users are viewers,
+  so never today); no `noticed`.
+- `PATCH /api/setup` and `POST /api/setup/infer` stay `403` for them.
 
 ### `PATCH /api/setup` (admin)
 
@@ -800,7 +826,9 @@ a guess), `404` (unknown environment, including another tenant's).
 
 ### `POST /api/setup/infer` (admin)
 
-Queues an inference run for the tenant now. `202 {"queued": true}`.
+Queues an inference run for the tenant now. `202 {"queued": true}`. Runs
+start only from this call, an admin's first `GET /api/setup`, or the
+scheduled job.
 
 ## Account email (optional SMTP)
 

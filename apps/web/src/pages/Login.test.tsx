@@ -125,6 +125,27 @@ describe("Sign in with GitHub", () => {
     expect(screen.getByRole("alert").textContent).toContain("not an active member");
   });
 
+  it.each([
+    [429, { error: "rate_limited" }, "Too many sign-in attempts"],
+    [409, { error: "github_sign_in_unavailable" }, "is not enabled"],
+    [500, { error: "internal" }, "GitHub sign-in failed"],
+  ])("explains a failed start (%i) and lets the user try again", async (status, body, text) => {
+    setFetch(async (url, init) => {
+      if (url === "/api/login/github/available") return json(200, { available: true });
+      if (url === "/api/login/github" && init?.method === "POST") return json(status, body);
+      return json(401, { error: "unauthorized", message: "Authentication required." });
+    });
+    window.history.replaceState(null, "", "/login");
+    render(<App />);
+    const button = await screen.findByRole("button", { name: "Sign in with GitHub" });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(button);
+    expect((await screen.findByRole("alert")).textContent).toContain(text);
+    expect(
+      (screen.getByRole("button", { name: "Sign in with GitHub" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
   it("is hidden when unavailable", async () => {
     setFetch(async (url) =>
       url === "/api/login/github/available"

@@ -63,6 +63,15 @@ export class AccessCache {
   /** Last fingerprint served per (tenant, user), so invalidation can drop its snapshot. */
   readonly #fingerprints = new Map<string, string>();
   readonly #inflight = new Map<string, Promise<EventAccessRule[]>>();
+  /**
+   * Invalidation generations (L3): a global sequence, and the value it had at each
+   * user's latest invalidation. A refresh records the sequence when it starts and
+   * never stores its result if the user was invalidated since.
+   */
+  #seq = 0;
+  readonly #invalidated = new Map<string, number>();
+  /** Highest generation dropped from `#invalidated` (bounded); treated as every user's. */
+  #evictedFloor = 0;
 
   constructor(
     readonly pool: pg.Pool,
@@ -94,7 +103,11 @@ export class AccessCache {
 
   /**
    * Runs `fetch` once per (tenant, user, tool, credential) at a time and stores its
-   * result. A failure deletes the cached row and rethrows (deny).
+   * result. A failure deletes the cached row and rethrows (deny). A refresh that
+   * was running when the user was invalidated returns its rules to the requests
+   * that started before the change but never stores them: the check runs before
+   * the write, and again after it (deleting the row) in case the invalidation
+   * landed while the write was in progress.
    */
   async refresh(
     tenantId: string,
@@ -106,6 +119,8 @@ export class AccessCache {
     const key = JSON.stringify([tenantId, userId, tool, credentialId]);
     const running = this.#inflight.get(key);
     if (running) return running;
+    const userKey = `${tenantId}\0${userId}`;
+    const started = this.#seq;
     const run: Promise<EventAccessRule[]> = (async () => {
       const fetchedAt = new Date(this.#now());
       let rules: EventAccessRule[];
@@ -115,7 +130,7 @@ export class AccessCache {
         await deleteUserSourceAccess(this.pool, tenantId, userId, tool);
         throw error;
       }
-      if (CACHED_TOOLS.has(tool) && this.ttlMs > 0)
+      if (CACHED_TOOLS.has(tool) && this.ttlMs > 0 && !this.#invalidatedSince(userKey, started)) {
         await putUserSourceAccess(
           this.pool,
           tenantId,
@@ -125,6 +140,9 @@ export class AccessCache {
           rules,
           fetchedAt,
         ).catch(() => false);
+        if (this.#invalidatedSince(userKey, started))
+          await deleteUserSourceAccess(this.pool, tenantId, userId, tool).catch(() => {});
+      }
       return rules;
     })().finally(() => {
       if (this.#inflight.get(key) === run) this.#inflight.delete(key);
@@ -154,6 +172,8 @@ export class AccessCache {
     userId: string,
     tool?: string,
   ): Promise<void> {
+    // Before the delete, so a refresh writing concurrently with it is caught too.
+    this.#markInvalidated(`${tenantId}\0${userId}`);
     await deleteUserSourceAccess(db, tenantId, userId, tool);
     this.forgetUser(tenantId, userId);
   }
@@ -161,12 +181,28 @@ export class AccessCache {
   /** In-memory part of `invalidate` (after the database rows are gone). */
   forgetUser(tenantId: string, userId: string): void {
     const key = `${tenantId}\0${userId}`;
+    this.#markInvalidated(key);
     const fingerprint = this.#fingerprints.get(key);
     this.#fingerprints.delete(key);
     // Later reads must not join a refresh that started before the change.
     const prefix = JSON.stringify([tenantId, userId]).slice(0, -1) + ",";
     for (const k of [...this.#inflight.keys()]) if (k.startsWith(prefix)) this.#inflight.delete(k);
     if (fingerprint) for (const l of this.#listeners) l(tenantId, fingerprint);
+  }
+
+  #markInvalidated(userKey: string): void {
+    this.#invalidated.delete(userKey);
+    this.#invalidated.set(userKey, ++this.#seq);
+    // Bounded. Evicting only makes in-flight refreshes skip their write (a later miss).
+    while (this.#invalidated.size > 10_000) {
+      const [k, gen] = this.#invalidated.entries().next().value!;
+      this.#invalidated.delete(k);
+      this.#evictedFloor = Math.max(this.#evictedFloor, gen);
+    }
+  }
+
+  #invalidatedSince(userKey: string, generation: number): boolean {
+    return (this.#invalidated.get(userKey) ?? this.#evictedFloor) > generation;
   }
 
   onInvalidate(listener: Listener): () => void {
