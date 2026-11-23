@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ApiError } from "./api/client.ts";
+import { ApiError, api } from "./api/client.ts";
 import type { ConnectionWithHealth, HealthState, ObservationMethod } from "./api/types.ts";
 import { formatDateTime, formatRelative, humanize } from "./format.ts";
 import { Link } from "./router.tsx";
-import { ToolMark } from "./icons.tsx";
+import { ToolMark, icons, statusGlyphs } from "./icons.tsx";
 
 // --- Data loading -------------------------------------------------------------
 
@@ -142,10 +142,11 @@ export function Empty({
   );
 }
 
-// --- Badges --------------------------------------------------------------------
+// --- Tools ---------------------------------------------------------------------
 
 const TOOL_LABEL: Record<string, string> = {
   github: "GitHub",
+  ghactions: "GitHub Actions",
   argocd: "ArgoCD",
   vercel: "Vercel",
   terraform: "Terraform",
@@ -156,13 +157,183 @@ export function toolLabel(source: string): string {
   return TOOL_LABEL[source] ?? source;
 }
 
+/** The tool's logo on its brand tile plus its name (ADR 0017 decision 4). */
 export function ToolBadge({ source }: { source: string }) {
   return (
-    <span className={`badge tool tool-${source}`}>
-      <ToolMark source={source} />
+    <span className={`tool-badge t-${source}`} data-tool={source}>
+      <ToolMark source={source} tile />
       {toolLabel(source)}
     </span>
   );
+}
+
+/**
+ * The legend (ADR 0017 decision 3): shown, sticky, on every screen that colour-codes
+ * tools. It lists the tenant's connected tools (from `sources`, or loaded from the
+ * connections API when the page has not loaded them), each with its logo, name and
+ * stroke swatch, then the screen's own `keys` and Afe's key. Hovering or focusing a
+ * tool fades everything on the page from the other tools.
+ */
+export function ToolLegend({
+  sources,
+  counts,
+  keys,
+}: {
+  sources?: readonly string[];
+  counts?: Readonly<Record<string, number>>;
+  keys?: ReactNode;
+}) {
+  const loaded = useAsync(
+    (signal) => (sources ? Promise.resolve(null) : api.connections(signal)),
+    [sources === undefined],
+  );
+  const fromApi = Array.isArray(loaded.data?.connections)
+    ? loaded.data.connections.map((c) => c.source)
+    : [];
+  const tools = [...new Set(sources ?? fromApi)];
+  const ref = useRef<HTMLElement>(null);
+  const fade = useCallback((tool: string | null) => {
+    const root = ref.current?.closest("main") ?? document;
+    for (const el of root.querySelectorAll<HTMLElement>("[data-tool]"))
+      el.classList.toggle("dim", tool !== null && el.dataset.tool !== tool);
+  }, []);
+  useEffect(() => () => fade(null), [fade]);
+  if (tools.length === 0) return null;
+  return (
+    <section className="legend" aria-label="Legend" ref={ref}>
+      <span className="legend-title">
+        {icons.layers}
+        <strong>Colour = source</strong>
+        <span>
+          · {tools.length} {tools.length === 1 ? "tool" : "tools"} connected
+        </span>
+      </span>
+      <ul className="legend-tools">
+        {tools.map((t) => (
+          <li
+            key={t}
+            className={`lg t-${t}`}
+            tabIndex={0}
+            onMouseEnter={() => fade(t)}
+            onMouseLeave={() => fade(null)}
+            onFocus={() => fade(t)}
+            onBlur={() => fade(null)}
+          >
+            <ToolMark source={t} tile />
+            {toolLabel(t)}
+            <i className="lg-sw" aria-hidden="true" />
+            {counts?.[t] !== undefined && <span className="lg-n">{counts[t]}</span>}
+          </li>
+        ))}
+      </ul>
+      <span className="legend-sep" aria-hidden="true" />
+      <span className="legend-keys">
+        {keys}
+        <span>
+          <i className="key-sp" aria-hidden="true" />
+          Afe: all tools, live, selected
+        </span>
+      </span>
+    </section>
+  );
+}
+
+/** Live (ADR 0017 decision 5.3): Afe is watching this happen now. */
+export function LiveIndicator({ children = "Live" }: { children?: ReactNode }) {
+  return (
+    <span className="live">
+      <span className="pulse" aria-hidden="true" />
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Where a value came from (ADR 0017 decision 9): Afe inferred it (spectrum dot,
+ * "inferred" and its confidence) or a person set it (person icon, "set by").
+ */
+export function ProvenancePill({
+  inferred,
+  confidence,
+  setBy,
+}:
+  | { inferred: true; confidence?: string; setBy?: undefined }
+  | { inferred?: false; confidence?: undefined; setBy: string }) {
+  if (inferred)
+    return (
+      <span className="prov">
+        <i className="inf-dot" aria-hidden="true" />
+        inferred
+        {confidence && <span className={`badge conf conf-${confidence}`}>{confidence}</span>}
+      </span>
+    );
+  return (
+    <span className="prov prov-set">
+      {icons.person}
+      set by {setBy}
+    </span>
+  );
+}
+
+// --- Status ------------------------------------------------------------------------
+
+/** The tones a status can take; each is a solid shape (ADR 0017 decision 8). */
+export type StatusTone = "ok" | "warn" | "bad" | "wait" | "idle" | "live";
+
+/**
+ * The status shape: a filled disc for ok, bad, waiting and neutral states, a filled
+ * triangle for warn, a spectrum ring for in progress. Always next to a word.
+ */
+export function StatusMark({ tone }: { tone: StatusTone }) {
+  if (tone === "warn") return statusGlyphs.triangle;
+  if (tone === "live") return <span className="spin" aria-hidden="true" />;
+  const glyph =
+    tone === "ok"
+      ? statusGlyphs.check
+      : tone === "bad"
+        ? statusGlyphs.cross
+        : tone === "wait"
+          ? statusGlyphs.clock
+          : statusGlyphs.minus;
+  return (
+    <span className="si" aria-hidden="true">
+      {glyph}
+    </span>
+  );
+}
+
+/** A status word with its shape. `className` names the family (outcome, health, …). */
+export function StatusWord({
+  tone,
+  className,
+  title,
+  children,
+}: {
+  tone: StatusTone;
+  className: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`badge ${className} s-${tone}`} title={title}>
+      <StatusMark tone={tone} />
+      {children}
+    </span>
+  );
+}
+
+const OUTCOME_TONE: Record<string, StatusTone> = {
+  succeeded: "ok",
+  failed: "bad",
+  in_progress: "live",
+  pending: "wait",
+  cancelled: "idle",
+  skipped: "idle",
+  unknown: "idle",
+};
+
+export function outcomeTone(outcome: string): StatusTone {
+  return OUTCOME_TONE[outcome] ?? "idle";
 }
 
 const METHOD_HELP: Record<ObservationMethod, string> = {
@@ -174,9 +345,16 @@ const METHOD_HELP: Record<ObservationMethod, string> = {
   internal: "Recorded by Afe itself",
 };
 
+const METHOD_ICON: Partial<Record<ObservationMethod, ReactNode>> = {
+  webhook: icons.webhook,
+  reconciliation: icons.search,
+  backfill: icons.history,
+};
+
 export function MethodBadge({ method }: { method: ObservationMethod }) {
   return (
     <span className={`badge method method-${method}`} title={METHOD_HELP[method]}>
+      {METHOD_ICON[method]}
       {method === "reconciliation" ? "reconciled" : method}
     </span>
   );
@@ -184,7 +362,11 @@ export function MethodBadge({ method }: { method: ObservationMethod }) {
 
 export function OutcomeBadge({ outcome }: { outcome: string }) {
   if (outcome === "none") return null;
-  return <span className={`badge outcome outcome-${outcome}`}>{humanize(outcome)}</span>;
+  return (
+    <StatusWord tone={outcomeTone(outcome)} className={`outcome outcome-${outcome}`}>
+      {humanize(outcome)}
+    </StatusWord>
+  );
 }
 
 const HEALTH_LABEL: Record<HealthState, string> = {
@@ -197,17 +379,38 @@ const HEALTH_LABEL: Record<HealthState, string> = {
   unknown: "Not checked yet",
 };
 
+const HEALTH_TONE: Record<HealthState, StatusTone> = {
+  healthy: "ok",
+  degraded: "warn",
+  rate_limited: "warn",
+  unreachable: "bad",
+  unauthorized: "bad",
+  revoked: "bad",
+  unknown: "idle",
+};
+
 export function HealthBadge({ state }: { state: HealthState }) {
   return (
-    <span className={`badge health health-${state}`}>
-      <span className="dot" aria-hidden="true" />
+    <StatusWord tone={HEALTH_TONE[state] ?? "idle"} className={`health health-${state}`}>
       {HEALTH_LABEL[state] ?? state}
-    </span>
+    </StatusWord>
   );
 }
 
+const CONNECTION_TONE: Record<string, StatusTone> = {
+  active: "ok",
+  pending: "wait",
+  suspended: "bad",
+  revoked: "bad",
+  disconnected: "idle",
+};
+
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`badge status status-${status}`}>{status}</span>;
+  return (
+    <StatusWord tone={CONNECTION_TONE[status] ?? "idle"} className={`status status-${status}`}>
+      {status}
+    </StatusWord>
+  );
 }
 
 // --- Gaps ------------------------------------------------------------------------
@@ -246,6 +449,7 @@ export function GapBanners({ connections }: { connections: ConnectionWithHealth[
     return (
       <section className="gap-banners" aria-label="Open observation gaps">
         <div className="callout callout-gap" role="status">
+          {statusGlyphs.triangle}
           <strong>
             Data may be missing from {toolLabel(c.source)} “{c.name}”
           </strong>{" "}
@@ -262,6 +466,7 @@ export function GapBanners({ connections }: { connections: ConnectionWithHealth[
     <section className="gap-banners" aria-label="Open observation gaps">
       <div className="callout callout-gap" role="status">
         <p className="gap-head">
+          {statusGlyphs.triangle}
           <strong>Data may be missing from {open.length} connections</strong> — Afe cannot observe
           them right now. Events from those periods will be backfilled when each connection
           recovers.

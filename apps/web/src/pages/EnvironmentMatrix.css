@@ -19,7 +19,7 @@
 }
 .badge.kind-rollback,
 .badge.kind-manual {
-  color: var(--warn);
+  color: var(--warn-text);
   border-color: var(--warn-border);
 }
 .badge.env-inconsistent,
@@ -173,10 +173,8 @@
 .env-matrix .env-corner {
   z-index: 2;
   color: var(--muted);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-sm);
+  font-weight: 500;
 }
 .env-rowhead {
   background: var(--surface);
@@ -195,7 +193,7 @@
   background: var(--surface-2);
 }
 .env-empty {
-  color: var(--faint);
+  color: var(--muted);
   padding: 0.6rem 0.7rem;
   text-align: center !important;
   vertical-align: middle !important;
@@ -260,11 +258,16 @@
 .env-matrix td.env-cellwrap > .env-cell {
   height: 100%;
 }
-.env-selected {
-  background: var(--env-selected);
-}
-.env-selected > .env-cell {
-  box-shadow: inset 0 0 0 1.5px var(--accent-solid);
+/* Selection is Afe's (ADR 0017 decision 6): a spectrum border with a two-hue glow. */
+.env-cellwrap[aria-selected="true"] > .env-cell {
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    var(--spectrum) border-box;
+  box-shadow:
+    -10px 6px 26px -14px var(--sp-2),
+    10px 6px 26px -14px var(--sp-4);
 }
 
 /* History panel */
@@ -282,9 +285,7 @@
 }
 .env-panel-kicker {
   margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
 }
 .env-target-filter {
   margin: 0.6rem 0;
@@ -317,7 +318,7 @@
 .env-step-current::before {
   background: var(--accent-solid);
   border-color: var(--accent-solid);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .env-step-head {
   display: flex;
@@ -339,7 +340,7 @@
   overflow-wrap: anywhere;
 }
 .env-notes li {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 .env-nocommit {
   color: var(--muted);

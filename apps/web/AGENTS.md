@@ -2,8 +2,9 @@
 
 This applies to every change in this folder, on top of the root `AGENTS.md` and
 `CLAUDE.md`. The binding references are `docs/design-system.md` and
-[ADR 0015](../../docs/decisions/0015-ink-design-language.md) (Ink). If this file and
-those disagree, they win; fix this file.
+[ADR 0017](../../docs/decisions/0017-spectrum-design-language.md) (Spectrum, on the
+Ink base of [ADR 0015](../../docs/decisions/0015-ink-design-language.md)). If this
+file and those disagree, they win; fix this file.
 
 ## Before you write code
 
@@ -14,26 +15,30 @@ those disagree, they win; fix this file.
 
 ## Use this, not that
 
-| Need                                         | Use                                                                                                    | Never                                                  |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| Page frame                                   | `.page` > `.page-header` (`h1` + `.lede`, `.toolbar`)                                                  | Your own header or nav                                 |
-| A section with a title and an action         | `.card` + `SectionHead` (title, optional count and hint, action on the right)                          | A boxed card with its own border and shadow            |
-| Creating something                           | `.btn.btn-sm` "Add …" with `icons.plus` and `aria-expanded`, opening an `.inline-form` (Cancel + Save) | A `<details>` arrow around a form; an always-open form |
-| A list of named things                       | `.entity-list` (`strong` name, `code` identifier, `.entity-meta`, `.entity-actions`)                   | Run-together text with inline links                    |
-| A row action                                 | `.btn.btn-ghost.btn-icon.btn-sm` with an icon, `aria-label` and the same `title`                       | Text arrows (← ↑), bare `.btn-link` "Delete"           |
-| Tables                                       | `.table-wrap` > `.table`, sentence-case heads, `.num` and `.row-actions` cells                         | Uppercase heads, tables without the wrapper            |
-| Picking from many options                    | A labelled button opening a search popover (`role="dialog"`, Escape and outside click close it)        | A long inline list                                     |
-| Status (outcome, health, confidence, gaps)   | `OutcomeBadge`, `HealthBadge`, `ConfidenceBadge`, `GapBanners`, `.gap-badge`                           | New badges or colours for status                       |
-| Naming a tool                                | `ToolBadge` / `ToolMark`                                                                               | Tool colours anywhere else; tool-coloured rows         |
-| Selection, focus, highlights, active filters | `--select`, `--select-soft`, `--focus`, `--accent-ring`                                                | The selection blue for anything else                   |
-| Icons                                        | `icons.*` from `icons.tsx` (Lucide; add new ones there, `aria-hidden`)                                 | Inline `<svg>` in pages, emoji, another icon library   |
-| Confirming an action                         | `useToast()`                                                                                           | A success banner on the page                           |
-| Loading / error / empty                      | `Loading`, `ErrorBox` (`onRetry`), `Empty` (with a next step)                                          | Blank areas, spinners you build yourself               |
+| Need                                       | Use                                                                                                                            | Never                                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Page frame                                 | `.page` > `.page-header` (`h1` + `.lede`, `.toolbar`)                                                                          | Your own header or nav                                   |
+| A section with a title and an action       | `.card` + `SectionHead` (title, optional count and hint, action on the right)                                                  | A boxed card with its own border and shadow              |
+| Creating something                         | `.btn.btn-sm` "Add …" with `icons.plus` and `aria-expanded`, opening an `.inline-form` (Cancel + Save)                         | A `<details>` arrow around a form; an always-open form   |
+| A list of named things                     | `.entity-list` (`strong` name, `code` identifier, `.entity-meta`, `.entity-actions`)                                           | Run-together text with inline links                      |
+| A row action                               | `.btn.btn-ghost.btn-icon.btn-sm` with an icon, `aria-label` and the same `title`                                               | Text arrows (← ↑), bare `.btn-link` "Delete"             |
+| Tables                                     | `.table-wrap` > `.table`, sentence-case heads, `.num` and `.row-actions` cells                                                 | Uppercase heads, tables without the wrapper              |
+| Picking from many options                  | A labelled button opening a search popover (`role="dialog"`, Escape and outside click close it)                                | A long inline list                                       |
+| Status (outcome, health, confidence, gaps) | `OutcomeBadge`, `HealthBadge`, `StatusWord` / `StatusMark` (solid shape + word), `ConfidenceBadge`, `GapBanners`, `.gap-badge` | Outline status icons, new badges or colours for status   |
+| Naming a tool                              | `ToolBadge` / `ToolMark` (`.t-<tool>`), plus `<ToolLegend>` under the page header                                              | Tool colours on status, buttons, nav or page backgrounds |
+| Inferred or set by a person                | `ProvenancePill`                                                                                                               | A bare "inferred" word or a home-made dot                |
+| Live, in progress                          | `LiveIndicator`, the in-progress `StatusMark`                                                                                  | Ok-green or a tool colour for "live"                     |
+| Selection, focus                           | The global `:focus-visible`; `[aria-selected="true"]` / `[aria-pressed="true"]` with the spectrum border                       | The spectrum anywhere outside its five jobs              |
+| Icons                                      | `icons.*` from `icons.tsx` (Lucide; add new ones there, `aria-hidden`)                                                         | Inline `<svg>` in pages, emoji, another icon library     |
+| Confirming an action                       | `useToast()`                                                                                                                   | A success banner on the page                             |
+| Loading / error / empty                    | `Loading`, `ErrorBox` (`onRetry`), `Empty` (with a next step)                                                                  | Blank areas, spinners you build yourself                 |
 
 ## Style rules
 
-- Ink: buttons, links and nav are ink. Colour only means status, a tool logo or
-  selection. One `.btn-primary` per view.
+- Spectrum: buttons, links and nav are ink. Colour means a tool (its brand colour),
+  a status (solid shape + word) or Afe (the spectrum: brand, aurora, title accent,
+  active nav, focus and selection, live, inferences, all-tools summaries). One
+  `.btn-primary` per view.
 - Tokens only: colours, `--fs-*`, `--space-*`, `--radius*`, shadows, `--font` /
   `--mono`. Page CSS goes in `pages/<Page>.css` with classes prefixed by the page.
 - Sentence case for all text. No `text-transform: uppercase`. Identifiers (SHAs,
@@ -44,7 +49,7 @@ those disagree, they win; fix this file.
   `aria-label` on icon-only buttons, `aria-current="page"` on the active nav item.
 
 Some older rules in `pages/Journey.css` and `pages/EnvironmentMatrix.css` still
-use uppercase labels or literal radii from before ADR 0015. When you touch one of
+use literal sizes or radii from before ADR 0015. When you touch one of
 those rules, convert it to the rules above.
 
 ## Before you open the PR

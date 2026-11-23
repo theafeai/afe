@@ -8,6 +8,7 @@ import {
   OutcomeBadge,
   ToolBadge,
   useDocumentTitle,
+  ToolLegend,
 } from "../components.tsx";
 import { FilterBar } from "../FilterBar.tsx";
 import {
@@ -61,6 +62,7 @@ export function Deployments() {
           </p>
         </div>
       </header>
+      <ToolLegend />
       <FilterBar
         filters={filters}
         onChange={(f) => setParams(filtersToSearch(f), { replace: true })}

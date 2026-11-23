@@ -3,8 +3,9 @@
 This is the binding reference for every change to the web UI (`apps/web`). It
 implements [ADR 0009](decisions/0009-web-ui-design-system.md), the type scale of
 [ADR 0012](decisions/0012-readable-type-scale.md), the tool colours of
-[ADR 0013](decisions/0013-tool-colour-coding.md) and the Ink design language of
-[ADR 0015](decisions/0015-ink-design-language.md). Humans and
+[ADR 0013](decisions/0013-tool-colour-coding.md), the Ink base of
+[ADR 0015](decisions/0015-ink-design-language.md) and the Spectrum design language
+of [ADR 0017](decisions/0017-spectrum-design-language.md). Humans and
 agents follow it for **all** UI work, new features included. The rules marked
 **[enforced]** are checked by `apps/web/src/design-system.test.ts`, which runs
 in `pnpm test`; a violation fails CI.
@@ -22,8 +23,7 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
    [Patterns](#patterns). A new feature should usually need little or no new CSS.
 2. **No literal colours outside the token definitions.** No `#hex`, `rgb()`,
    `rgba()` or `hsl()` in any stylesheet except inside the `:root` token blocks
-   of `styles.css`, and none in `.ts`/`.tsx` (the brand mark in `icons.tsx` is
-   the only exception). **[enforced]**
+   of `styles.css`, and none in `.ts`/`.tsx`. **[enforced]**
 3. **Every `var(--…)` must be a token defined in `styles.css`.** Do not
    invent tokens in page stylesheets or redefine them under `:root` elsewhere.
    **[enforced]**
@@ -38,26 +38,60 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
    `display`, `transform`, computed from data). Never colours, fonts, spacing,
    borders or shadows. **[enforced]**
 7. **Fonts come only from the tokens.** `font-family` is always `var(--font)`
-   or `var(--mono)`; fonts are bundled with `@fontsource-variable/*`, never
-   loaded from a CDN. No external `url(http…)` in CSS. **[enforced]**
+   (Geist) or `var(--mono)` (Geist Mono); the only font packages are
+   `@fontsource-variable/geist` and `@fontsource-variable/geist-mono`, never a
+   CDN. No external `url(http…)` in CSS. **[enforced]**
 8. **Text tokens meet WCAG AA** (≥ 4.5:1) on `--bg`, `--surface` and
-   `--surface-2` in both themes, and `--on-accent` on `--accent-solid`.
+   `--surface-2` in both themes: `--text`, `--text-2`, `--muted`, `--accent`,
+   `--ok-text`, `--warn-text`, `--bad-text` and every `--<tool>-text`. Also each
+   status text on its tint (`--ok-bg`, `--bad-bg`, `--warn-bg`), `--on-accent` on
+   `--accent-solid`, and each tool's logo (`--<tool>-text`) on its tile.
    Changing a token value re-runs this check. **[enforced]**
-9. **Meaning is never carried by colour alone.** Every coloured state also has
-   a word, a shape or an icon.
-10. **Check light and dark** for every visual change, at desktop width and at
+9. **Strokes meet 3:1.** Every tool stroke (`--<tool>`) and status stroke (`--ok`,
+   `--warn`, `--bad`) is ≥ 3:1 on all three surfaces in both themes, and `--muted`
+   keeps ≥ 4.5:1 on the densest point of the page aurora. **[enforced]**
+10. **Every tool is complete.** Each logo in `TOOL_PATHS` (`icons.tsx`) has
+    `--<tool>`, `--<tool>-text` and `--<tool>-tile` in light and dark and a
+    `.t-<tool>` class. A new connector fails the build until it has its colours.
+    **[enforced]**
+11. **The spectrum has five jobs and no others.** `--sp-*`, `--spectrum`,
+    `--aurora` and tokens built from them appear only in the selectors listed in
+    `SPECTRUM_SELECTORS` in the test (Afe itself, selection and focus, live,
+    Afe's inferences, all-tools summaries), and never in `.ts`/`.tsx`. Adding a
+    selector there is a design decision recorded in ADR 0017. **[enforced]**
+12. **Colours keep their jobs.** Tool tokens (`--<tool>*`, `--t*`) never appear in
+    a status rule (`.s-*`, `.si`, `.tri`, `.outcome*`, `.health*`, `.status*`,
+    `.conf*`, `.gap-*`, `.severity*`, …), and status tokens (`--ok*`, `--warn*`
+    including `--warn-fill`, `--bad*`, `--conf-*`) never appear in a tool rule
+    (`.t-*`, `.lg*`, `.tm`, `.tool-badge`, `.tool-mark`). **[enforced]**
+13. **Status is a solid shape plus a word.** `OutcomeBadge`, `HealthBadge`,
+    `StatusBadge` and every status family render through `StatusWord`/`StatusMark`:
+    a filled disc, a filled triangle (warn) or the spectrum ring (in progress),
+    never an outline icon and never without the word. **[enforced]**
+14. **No built-in environment styling.** No selector keys on environment names or
+    kinds (`env-prod`, `[data-kind="staging"]`, …). Only `.pl` (production-like)
+    may be styled. **[enforced]**
+15. **Legend wherever colour codes tools.** Every page file that renders tool
+    marks (`ToolBadge`, `ToolMark`, `.t-*`) also renders `<ToolLegend>`, unless it
+    is listed with a reason in `LEGEND_EXEMPT` in the test. **[enforced]**
+16. **Meaning is never carried by colour alone.** Every coloured state also has
+    a word, a shape or an icon.
+17. **Check light and dark** for every visual change, at desktop width and at
     390px wide, and attach screenshots to the PR.
 
 ## Principles
 
-- **Ink.** Black and white, neutral greys, 1px hairlines. Sections are divided by
-  hairlines and whitespace rather than boxed. It should feel like a precise
-  instrument, not a marketing page.
-- **Colour only means something.** Buttons, links and navigation are ink. The
-  only colours are status (gaps, drift, confidence, outcomes, failures), tool
-  logos and the selection blue. If everything is highlighted, nothing is.
-- **One blue, for selection.** `--select` marks focus, selected cells, journey
-  highlights and active filters. It never encodes a status and is never decoration.
+- **Spectrum on an ink base.** Cool neutral greys, 1px hairlines, ink buttons,
+  links and navigation. Sections are divided by hairlines and whitespace rather
+  than boxed. Colour has three jobs: it says which **tool** a thing came from (the
+  tool's own brand colour), it marks **status** (solid shapes in their own hues),
+  and Afe's own **spectrum** marks Afe itself, focus and selection, live states,
+  Afe's inferences and all-tools summaries.
+- **Anything multi-hue is Afe's; anything single-hue is a tool or a status.** No
+  tool is multi-hue, so focus and selection can never be read as a tool.
+- **Every colour has a job, and a legend.** Wherever colour codes tools, the
+  `ToolLegend` names them. Colour is never decoration. Glows are rare: focus,
+  selection, live, and at most one attention item per page (the gap panel).
 - **Airy shell, compact data.** Page headers, forms and settings breathe; the
   timeline, tables and matrix keep tight rows. 15px body, 14px dense rows,
   nothing below 12px, tabular numerals, monospace only for identifiers.
@@ -74,44 +108,47 @@ colour looks right.
 
 ### Colour roles
 
-| Token                                                     | Use for                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------- |
-| `--bg`                                                    | Page canvas                                                         |
-| `--sidebar`                                               | Sidebar background                                                  |
-| `--surface`                                               | Cards, tables, inputs, menus                                        |
-| `--surface-2`                                             | Hover rows, subtle fills, code blocks                               |
-| `--surface-3`                                             | Pressed states, sidebar hover                                       |
-| `--border`                                                | Default hairlines (cards, tables, dividers)                         |
-| `--border-strong`                                         | Control borders (buttons, inputs)                                   |
-| `--text`                                                  | Primary text, titles                                                |
-| `--text-2`                                                | Secondary text (cell content, descriptions inside cards)            |
-| `--muted`                                                 | Labels, metadata, timestamps, placeholders for values               |
-| `--faint`                                                 | Decorative only (section overlines, empty cells); never for content |
-| `--accent`                                                | Links and accent text: ink (readable on surfaces)                   |
-| `--accent-solid` / `--accent-solid-hover` / `--on-accent` | Primary button and filled-control fill (ink) and its text           |
-| `--accent-soft`                                           | Current nav item, neutral selected backgrounds                      |
-| `--select` / `--select-soft`                              | Selection: selected cells, journey highlights, active filter chips  |
-| `--accent-ring` / `--focus`                               | Focus rings (the selection blue)                                    |
-| `--ok` / `--ok-bg`                                        | Succeeded, healthy, certain                                         |
-| `--warn` / `--warn-bg` / `--warn-border`                  | Pending, degraded, observation gaps, probable                       |
-| `--bad` / `--bad-bg`                                      | Failed, revoked, weak, conflict, alerts                             |
-| `--recon` / `--recon-bg`                                  | Found by reconciliation; ambiguous (magenta)                        |
-| `--backfill` / `--backfill-bg`                            | Imported by backfill                                                |
-| `--conf-*`                                                | Confidence scale (see [Status language](#status-language))          |
-| `--highlight` / `--highlight-bg` / `--env-selected`       | Journey highlight, selected matrix cell                             |
-| `--github` `--argocd` `--vercel` `--terraform` `--afe`    | Tool logos only; never status                                       |
+| Token                                                     | Use for                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--bg`                                                    | Page canvas                                                                                |
+| `--sidebar`                                               | Sidebar background                                                                         |
+| `--surface`                                               | Cards, tables, inputs, menus                                                               |
+| `--surface-2`                                             | Hover rows, subtle fills, code blocks, reconciled and backfilled rows                      |
+| `--surface-3`                                             | Pressed states                                                                             |
+| `--border`                                                | Default hairlines (cards, tables, dividers)                                                |
+| `--border-strong`                                         | Control borders (buttons, inputs), empty meter bars                                        |
+| `--text`                                                  | Primary text, titles                                                                       |
+| `--text-2`                                                | Secondary text (cell content, descriptions inside cards)                                   |
+| `--muted`                                                 | Labels, metadata, timestamps, placeholders (the third text level, ≥ 4.5:1)                 |
+| `--ink` / `--on-ink`                                      | Ink fills and the focus outline; text on ink                                               |
+| `--accent`                                                | Links and accent text: ink                                                                 |
+| `--accent-solid` / `--accent-solid-hover` / `--on-accent` | Primary button and filled-control fill (ink) and its text                                  |
+| `--accent-soft`                                           | Neutral selected backgrounds                                                               |
+| `--ok` / `--ok-text` / `--ok-bg`                          | Succeeded, healthy, certain: stroke (shapes, rules), text, tint                            |
+| `--warn` / `--warn-text` / `--warn-bg` / `--warn-border`  | Pending, degraded, observation gaps, probable (gold)                                       |
+| `--warn-fill`                                             | Bright yellow, only for warn tints, hatches and glows                                      |
+| `--bad` / `--bad-text` / `--bad-bg`                       | Failed, revoked, weak, conflict, alerts (crimson)                                          |
+| `--conf-*`                                                | Confidence ramp (see [Status language](#status-language))                                  |
+| `--<tool>` / `--<tool>-text` / `--<tool>-tile`            | A tool's brand colour: stroke (≥ 3:1), text (≥ 4.5:1), logo tile. Read through `.t-<tool>` |
+| `--t` / `--t-text` / `--t-tile`                           | Set by `.t-<tool>`; what tool marks, badges, legend entries and strokes read               |
+| `--sp-1`…`--sp-4` / `--spectrum`                          | Afe's spectrum (magenta, violet, blue, cyan): its five jobs only (rule 11)                 |
+| `--on-spectrum`                                           | The "a" on the Afe tile                                                                    |
+| `--tint` / `--glow-a` / `--aurora`                        | The only alphas for tints, glows and the page aurora                                       |
+
+Tools today: `github` (ink), `ghactions` (GitHub Actions blue `#2088FF`), `argocd`
+(orange-red `#FE6446`, deepened in light), `vercel` (ink), `terraform` (violet).
 
 ### Type, space, shape, depth, motion
 
 | Group          | Tokens                                                                                                                                                                                                                     |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Font families  | `--font` (Instrument Sans), `--mono` (JetBrains Mono)                                                                                                                                                                      |
-| Font sizes     | `--fs-xs` 12px (counts, overlines) · `--fs-sm` 13px (badges, labels, meta, table heads) · `--fs-md` 14px (controls, dense rows) · `--fs-base` 15px (body) · `--fs-lg` 18px (section titles) · `--fs-xl` 28px (page titles) |
+| Font families  | `--font` (Geist), `--mono` (Geist Mono)                                                                                                                                                                                    |
+| Font sizes     | `--fs-xs` 12px (counts, overlines) · `--fs-sm` 13px (badges, labels, meta, table heads) · `--fs-md` 14px (controls, dense rows) · `--fs-base` 15px (body) · `--fs-lg` 18px (section titles) · `--fs-xl` 30px (page titles) |
 | Line height    | `--lh` 1.55 (running text) · `--lh-dense` 1.45 (rows, cells, callouts) · `--lh-tight` 1.25 (headings)                                                                                                                      |
 | Spacing        | `--space-1` 4px · `--space-2` 8px · `--space-3` 12px · `--space-4` 16px · `--space-5` 24px · `--space-6` 32px · `--space-7` 48px (page padding)                                                                            |
 | Radius         | `--radius-pill` (buttons, nav items, chips, badges) · `--radius-sm` 8px (inputs) · `--radius` 12px (tables, callouts, inline forms) · `--radius-lg` 16px (dialogs, sign-in card)                                           |
 | Control height | `--control-h` 36px                                                                                                                                                                                                         |
-| Elevation      | None at rest (`--shadow-xs` and `--sheen` are transparent) · `--shadow-sm` (sign-in card, pressed theme switch) · `--shadow-md` (popovers, toasts)                                                                         |
+| Elevation      | None at rest (`--shadow-xs` and `--sheen` are transparent) · `--shadow-sm` (sign-in card, pressed theme switch) · `--shadow-md` (popovers, toasts) · glows only for focus, selection, live and one attention item          |
 | Motion         | `--dur` 120ms · `--ease`; respect `prefers-reduced-motion` (handled globally)                                                                                                                                              |
 | Layout         | `--dialog-w` (confirmation dialog width) · `--sidebar-w` · `--topbar-h` · `--sticky-top` (use for any `position: sticky` offset)                                                                                           |
 
@@ -120,24 +157,25 @@ use literal `rem` values; convert them when you touch those rules.
 
 ## Typography
 
-- **Instrument Sans** for all UI text. **JetBrains Mono** only for identifiers: commit
+- **Geist** for all UI text. **Geist Mono** only for identifiers: commit
   SHAs, image references, event types (`deployment.created`), times in
   timelines, rule expressions. Never for prose or labels.
-- Page title: `h1` (`--fs-xl`, weight 600). Section title: `h2` (`--fs-lg`).
+- Page title: `h1` (`--fs-xl`, weight 650, -0.035em), with the spectrum title
+  accent under it inside `.page-header` (`.h-acc` elsewhere). Section title: `h2` (`--fs-lg`).
   Card title: `h2` (or a first-child `h3`) inside `.card`, shown at `--fs-lg`;
   later `h3`s in a card are subsections at `--fs-base`.
 - Body text has no negative letter spacing; only headings are tightened.
   Identifiers are always mono, where `l`, `I` and `1` are distinct.
 - Labels are muted and values are `--text` (`.kv`, `.field`); ledes use
-  `--text-2`. `--faint` is never used for text that carries content, including
-  placeholders and navigation headings.
+  `--text-2`. There is no colour lighter than `--muted` for text.
 - Never set a font size below `--fs-xs` (12px), and use the size tokens, not
   literal `rem`/`px` font sizes.
 - Table headers and day headings: `--fs-sm`, sentence case, `--muted`. No
   uppercase overlines.
 - Numbers that line up (tables, times, counts): `font-variant-numeric:
 tabular-nums` (already on `.table`, `.row-time`).
-- Sentence case everywhere ("Add a connection", not "Add A Connection").
+- Sentence case everywhere ("Add a connection", not "Add A Connection"); no
+  `text-transform: uppercase`. **[enforced]**
 
 ## Layout and page anatomy
 
@@ -156,11 +194,14 @@ Every page follows this structure:
     </div>
     <div className="toolbar">{/* page actions, e.g. Refresh */}</div>
   </div>
+  <ToolLegend />                   {/* when the page colour-codes tools */}
   <GapBanners connections={…} />   {/* when the page shows observed data */}
   {/* filters (.filters), then content: .card, .table-wrap, .events, … */}
 </div>
 ```
 
+- `<main>` draws the page aurora (a faint spectrum wash fading out within 260px)
+  behind the page header. Do not put data in the first 260px without a surface.
 - Wide data pages may widen `.page` with a page class (see `.page.env-page`,
   `.page.journey-page`).
 - Group content in `.card`s: a section under a hairline, not a box. Start a
@@ -177,22 +218,26 @@ Every page follows this structure:
 
 Use these instead of re-creating their markup.
 
-| Component                                                                    | Use for                                                                 |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `Loading`                                                                    | Any loading state (`role="status"`, spinner)                            |
-| `ErrorBox`                                                                   | Any failed request; pass `onRetry` when retrying makes sense            |
-| `Empty`                                                                      | Empty states; pass `icon={icons.x}` for first-run screens               |
-| `KeyValue`                                                                   | Label/value details (`.kv`); never a bare `<dl>`                        |
-| `GapBanners`                                                                 | Open observation gaps on any page that shows observed data              |
-| `ToolBadge`                                                                  | Naming a source tool                                                    |
-| `OutcomeBadge`, `HealthBadge`, `StatusBadge`, `MethodBadge`                  | Event outcome, connection health, connection status, observation method |
-| `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                |
-| `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                 |
-| `SectionHead`                                                                | A section's title, optional count and hint, and its main action         |
-| `OperationDialog` (`OperationDialog.tsx`)                                    | Operation review and confirmation in a native modal                     |
-| `useToast` (`toast.tsx`)                                                     | Confirming an action the user just took (see [Patterns](#patterns))     |
-| `icons.*`, `BrandMark`, `ToolMark`                                           | 16px Lucide line icons (`aria-hidden`), the Afe wordmark and tool logos |
-| `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                |
+| Component                                                                    | Use for                                                                                                                                                  |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Loading`                                                                    | Any loading state (`role="status"`, spinner)                                                                                                             |
+| `ErrorBox`                                                                   | Any failed request; pass `onRetry` when retrying makes sense                                                                                             |
+| `Empty`                                                                      | Empty states; pass `icon={icons.x}` for first-run screens                                                                                                |
+| `KeyValue`                                                                   | Label/value details (`.kv`); never a bare `<dl>`                                                                                                         |
+| `GapBanners`                                                                 | Open observation gaps on any page that shows observed data                                                                                               |
+| `ToolBadge`                                                                  | Naming a source tool: logo tile plus name, in the tool's colour                                                                                          |
+| `ToolLegend`                                                                 | The sticky legend under the page header wherever colour codes tools; pass `sources` when the page has loaded connections, `keys` for the page's own keys |
+| `OutcomeBadge`, `HealthBadge`, `StatusBadge`, `MethodBadge`                  | Event outcome, connection health, connection status, observation method                                                                                  |
+| `StatusWord`, `StatusMark`                                                   | Any other status: solid shape plus word (`tone` ok, warn, bad, wait, idle, live)                                                                         |
+| `ProvenancePill`                                                             | Whether Afe inferred a value (spectrum dot, "inferred", confidence) or a person set it ("set by …")                                                      |
+| `LiveIndicator`                                                              | "Afe is watching this happen now" (spectrum pulse)                                                                                                       |
+| `ConfidenceBadge`, `CertaintyBadge`, `KindBadge`, `GapFlagBadges`, `TimeAgo` | Placement confidence, kind, gap flags and relative times                                                                                                 |
+| `ScopeNotice`                                                                | Notice that a view is limited to the user's permissions                                                                                                  |
+| `SectionHead`                                                                | A section's title, optional count and hint, and its main action                                                                                          |
+| `OperationDialog` (`OperationDialog.tsx`)                                    | Operation review and confirmation in a native modal                                                                                                      |
+| `useToast` (`toast.tsx`)                                                     | Confirming an action the user just took (see [Patterns](#patterns))                                                                                      |
+| `icons.*`, `BrandMark`, `ToolMark`                                           | 16px Lucide line icons (`aria-hidden`), the Afe wordmark (spectrum dot) and tool logos (`tile` puts one on its brand tile)                               |
+| `useAsync`, `useDocumentTitle`                                               | Data loading with abort; the tab title (`"Title · Afe"`)                                                                                                 |
 
 ### CSS classes (`styles.css`)
 
@@ -206,10 +251,13 @@ Use these instead of re-creating their markup.
 | Lists            | `.events` / `.event-row` / `.row-link` (timeline rows) · `.entity-list` with `.entity-main` / `.entity-name` / `.entity-meta` / `.entity-order` / `.entity-actions` (named things) · `.inline-list` · `.plain` · `.conn-list`                                                                                           |
 | Callouts         | `.callout` + `.callout-error` / `.callout-ok` / `.callout-gap` / `.callout-reconciled`                                                                                                                                                                                                                                  |
 | Toasts           | `.toasts` / `.toast` + `.toast-ok` / `.toast-info` / `.toast-error` (rendered by `ToastProvider`; do not write this markup by hand)                                                                                                                                                                                     |
-| States           | `.state` (inline status text) · `.spinner` · `.empty` (+ `.empty-icon`) · `.end` (end of list)                                                                                                                                                                                                                          |
+| States           | `.state` (inline status text) · `.spinner` (loading) · `.empty` (+ `.empty-icon`) · `.end` (end of list)                                                                                                                                                                                                                |
 | Badges           | `.badge` + a modifier from [Status language](#status-language)                                                                                                                                                                                                                                                          |
 | Text             | `.muted` · `.small` · `.lede` · `.mono-title` · `.hash` · `.sr-only`                                                                                                                                                                                                                                                    |
-| Navigation cards | `.connect-buttons` / `.connect-card` + `.tool-<source>`                                                                                                                                                                                                                                                                 |
+| Navigation cards | `.connect-buttons` / `.connect-card`                                                                                                                                                                                                                                                                                    |
+| Tools            | `.t-<tool>` (sets `--t*`) · `.tm` (logo tile) · `.tool-badge` · `.tool-mark` · `.legend` / `.lg` / `.lg-sw` / `.legend-keys` / `.key-sp` / `.key-gap` · `.dim` (faded by the legend)                                                                                                                                    |
+| Status shapes    | `.si` (solid disc) · `svg.tri` (solid warn triangle) · `.spin` (spectrum in-progress ring) · `.s-ok` / `.s-warn` / `.s-bad` / `.s-wait` / `.s-idle` / `.s-live` (set `--s`, `--s-text`)                                                                                                                                 |
+| Afe              | `.live` + `.pulse` · `.prov` + `.inf-dot` / `.prov-set` · `.h-acc` (title accent outside `.page-header`) · `.avatar` (spectrum ring)                                                                                                                                                                                    |
 | Shell            | `.theme-switch` (System / Light / Dark, `aria-pressed`) in the sidebar account area                                                                                                                                                                                                                                     |
 
 ## Status language
@@ -217,30 +265,42 @@ Use these instead of re-creating their markup.
 Afe's core value is saying what is live and how sure it is. Use these
 encodings, the same way on every page.
 
-- **Confidence** (`.badge.conf.conf-<level>`, or `ConfidenceBadge`): a graded
-  glyph next to the word. `certain` full · `strong` ¾ · `probable` ½ ·
-  `weak` ¼ · `ambiguous` dashed ring · `unknown` empty ring · `conflict` struck
-  ring. Certain, strong and probable stay neutral; weak, ambiguous and conflict
-  are tinted. Journey edges use the same `--conf-*` colours with solid, dashed
-  or dotted lines.
-- **Outcome** (`OutcomeBadge`): a dot plus a word. Filled dot for
-  succeeded/failed, hollow for pending/in progress.
-- **Health** (`HealthBadge`): a dot with a soft halo, plus a word.
-- **Tool** (`ToolBadge`, `.tool-<source>`): a neutral badge with the tool's
-  logo in its colour (`ToolMark`). Rows stay neutral: no tool-coloured rules or
-  tints ([ADR 0015](decisions/0015-ink-design-language.md)). Tool colours are
-  never used for anything else.
+- **Status** (`StatusWord`, `StatusMark`): always a **solid shape plus a word**.
+  A filled disc for ok (check), bad (cross), waiting (clock) and neutral states
+  (minus); a filled triangle for warn; a spectrum ring for in progress, because
+  in progress is live. Warn is gold, bad is crimson, so neither shares Argo CD's
+  orange-red; tools never draw solid shapes.
+- **Confidence** (`.badge.conf.conf-<level>`, or `ConfidenceBadge`): a four-bar
+  meter on the status ramp plus the word. `certain` four green bars · `strong`
+  three green · `probable` two warn · `weak` one bad · `ambiguous` a dashed meter ·
+  `unknown` empty. Journey edges use the same `--conf-*` colours with solid,
+  dashed or dotted lines.
+- **Outcome** (`OutcomeBadge`), **Health** (`HealthBadge`), connection **status**
+  (`StatusBadge`), drift **severity** and **status**: the status shape plus a word.
+- **Tool** (`ToolBadge`, `.t-<source>`): the tool's real logo on its brand tile and
+  its name in the tool's text colour. Tool colour appears only on a tool's marks,
+  strokes, rails and tiles, never on status, buttons, navigation, page backgrounds
+  or text other than the tool's own name. Every such page shows `ToolLegend`.
+- **Afe's inferences** (`ProvenancePill`): a spectrum dot, "inferred" and the
+  confidence meter; or a person icon and "set by _name_". A person's choice always
+  wins over Afe's guess.
+- **Live** (`LiveIndicator`, the in-progress ring): Afe's spectrum, never ok-green.
 - **Observation gaps:** the loud form is `GapBanners`, one panel per page, at
-  the top. The per-item form is quiet: `.gap-badge` (warn text with a hollow
-  diamond, no fill), e.g. "possibly stale". Never hatch, stripe or fill whole
+  the top, with a warn edge and a soft yellow glow (the page's one attention
+  item). The per-item form is `.gap-badge`: a solid triangle and the word on a
+  faint yellow tint, e.g. "possibly stale". Never hatch, stripe or fill whole
   rows or cells for a gap.
-- **Late observation:** `.row-reconciliation` and `.row-backfill` mark rows
-  with a light tint (`--recon-bg`, `--backfill-bg`) plus a note; `MethodBadge`
-  names the method.
+- **Late observation:** `.row-reconciliation` and `.row-backfill` mark rows with a
+  neutral tint plus a note; `MethodBadge` names the method with an icon.
 - **Alerts:** `.alert-badge` ("Alert open"), linking to where the full message
   is shown. Do not put long alert prose in tables.
-- **Severity** (drift): `.severity-high` / `.severity-critical` (bad),
-  `.severity-medium` (warn); low stays neutral.
+- **Severity** (drift): high and critical are bad, medium is warn; low is neutral.
+- **Focus and selection** belong to Afe: a 2px ink outline at a 2px offset plus a
+  two-hue spectrum halo for focus; a spectrum border with a two-hue glow for a
+  selected cell (`[aria-selected="true"]`, `[aria-pressed="true"]`). A journey
+  highlight in the timeline is a filter, shown with an ink rule.
+- **Environments** are the org's: one look for all, no hue per environment, no
+  built-in dev/staging/prod styling. Only production-like (`.pl`) may differ.
 
 Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.
@@ -355,8 +415,14 @@ When nothing existing fits:
 4. **Semantic hook class** (used by tests or as a modifier family, never
    styled): add it to `SEMANTIC_HOOKS` in `design-system.test.ts` with a
    one-line reason.
-5. **A change to the direction itself** (palette, typeface, navigation model)
-   needs a new ADR that supersedes the relevant part of ADR 0009.
+5. **A new tool:** its logo in `TOOL_PATHS`, `--<tool>`, `--<tool>-text` and
+   `--<tool>-tile` in light and both dark blocks (chosen by the rule in ADR 0017
+   decision 1), a `.t-<tool>` class, and its label in `toolLabel`.
+6. **A new use of the spectrum:** only for one of its five jobs, and only by adding
+   the selector to `SPECTRUM_SELECTORS` with a note in ADR 0017. A new job needs a
+   new decision.
+7. **A change to the direction itself** (palette, typeface, navigation model)
+   needs a new ADR that supersedes the relevant part of ADR 0017.
 
 ## UI change checklist
 

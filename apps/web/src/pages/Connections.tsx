@@ -18,6 +18,7 @@ import {
   toolLabel,
   useAsync,
   useDocumentTitle,
+  ToolLegend,
 } from "../components.tsx";
 import { formatDateTime, formatDuration, formatRelative, humanize } from "../format.ts";
 import { Link, useLocation, useNavigate } from "../router.tsx";
@@ -75,6 +76,7 @@ export function Connections() {
           Refresh
         </button>
       </header>
+      <ToolLegend sources={data?.connections.map((c) => c.source) ?? []} />
       {loading ? (
         <Loading label="Loading connections…" />
       ) : error ? (

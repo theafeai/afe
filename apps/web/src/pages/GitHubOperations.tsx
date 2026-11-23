@@ -16,6 +16,8 @@ import {
   KeyValue,
   Loading,
   SectionHead,
+  StatusWord,
+  outcomeTone,
   useAsync,
   useDocumentTitle,
 } from "../components.tsx";
@@ -132,7 +134,12 @@ const RECEIPT_OUTCOME: Record<GitHubOperationReceipt["state"], string> = {
   released: "none",
 };
 function ReceiptState({ state }: { state: GitHubOperationReceipt["state"] }) {
-  return <span className={`badge outcome outcome-${RECEIPT_OUTCOME[state]}`}>{state}</span>;
+  const outcome = RECEIPT_OUTCOME[state];
+  return (
+    <StatusWord tone={outcomeTone(outcome)} className={`outcome outcome-${outcome}`}>
+      {state}
+    </StatusWord>
+  );
 }
 type Row = {
   title: React.ReactNode;
