@@ -13,6 +13,7 @@ import type { KeyProvider } from "@afe/core/security";
 import type { AfeConfig } from "./config.ts";
 import type { JobDefinition, JobQueue } from "./jobs.ts";
 import type { MappingService } from "./mapping/service.ts";
+import type { AccessCache } from "./auth/access-cache.ts";
 
 /** Shared services handed to every connector module and server feature. */
 export interface ServerContext {
@@ -51,6 +52,11 @@ export interface ServerContext {
    * registered. Resolves events to a service and environment at read time.
    */
   mapping?: Pick<MappingService, "placements">;
+  /**
+   * Per-user source access cache for read views (M1, P4), set by buildAfe.
+   * Actions never use it (see auth/access-cache.ts).
+   */
+  access?: AccessCache;
 }
 
 /**

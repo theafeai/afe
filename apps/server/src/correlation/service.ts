@@ -23,6 +23,8 @@ import {
   type GraphOptions,
 } from "@afe/core/correlation";
 import { getLatestSeq, listCorrelationEvents, type CorrelationEventRecord } from "@afe/db";
+import { ACCESS_CACHE_TTL_MS, accessFingerprint } from "../auth/access-cache.ts";
+import { ScopedSnapshotCache } from "./scoped-cache.ts";
 
 export interface CorrelationServiceOptions {
   /** Clock (tests). Default: `new Date()`. */
@@ -42,6 +44,17 @@ export interface CorrelationServiceOptions {
   pageSize?: number;
   /** Linking options (proximity window, pairwise limit). */
   graph?: GraphOptions;
+  /**
+   * Access-scoped snapshots (managed users) are cached by (tenant, SHA-256 of the
+   * sorted rules) for at most this long. Default and maximum: 5 minutes. 0 disables.
+   */
+  scopedTtlMs?: number;
+  /** Scoped snapshots kept per tenant. Default 32. */
+  maxScopedPerTenant?: number;
+  /** Events held by one tenant's scoped snapshots. Default 250 000. */
+  maxScopedEventsPerTenant?: number;
+  /** Events held by all scoped snapshots of the process. Default 1 000 000. */
+  maxScopedEventsTotal?: number;
 }
 
 export interface WindowInfo {
@@ -88,6 +101,9 @@ export class CorrelationService {
   readonly #maxTenants: number;
   readonly #pageSize: number;
   readonly #graphOptions: GraphOptions;
+  readonly #scoped: ScopedSnapshotCache<Snapshot>;
+  readonly #scopedTtlMs: number;
+  readonly #scopedRefreshing = new Map<string, Promise<Snapshot>>();
 
   constructor(
     readonly pool: pg.Pool,
@@ -101,6 +117,21 @@ export class CorrelationService {
     this.#maxTenants = options.maxTenants ?? 16;
     this.#pageSize = options.pageSize ?? 5000;
     this.#graphOptions = options.graph ?? {};
+    this.#scopedTtlMs = Math.max(
+      0,
+      Math.min(options.scopedTtlMs ?? ACCESS_CACHE_TTL_MS, ACCESS_CACHE_TTL_MS),
+    );
+    this.#scoped = new ScopedSnapshotCache<Snapshot>({
+      ttlMs: this.#scopedTtlMs,
+      maxEntriesPerTenant: options.maxScopedPerTenant ?? 32,
+      maxEventsPerTenant: options.maxScopedEventsPerTenant ?? 250_000,
+      maxEventsTotal: options.maxScopedEventsTotal ?? 1_000_000,
+    });
+  }
+
+  /** Drops one access-scoped snapshot (a user's access changed locally). */
+  forgetScoped(tenantId: string, fingerprint: string): void {
+    this.#scoped.delete(tenantId, fingerprint);
   }
 
   now(): Date {
@@ -111,6 +142,7 @@ export class CorrelationService {
   invalidate(tenantId?: string): void {
     if (tenantId) this.#tenants.delete(tenantId);
     else this.#tenants.clear();
+    this.#scoped.clear(tenantId);
   }
 
   /** The tenant's current snapshot (refreshing the window first). */
@@ -144,11 +176,69 @@ export class CorrelationService {
     return run;
   }
 
-  /** User views never reuse tenant graphs: filter before linking and deriving any counts. */
+  /**
+   * User views never reuse tenant graphs: filter before linking and deriving any
+   * counts. The result is shared only by requests with exactly the same rules in
+   * the same tenant, and only while no newer event exists (or, while events keep
+   * arriving, for at most `minRecomputeMs`, flagged `stale`).
+   */
   async #scopedSnapshot(tenantId: string, access: readonly EventAccessRule[]): Promise<Snapshot> {
     const now = this.#now(),
       cutoff = await this.retention.cutoff(tenantId, now);
     const latest = await getLatestSeq(this.pool, tenantId);
+    if (this.#scopedTtlMs === 0 || !access.length)
+      return this.#buildScoped(tenantId, access, now, cutoff, latest);
+    const fingerprint = accessFingerprint(access);
+    const cached = this.#scoped.get(tenantId, fingerprint);
+    const cutoffIso = cutoff?.toISOString() ?? null;
+    // The retention cutoff moves with the clock; the entry stays valid while no
+    // event it holds has fallen out of the window.
+    if (
+      cached &&
+      (cutoffIso === null || !cached.cutoff || cached.cutoff <= cutoffIso) &&
+      (cutoffIso === null || cached.oldest === null || cached.oldest >= cutoffIso)
+    ) {
+      const fresh = cached.latestSeq === latest;
+      if (fresh || Date.now() - cached.computedAt < this.#minRecomputeMs) {
+        const s = cached.value;
+        return {
+          ...s,
+          now,
+          gaps: new GapIndex(s.graph.gaps, now.toISOString()),
+          window: { ...s.window, to: now.toISOString(), stale: !fresh },
+        };
+      }
+    }
+    const key = JSON.stringify([tenantId, fingerprint, latest]);
+    const running = this.#scopedRefreshing.get(key);
+    if (running) return running;
+    const run = this.#buildScoped(tenantId, access, now, cutoff, latest)
+      .then((snapshot) => {
+        this.#scoped.set(tenantId, fingerprint, {
+          value: snapshot,
+          events: snapshot.events.size,
+          latestSeq: latest,
+          cutoff: cutoffIso,
+          oldest: [...snapshot.events.values()].reduce<string | null>(
+            (min, e) => (min === null || e.occurredAt < min ? e.occurredAt : min),
+            null,
+          ),
+          computedAt: Date.now(),
+        });
+        return snapshot;
+      })
+      .finally(() => this.#scopedRefreshing.delete(key));
+    this.#scopedRefreshing.set(key, run);
+    return run;
+  }
+
+  async #buildScoped(
+    tenantId: string,
+    access: readonly EventAccessRule[],
+    now: Date,
+    cutoff: Date | null,
+    latest: number,
+  ): Promise<Snapshot> {
     let after = 0;
     const records: CorrelationEventRecord[] = [];
     let truncated = false;

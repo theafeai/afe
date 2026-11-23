@@ -23,15 +23,18 @@ export const SUBSCRIBED_EVENTS = [
 
 /**
  * Events the manifest subscribes to that need an optional permission from
- * REQUESTED_OPTIONAL_PERMISSIONS (`packages`). An installation that declines
- * the permission simply does not receive them.
+ * REQUESTED_OPTIONAL_PERMISSIONS (`packages`, `pull_requests`). An installation
+ * that declines the permission simply does not receive them.
+ *
+ * `pull_request` only (M1, P2): `pull_request_review` and comment events come
+ * later, behind their own reviewed change.
  *
  * `registry_package` rather than the newer `package` event: its payload
  * carries the container tag, digest and OCI labels (see "To verify" in
  * docs/connectors/github.md). `package` deliveries are mapped the same way
  * (same idempotency key) if an operator subscribes to them.
  */
-export const OPTIONAL_SUBSCRIBED_EVENTS = ["registry_package"] as const;
+export const OPTIONAL_SUBSCRIBED_EVENTS = ["registry_package", "pull_request"] as const;
 
 /** Lifecycle events handled by the server module itself (not subscribable). */
 export const LIFECYCLE_EVENTS = [

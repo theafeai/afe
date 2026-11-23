@@ -57,19 +57,19 @@ the paths they strip and test it.
 
 ## What Afe deliberately does not store
 
-| Not stored                                                                 | Why / how it is avoided                                                                                                   |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Source code and file contents**                                          | Afe never clones repositories or downloads file contents/archives/diffs. Only commit SHAs, refs and commit metadata.      |
-| **Secret values** (repo/org/environment secrets)                           | Afe never calls secret-value endpoints; names of secrets are not needed and are not stored either.                        |
-| **Environment variable values** (Vercel env, Actions vars, Kubernetes env) | Stripped from payloads (e.g. Vercel deployment/project `env`, `build.env`); not fetched.                                  |
-| Kubernetes manifests, rendered resources, Helm values, `Secret` objects    | ArgoCD connector reads application status/history/operation state only, not manifests or resource trees with values.      |
-| Build and job logs                                                         | Logs routinely contain secrets; Afe links to them by URL instead.                                                         |
-| Plaintext credentials, tokens, private keys                                | Only envelope ciphertext; keys are outside the DB.                                                                        |
-| Webhook signatures and `Authorization`/`Cookie` headers                    | Verified, then dropped; headers stored with raw deliveries go through `redactHeaders`.                                    |
-| Webhook secrets in plaintext                                               | Stored like any other credential.                                                                                         |
-| End-user passwords                                                         | Authentication is delegated to the `AuthProvider` (admin token or SSO).                                                   |
-| Pull request bodies, issue text, review comments                           | Not needed to answer "who deployed what"; only PR number/title/URL where linked to a deployment.                          |
-| Email addresses                                                            | Not stored unless the source only identifies the actor by email (git commit author); then stored as the actor identifier. |
+| Not stored                                                                 | Why / how it is avoided                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Source code and file contents**                                          | Afe never clones repositories or downloads file contents/archives/diffs. Only commit SHAs, refs and commit metadata.                                                                                                    |
+| **Secret values** (repo/org/environment secrets)                           | Afe never calls secret-value endpoints; names of secrets are not needed and are not stored either.                                                                                                                      |
+| **Environment variable values** (Vercel env, Actions vars, Kubernetes env) | Stripped from payloads (e.g. Vercel deployment/project `env`, `build.env`); not fetched.                                                                                                                                |
+| Kubernetes manifests, rendered resources, Helm values, `Secret` objects    | ArgoCD connector reads application status/history/operation state only, not manifests or resource trees with values.                                                                                                    |
+| Build and job logs                                                         | Logs routinely contain secrets; Afe links to them by URL instead.                                                                                                                                                       |
+| Plaintext credentials, tokens, private keys                                | Only envelope ciphertext; keys are outside the DB.                                                                                                                                                                      |
+| Webhook signatures and `Authorization`/`Cookie` headers                    | Verified, then dropped; headers stored with raw deliveries go through `redactHeaders`.                                                                                                                                  |
+| Webhook secrets in plaintext                                               | Stored like any other credential.                                                                                                                                                                                       |
+| End-user passwords                                                         | Authentication is delegated to the `AuthProvider` (admin token or SSO).                                                                                                                                                 |
+| Pull request bodies, issue text, review comments                           | Not needed. `pull_request.body` is stripped from raw payloads; PR metadata (number, title, author, branches, SHAs) stays in the raw payload. Afe never requests PR files, diffs or patches (`pull_requests: read`, M1). |
+| Email addresses                                                            | Not stored unless the source only identifies the actor by email (git commit author); then stored as the actor identifier.                                                                                               |
 
 ## Terraform CLI metadata
 
@@ -222,3 +222,30 @@ replacement. Credentials remain in the existing encrypted credential repository.
 User-requested managed-resource diff payloads are read transiently and reduced to
 resource identity and changed flags. The workspace returns minimized health,
 sync/revision and deployment-history metadata. Log transport remains AFE-54.
+
+## GitHub identities, access cache and Sign in with GitHub (M1)
+
+Migrations `0037`–`0039` (D-0024/D-0025, security review P4 and P7).
+
+| Data                               | Fields                                                                                                                                  | Table                      | Sensitivity                               | Kept until / deleted by                                                                                                                                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User's GitHub identity             | tenant, user UUID, provider `github`, numeric GitHub user id (`subject`), login (display only), `provisioned` flag, verified time       | `user_external_identities` | Personal data                             | unlinking GitHub in Profile, or user deletion. Written on Profile linking and Sign in with GitHub; backfilled for older links on the next access refresh (GitHub `/user` with the user's own token)        |
+| Cached repository access of a user | tenant, user UUID, tool `github`, linked credential id, list of `repository:<owner>/<name>` the user's own token could list, fetch time | `user_source_access`       | Confidential (names private repositories) | served for at most 5 minutes; deleted on unlink, relink, any policy or deny-rule change, user disable, user deletion and failed refresh; rows past the TTL are removed by the hourly `retention.purge` job |
+| Sign in with GitHub settings       | enabled, auto-provision, allowed organization logins, default role (always `viewer`)                                                    | `github_sign_in`           | Low                                       | while the tenant exists; changed by administrators only                                                                                                                                                    |
+| Pending GitHub sign-in states      | SHA-256 of the OAuth `state`, SHA-256 of the pre-login browser cookie, same-origin `next` path, expiry (10 minutes)                     | `github_sign_in_states`    | Low                                       | single use (deleted when the callback runs); expired rows deleted when the next flow starts                                                                                                                |
+
+- **Staleness (read views only).** A user whose GitHub access is revoked upstream
+  can keep seeing read-only data (event lists and details, environments,
+  journeys, drift, mapping, run metadata) for repositories they lost for at most
+  five minutes. The TTL is a hard limit: an older row is never served, and a
+  failed refresh denies with no grace period. Mutations, prepare/confirm, receipt
+  replay, job log reads, artifact and archive downloads, workflow-source reads,
+  automations and notification sends never use the cache; they check access live
+  (ADR 0014).
+- `user_source_access.rules` is never shown to other users or administrators and
+  never leaves the server. Access-scoped correlation snapshots are kept only in
+  process memory, keyed by tenant and the SHA-256 of the sorted rules, and hold
+  no per-user data.
+- The OAuth `code`, `state`, the pre-login cookie and the user token are never
+  logged. The user token is stored only through the credentials repository (R2),
+  as for Profile linking.

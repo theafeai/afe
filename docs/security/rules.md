@@ -24,7 +24,11 @@ operations and the explicit ArgoCD catalog under [ADR 0016](../decisions/0016-ar
 3. Current baseline:
    - **GitHub App**: `Metadata: read` (mandatory), `Deployments: read`,
      `Actions: read`, `Environments: read`; other permissions only `read`, and
-     only with a written justification. Do not request `Contents` unless commit
+     only with a written justification. Optional and requested by default:
+     `Packages: read` and `Attestations: read` (artifact capture, AFE-21) and
+     `Pull requests: read` (M1, P2: `pull_request` webhooks and PR metadata for
+     "My changes"; Afe subscribes to `pull_request` only, never requests PR
+     files, diffs or patches, and strips PR bodies, see the connector README). Do not request `Contents` unless commit
      metadata is unobtainable otherwise; if it is requested, Afe still never
      downloads file contents (see data inventory). Subscribe only to the webhook
      events the connector uses.

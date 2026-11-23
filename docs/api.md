@@ -32,13 +32,15 @@ never a request parameter.
   `DELETE /api/session` logs out.
 - Mutating requests with an `Origin` header must come from Afe's own origin.
 
-| Endpoint                                                                             | Role   | Purpose                       |
-| ------------------------------------------------------------------------------------ | ------ | ----------------------------- |
-| `POST /api/session`, `DELETE /api/session`                                           | public | Log in with a token / log out |
-| `GET /api/session`                                                                   | viewer | Who am I                      |
-| `GET` events, deployments, connections, health                                       | viewer | Read                          |
-| Create/test/disconnect connections, Vercel project selection (incl. listing)         | admin  | Change connections            |
-| GitHub install, setup callback, App manifest flow; Vercel install and OAuth callback | admin  | Install flows                 |
+| Endpoint                                                                                      | Role   | Purpose                                                                                         |
+| --------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `POST /api/session`, `DELETE /api/session`                                                    | public | Log in with a token / log out                                                                   |
+| `GET /api/session`                                                                            | viewer | Who am I                                                                                        |
+| `GET /api/login/github/available`, `POST /api/login/github`, `GET /api/login/github/callback` | public | Sign in with GitHub (off by default; [user management](user-management.md#sign-in-with-github)) |
+| `GET`/`PUT /api/admin/github-sign-in`                                                         | admin  | Sign in with GitHub settings                                                                    |
+| `GET` events, deployments, connections, health                                                | viewer | Read                                                                                            |
+| Create/test/disconnect connections, Vercel project selection (incl. listing)                  | admin  | Change connections                                                                              |
+| GitHub install, setup callback, App manifest flow; Vercel install and OAuth callback          | admin  | Install flows                                                                                   |
 
 Errors: `401 {"error":"unauthorized"}` without valid credentials (a browser
 navigation is redirected to `/login?next=...` instead), `403

@@ -394,6 +394,7 @@ describe("GitHub connector module", () => {
         writable: ["deployments"],
         extra: [],
         optionalMissing: ["attestations", "contents", "packages", "pull_requests"],
+        optionalNotices: [{ permission: "pull_requests", message: expect.any(String) }],
       });
       const last = sink.events("default").at(-1)!;
       expect(last.action).toBe("connection.updated");

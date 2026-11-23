@@ -19,6 +19,8 @@ import { emailJobs, registerEmailRoutes } from "./email.ts";
 import { registerToolAccountRoutes } from "./auth/tool-accounts.ts";
 import { withLocalUsers } from "./auth/local-users.ts";
 import { registerUserRoutes } from "./auth/user-routes.ts";
+import { AccessCache } from "./auth/access-cache.ts";
+import { registerGitHubSignIn } from "./auth/github-sign-in.ts";
 import { registerAuth, type RegisteredRoute } from "./auth/index.ts";
 import { deriveSessionKey, SessionCodec } from "./auth/session.ts";
 import { DEFAULT_SESSION_TTL_MS, loadConfig, type AfeConfig } from "./config.ts";
@@ -70,8 +72,10 @@ export interface CreateAfeOptions {
   tenantResolver?: TenantResolver;
   /** HMAC key material for web UI sessions; default `config.auth.sessionSecret`, else derived from the tokens. */
   sessionSecret?: string;
-  /** Clock for session expiry (tests). */
+  /** Clock for session expiry and the access cache TTL (tests). */
   clock?: () => number;
+  /** Access cache TTL for read views (tests); at most and by default 5 minutes. */
+  accessCacheTtlMs?: number;
 }
 
 export interface AfeApp {
@@ -180,6 +184,10 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     modules: options.connectors ?? [],
     auth: authProvider,
     tenantResolver: options.tenantResolver ?? principalTenantResolver,
+    access: new AccessCache(options.pool, {
+      ...(options.clock ? { now: options.clock } : {}),
+      ...(options.accessCacheTtlMs !== undefined ? { ttlMs: options.accessCacheTtlMs } : {}),
+    }),
   };
 
   const webDir = options.webDir ?? options.config?.webDir;
@@ -192,11 +200,11 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
     uiEnabled: Boolean(webDir),
   });
 
-  registerUserRoutes(app, options.pool);
-  registerEmailRoutes(app, context, {
-    localAuth: !options.authProvider && !options.tenantResolver,
-  });
+  const localAuth = !options.authProvider && !options.tenantResolver;
+  registerUserRoutes(app, options.pool, context.access);
+  registerEmailRoutes(app, context, { localAuth });
   registerToolAccountRoutes(app, context);
+  registerGitHubSignIn(app, context, { sessions, localAuth });
 
   app.get("/healthz", async (_req, reply) => {
     try {

@@ -11,7 +11,8 @@ sessions on their next request. Re-enabling a user does not restore those
 sessions. The bootstrap `AFE_ADMIN_TOKEN` remains the administrator; newly
 created users cannot manage other users or connections.
 
-Run `afe migrate` before starting the updated server (migrations 0026–0027).
+Run `afe migrate` before starting the updated server (migrations 0026–0027; GitHub
+identity, access cache and Sign in with GitHub need 0037–0039).
 Existing bootstrap and static viewer token behavior is preserved. A custom
 `authProvider` supplied by a hosted build retains control of authentication;
 it can compose `withLocalUsers` if it wants local credentials as well.
@@ -105,7 +106,9 @@ Managed users can use environment, journey, drift and read-only mapping views.
 Graphs are built only from authorized events, independently of the tenant-wide
 cache, before computing links, placement histories, dimensions and counts.
 Related activity outside their permissions is omitted; the UI labels that scope.
-Permission changes and upstream revocation are rechecked on the next read.
+Local permission changes apply on the next read. Upstream GitHub revocation applies
+to read views within five minutes and to every action at once (see
+[Access cache](#github-access-cache)).
 
 Drift findings are visible only if the user can read the target source and every
 supporting event, including opening, latest and resolving events. Findings with
@@ -125,9 +128,88 @@ Afe sign-in and tool sign-in are separate. Users open **Profile** to link their
 own upstream accounts for tools in Source mode. Credentials
 are encrypted using Afe's existing key provider. Unlinking destroys their local
 ciphertext. Afe never substitutes the administrator's integration credentials.
-Source access is revalidated upstream when querying data; expiry, revocation,
-network errors or rate limits fail closed. Large GitHub accounts are bounded to 5,000 repositories
+Source access is revalidated upstream; expiry, revocation, network errors or rate
+limits fail closed. For GitHub, read views reuse the last check for up to five
+minutes (see [Access cache](#github-access-cache)). Large GitHub accounts are bounded to 5,000 repositories
 per authorization check; exceeding this fails closed.
+
+### GitHub identity
+
+Linking GitHub (OAuth or token) stores the numeric GitHub user id together with
+the login (`user_external_identities`, migration `0037`). Afe matches GitHub
+accounts by that id only: a renamed login, or a login someone else takes over,
+never maps to another Afe user. One GitHub account can link to at most one Afe
+user per tenant; linking it to a second user returns `409 identity_in_use`.
+Links made before `0037` stored only the login; their id is filled in from GitHub's
+`/user`, with the user's own token, on the next access refresh. Unlinking or
+deleting the user removes the identity.
+
+### GitHub access cache
+
+Building a managed user's views needs the list of repositories their own GitHub
+account can read. Afe caches it per user for **at most five minutes**
+(`user_source_access`, migration `0038`) and uses it for **read views only**:
+event lists and details, environments, journeys, drift, mapping and run
+metadata.
+
+- Mutations, prepare/confirm, receipt replay, job log reads, artifact and archive
+  downloads, workflow-source reads, automations and notifications always check
+  access live with GitHub (ADR 0014).
+- Staleness: after access is revoked in GitHub, read views can still show that
+  repository's data for up to five minutes. The five minutes are a hard limit; a
+  failed refresh (revoked token, network error, rate limit) denies with no grace
+  period. A missing or expired entry never widens access.
+- Local changes apply at once: unlinking or relinking, any change to the user's
+  GitHub policy or deny rules, disabling and deleting the user drop the cached
+  entry before the request returns.
+- Users with the same access in the same tenant can share a computed snapshot;
+  the snapshot holds no per-user data and is never shared across tenants.
+- The cached list is never shown to other users. See the
+  [data inventory](security/data-inventory.md#github-identities-access-cache-and-sign-in-with-github-m1).
+
+### Sign in with GitHub
+
+Users can sign in to Afe with GitHub instead of an Afe credential. It is **off by
+default**. An administrator turns it on with `PUT /api/admin/github-sign-in`
+(migration `0039`):
+
+```json
+{ "enabled": true, "autoProvision": false, "allowedOrgs": [] }
+```
+
+- It uses the personal-linking OAuth app (`AFE_USER_GITHUB_CLIENT_ID`/`_SECRET`,
+  `AFE_PUBLIC_URL`). Register the callback
+  `https://<your-afe-host>/api/login/github/callback` as well, or set the OAuth
+  app's callback URL to `https://<your-afe-host>/api/` so both callbacks are under
+  it. Sign-in requests `repo read:user read:org`; `read:org` lets Afe prove
+  organization membership.
+- Afe finds the user by numeric GitHub id only. Without auto-provisioning, only
+  users who already linked GitHub can sign in. Their GitHub policy must be Source.
+- **Auto-provisioning** (off by default) creates a managed user (viewer, GitHub in
+  Source mode, no other tools) for a GitHub account that is an **active member** of
+  an allowed organization. Each allowed organization must have an active
+  installation of this Afe's GitHub App. Membership is proven with
+  `GET /user/memberships/orgs/{org}`: pending invitations, outside collaborators and
+  tokens not authorised for the organization's SAML SSO do not qualify. The default
+  role is always viewer; administrators are never created this way.
+- When `allowedOrgs` is set, every GitHub sign-in re-checks membership.
+- Offboarding: a session started with GitHub ends when the user is disabled,
+  deleted or unlinks GitHub. For auto-provisioned users membership is also
+  re-checked on each access refresh (at most every five minutes while they use
+  Afe); proven loss of membership disables the user, which ends their sessions.
+  A check that cannot be completed denies access without disabling.
+- The login is protected against login CSRF: the single-use state is bound to a
+  cookie set in the browser that started the flow and expires after ten minutes.
+  The redirect URI is fixed, `next` only accepts same-origin paths, and start and
+  callback are rate limited per client address. Codes, states and tokens are
+  never logged. Failures return to `/login?github_error=<reason>`.
+- Only Afe's own local authentication supports it. A hosted build with its own
+  `AuthProvider`/`TenantResolver` must map the GitHub organization to a tenant
+  through the verified installation, never a request field.
+- Known limit: like Profile linking, Afe stores a `repo`-scope user token
+  (encrypted). Replacing it with a write-capable GitHub App with expiring,
+  fine-grained user tokens is required before a public or hosted launch
+  (security review S2).
 
 ### Administrator GitHub linking
 

@@ -22,8 +22,10 @@ export const REQUIRED_PERMISSIONS = {
  * - contents: `push`, `create`, `delete`, `release` webhooks (ref.pushed...)
  *   and commit containment (`GET /repos/{o}/{r}/compare/{base}...{head}`,
  *   AFE-22). Afe still never downloads file contents. Not requested by default.
- * - pull_requests: `pull_request` webhooks (pull_request.merged). Not
- *   requested by default.
+ * - pull_requests: `pull_request` webhooks (opened, reopened, synchronize,
+ *   closed, merged) for "My changes". Requested by the manifest since M1 (P2).
+ *   Afe never requests pull request files, diffs or patches, and never stores
+ *   pull request bodies.
  * - packages: `registry_package` webhooks (artifact.published, AFE-21).
  *   Requested by the manifest (REQUESTED_OPTIONAL_PERMISSIONS).
  * - attestations: build provenance lookups
@@ -46,7 +48,19 @@ export const REQUESTED_OPTIONAL_PERMISSIONS = {
   packages: "read",
   /** Build provenance attestations of published images. */
   attestations: "read",
+  /** Pull request metadata (`pull_request` webhook) for "My changes" (M1, P2). */
+  pull_requests: "read",
 } as const satisfies PermissionMap;
+
+/**
+ * Shown for installations that have not accepted an optional permission the
+ * default manifest requests (for example installs made before it was added).
+ * Each text states exactly what the permission grants and what Afe does with it.
+ */
+export const OPTIONAL_PERMISSION_NOTICES: Readonly<Record<string, string>> = {
+  pull_requests:
+    "Afe now asks for Pull requests: read. On GitHub it grants read-only access to pull requests and their related comments, assignees, labels, milestones and merges. Afe uses it only to receive pull request events (opened, reopened, updated, closed, merged) and to read pull request metadata such as number, title, author, branches and commit SHAs, so your pull requests appear in My changes. Afe never reads pull request files, diffs or patches, does not store pull request bodies, and gains no write access. An organization owner accepts the update in GitHub (Settings, GitHub Apps, Afe, Review request). Until then Afe keeps working without pull request events.",
+};
 
 export interface PermissionCheck {
   /** True when every required permission is granted at least as read and nothing is writable. */
@@ -63,6 +77,11 @@ export interface PermissionCheck {
    * ignores it. Absent on checks stored before AFE-21.
    */
   optionalMissing?: string[];
+  /**
+   * Upgrade notices for optional permissions the default manifest requests but
+   * the installation has not granted (OPTIONAL_PERMISSION_NOTICES).
+   */
+  optionalNotices?: { permission: string; message: string }[];
 }
 
 /**
@@ -84,12 +103,16 @@ export function checkPermissions(granted: PermissionMap | null | undefined): Per
     .map(([k]) => k)
     .sort();
   const optionalMissing = OPTIONAL_READ_PERMISSIONS.filter((k) => !isGranted(perms[k]));
+  const optionalNotices = optionalMissing
+    .filter((k) => k in REQUESTED_OPTIONAL_PERMISSIONS && OPTIONAL_PERMISSION_NOTICES[k])
+    .map((permission) => ({ permission, message: OPTIONAL_PERMISSION_NOTICES[permission]! }));
   return {
     ok: missing.length === 0 && writable.length === 0,
     missing,
     writable,
     extra,
     optionalMissing,
+    ...(optionalNotices.length ? { optionalNotices } : {}),
   };
 }
 
