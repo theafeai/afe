@@ -223,6 +223,21 @@ describe("Sign in with GitHub", () => {
     );
   });
 
+  it("administrator storage accounts (ADR 0012) are never signed in to", async () => {
+    await enable();
+    const linked = await afe.app.inject({
+      method: "POST",
+      url: "/api/profile/tools/github/token",
+      headers: admin,
+      payload: { token: "github_pat_admin-fixture-token" },
+    });
+    expect(linked.statusCode, linked.body).toBe(200);
+    const s = await start();
+    const r = await callback(s.state, s.cookie);
+    expect(r.headers.location).toBe("/login?github_error=not_linked");
+    expect(String(r.headers["set-cookie"])).not.toMatch(/afe_session=[^;]/);
+  });
+
   it("disabled users cannot sign in", async () => {
     await enable();
     const user = await linkedUser();

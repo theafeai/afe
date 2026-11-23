@@ -60,7 +60,8 @@ export async function getExternalIdentityForUser(
 /**
  * Binds `subject` to the user, replacing the user's previous identity for the
  * provider. Returns "conflict" (and changes nothing) when the upstream account is
- * already bound to another user of the tenant. Call inside the transaction that
+ * already bound to another user of the tenant, except that it moves between two
+ * administrator storage accounts (ADR 0012; see below). Call inside the transaction that
  * holds the user's row lock when linking.
  */
 export async function bindExternalIdentity(
@@ -74,9 +75,29 @@ export async function bindExternalIdentity(
      WHERE tenant_id=$1 AND provider=$2 AND subject=$3 FOR UPDATE`,
     [tenantId, identity.provider, identity.subject],
   );
-  if (owner.rows[0] && owner.rows[0].user_id !== userId) return "conflict";
+  const previous = owner.rows[0]?.user_id;
+  let moveFrom: string | null = null;
+  if (previous && previous !== userId) {
+    // Administrator storage accounts (ADR 0012) are not logins: an administrator
+    // principal change (e.g. AFE_ADMIN_TOKEN rotation) creates a new storage
+    // account and requires a fresh link. That fresh link, proven with a token for
+    // the same GitHub account, takes the identity over from the old storage
+    // account. Every other conflict (any managed user involved) is refused.
+    const admins = await db.query<{ user_id: string }>(
+      "SELECT user_id FROM github_admin_identities WHERE tenant_id=$1 AND user_id = ANY($2::uuid[])",
+      [tenantId, [previous, userId]],
+    );
+    if (admins.rowCount !== 2) return "conflict";
+    moveFrom = previous;
+  }
   await db.query("SAVEPOINT bind_identity");
   try {
+    if (moveFrom)
+      await db.query(
+        `DELETE FROM user_external_identities
+         WHERE tenant_id=$1 AND provider=$2 AND subject=$3 AND user_id=$4`,
+        [tenantId, identity.provider, identity.subject, moveFrom],
+      );
     await db.query(
       `DELETE FROM user_external_identities
        WHERE tenant_id=$1 AND user_id=$2 AND provider=$3 AND subject<>$4`,

@@ -2,11 +2,13 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type pg from "pg";
 import {
+  createLocalUser,
   ensureGitHubAdminIdentity,
   getCredential,
   getGitHubAdminIdentity,
   getUserToolPolicy,
   setLocalUserDisabled,
+  setUserToolPolicy,
 } from "@afe/db";
 import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { EnvKeyProvider } from "@afe/core/security";
@@ -341,4 +343,69 @@ it("requires a fresh link after administrator token rotation", async () => {
     mode: "source",
     custom: [],
   });
+});
+
+it("moves the numeric GitHub identity to the new administrator storage account after rotation", async () => {
+  await link();
+  const uid = await adminUser();
+  const identities = () =>
+    pool.query<{ user_id: string; subject: string }>(
+      "SELECT user_id, subject FROM user_external_identities WHERE tenant_id='default'",
+    );
+  expect((await identities()).rows).toEqual([{ user_id: uid, subject: "1" }]);
+  await afe.app.close();
+  const rotated = "r".repeat(40);
+  afe = await buildAfe({
+    pool,
+    keys,
+    logLevel: "silent",
+    connectors: [],
+    config: loadConfig({ DATABASE_URL: "unused", AFE_ADMIN_TOKEN: rotated }),
+  });
+  const relink = await afe.app.inject({
+    method: "POST",
+    url: endpoint,
+    headers: headers(rotated),
+    payload: { token: "rotated-admin-personal-token" },
+  });
+  expect(relink.statusCode, relink.body).toBe(200);
+  const newId = (
+    await pool.query<{ user_id: string }>(
+      "SELECT user_id FROM github_admin_identities WHERE user_id<>$1",
+      [uid],
+    )
+  ).rows[0]!.user_id;
+  // Still one identity per GitHub id, now on the fresh link; the old link is not transferred.
+  expect((await identities()).rows).toEqual([{ user_id: newId, subject: "1" }]);
+  expect((await toolAccounts(afe.context, "default", uid))[0]!.account_name).toBe("octocat");
+});
+
+it("never moves a GitHub identity between a managed user and an administrator storage account", async () => {
+  const managed = await createLocalUser(pool, "default", "managed");
+  await setUserToolPolicy(pool, "default", managed.user.id, "github", {
+    mode: "source",
+    custom: [],
+  });
+  const linkManaged = () =>
+    afe.app.inject({
+      method: "POST",
+      url: endpoint,
+      headers: headers(managed.token),
+      payload: { token: "github_pat_managed-token" },
+    });
+  // Administrator first: a managed user cannot take the identity over.
+  expect((await link()).statusCode).toBe(200);
+  const taken = await linkManaged();
+  expect(taken.statusCode).toBe(409);
+  expect(taken.json().error).toBe("identity_in_use");
+  expect((await toolAccounts(afe.context, "default", managed.user.id)).length).toBe(0);
+  // Managed user first: the administrator cannot take it over either.
+  await pool.query("DELETE FROM user_external_identities");
+  expect((await linkManaged()).statusCode).toBe(200);
+  const adminTake = await link("github_pat_second-admin-token");
+  expect(adminTake.statusCode).toBe(409);
+  expect(
+    (await pool.query("SELECT user_id FROM user_external_identities WHERE tenant_id='default'"))
+      .rows,
+  ).toEqual([{ user_id: managed.user.id }]);
 });

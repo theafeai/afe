@@ -261,6 +261,13 @@ export function registerGitHubSignIn(
       const identity = await getExternalIdentityBySubject(ctx.pool, tenantId, "github", subject);
       let userId: string;
       if (identity) {
+        // Administrator storage accounts (ADR 0012) hold personal GitHub access for
+        // an administrator principal; they are never Afe logins.
+        const adminStorage = await ctx.pool.query(
+          "SELECT 1 FROM github_admin_identities WHERE tenant_id=$1 AND user_id=$2",
+          [tenantId, identity.userId],
+        );
+        if (adminStorage.rowCount) return fail("not_linked");
         const user = await getLocalUser(ctx.pool, tenantId, identity.userId);
         if (!user || user.disabled) return fail("disabled");
         if (membership !== null && membership !== "active") {

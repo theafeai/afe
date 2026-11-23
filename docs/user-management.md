@@ -144,6 +144,12 @@ the login (`user_external_identities`, migration `0037`). Afe matches GitHub
 accounts by that id only: a renamed login, or a login someone else takes over,
 never maps to another Afe user. One GitHub account can link to at most one Afe
 user per tenant; linking it to a second user returns `409 identity_in_use`.
+One exception follows ADR 0012: after an administrator principal changes (for
+example `AFE_ADMIN_TOKEN` rotation), the required fresh link creates a new
+administrator storage account and the identity moves to it from the old one; the
+old link and grants are not transferred. An identity never moves to or from a
+managed user. Administrator storage accounts are never signed in to with
+Sign in with GitHub.
 Links made before `0037` stored only the login; their id is filled in from GitHub's
 `/user`, with the user's own token, on the next access refresh. Unlinking or
 deleting the user removes the identity.
