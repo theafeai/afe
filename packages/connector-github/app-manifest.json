@@ -13,7 +13,8 @@
     "environments": "read",
     "metadata": "read",
     "packages": "read",
-    "attestations": "read"
+    "attestations": "read",
+    "pull_requests": "read"
   },
   "default_events": [
     "deployment",
@@ -21,6 +22,7 @@
     "deployment_status",
     "workflow_job",
     "workflow_run",
-    "registry_package"
+    "registry_package",
+    "pull_request"
   ]
 }
