@@ -6,7 +6,7 @@ import { EnvKeyProvider } from "@afe/core/security";
 import { createLocalUser, ingestEvent, insertDriftFinding, type DriftFindingWrite } from "@afe/db";
 import * as toolAccess from "../src/auth/tool-accounts.ts";
 import type { ToolAccount } from "../src/auth/tool-accounts.ts";
-import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
+import { createTestPool, seedLegacyToolPolicy, seedPreInferenceMapping } from "@afe/db/testing";
 import { buildAfe, loadConfig, type AfeApp } from "../src/index.ts";
 import { createMappingModule } from "../src/mapping/index.ts";
 import { createCorrelationModule } from "../src/correlation/index.ts";
@@ -69,6 +69,8 @@ const sourceRules = new Map<string, EventAccessRule[]>();
 beforeEach(async () => {
   sourceRules.clear();
   pool = await createTestPool();
+  // A tenant set up before inferred environments (this test is not about setup).
+  await seedPreInferenceMapping(pool, "default");
   events = [];
   for (const { id: _id, ...input } of syntheticInputs) {
     const r = await ingestEvent(pool, "default", input);

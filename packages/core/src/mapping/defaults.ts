@@ -1,21 +1,21 @@
 /**
- * Built-in defaults (AFE-19): four environments and environment rules for
- * the names tools commonly use. Tenants can disable any built-in rule and
- * override it with their own (tenant rules are always evaluated first). No
- * built-in rule assigns a service: services are the tenant's to define, and
- * an event without a service rule is shown as unmapped.
+ * Built-in rules (AFE-19): environment rules for the names tools commonly
+ * use. No environment is seeded any more (D-0009, D-0024): environments come
+ * from the inferred setup (`@afe/core/setup`) plus the admin's own. The
+ * built-in rules target the ids `production`, `staging`, `preview` and
+ * `development`, so they only apply where such an environment exists; they
+ * are on by default only for tenants set up before inferred environments
+ * (`MappingConfig.builtinDefaultEnabled`). Tenants can switch any built-in
+ * rule on or off and override it with their own (tenant rules are always
+ * evaluated first). No built-in rule assigns a service: services are the
+ * tenant's to define, and an event without a service rule is shown as
+ * unmapped. The name patterns below are also used by inference, only as a
+ * "probable" hint for the production-like flag.
  */
-import type { Environment, MappingField, MappingRule } from "./types.ts";
-
-export const DEFAULT_ENVIRONMENTS: readonly Environment[] = [
-  { id: "production", name: "Production", order: 10, kind: "production" },
-  { id: "staging", name: "Staging", order: 20, kind: "staging" },
-  { id: "preview", name: "Preview", order: 30, kind: "preview" },
-  { id: "development", name: "Development", order: 40, kind: "development" },
-];
+import type { EnvironmentKind, MappingField, MappingRule } from "./types.ts";
 
 /** Leading environment words: `production`, `Production – web`, `prod-eu`, `staging`, `pr-42`... */
-const NAME_PATTERNS: [string, string][] = [
+export const NAME_PATTERNS: readonly (readonly [EnvironmentKind, string])[] = [
   ["production", "^(prod|production|prd|live)\\b"],
   ["staging", "^(stag|stage|staging|stg|uat|preprod|pre-prod)\\b"],
   ["preview", "^(preview|review|pr-\\d+)\\b"],
@@ -23,7 +23,7 @@ const NAME_PATTERNS: [string, string][] = [
 ];
 
 /** Trailing environment suffixes of Kubernetes names: `web-prod`, `payments-staging`. */
-const SUFFIX_PATTERNS: [string, string][] = [
+export const SUFFIX_PATTERNS: readonly (readonly [EnvironmentKind, string])[] = [
   ["production", "(^|[-_.])(prod|production|prd)$"],
   ["staging", "(^|[-_.])(stag|stage|staging|stg|uat)$"],
   ["development", "(^|[-_.])(dev|development|test|qa)$"],

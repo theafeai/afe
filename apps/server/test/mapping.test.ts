@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
 import { type CanonicalEventInputLike, type EventSink } from "@afe/core";
 import { ingestEvent, createPgEventSink, queryEvents } from "@afe/db";
 import { createTestPool } from "@afe/db/testing";
-import { buildAfe, defaultModules, loadConfig, type AfeApp } from "../src/index.ts";
-import { createMappingModule, MAPPING_AUDIT_OUTBOX_JOB } from "../src/mapping/index.ts";
+import { buildAfe, defaultModules, InlineJobQueue, loadConfig, type AfeApp } from "../src/index.ts";
+import {
+  createMappingModule,
+  MAPPING_AUDIT_OUTBOX_JOB,
+  SETUP_INFER_JOB,
+} from "../src/mapping/index.ts";
 import { tokenMapAuth } from "./helpers/auth.ts";
 
 const A = { authorization: "Bearer admin-a" };
@@ -126,19 +131,36 @@ describe("mapping API (AFE-19)", () => {
     await pool.end();
   });
 
-  it("starts with the default environments and built-in rules, and no audit events", async () => {
+  it("starts with no environments (none seeded, D-0009), built-in rules off, no audit events", async () => {
     const res = await call("GET", "/api/mapping", V);
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.revision).toBe(0);
-    expect(body.environments.map((e: { id: string }) => e.id)).toEqual([
-      "production",
-      "staging",
-      "preview",
-      "development",
-    ]);
+    expect(body.customised).toBe(false);
+    expect(body.environments).toEqual([]);
     expect(body.services).toEqual([]);
     expect(body.builtinRules.length).toBeGreaterThan(5);
+    expect(body.builtinRules.every((r: { enabled: boolean }) => !r.enabled)).toBe(true);
+    expect(await auditEvents()).toEqual([]);
+  });
+
+  it("infers environments from the names the tools report", async () => {
+    const job = afe.jobDefinitions.find((j) => j.name === SETUP_INFER_JOB)!;
+    expect(job.schedule).toBeDefined();
+    await job.handler({ tenantId: "default" });
+    const body = (await call("GET", "/api/mapping", V)).json();
+    expect(body.environments).toEqual([
+      {
+        id: "production-web",
+        name: "Production – web",
+        order: 10,
+        kind: "production",
+        productionLike: true,
+      },
+      { id: "production", name: "production", order: 20, kind: "production", productionLike: true },
+    ]);
+    // Inference wrote no mapping change.
+    expect(body.revision).toBe(0);
     expect(await auditEvents()).toEqual([]);
   });
 
@@ -150,7 +172,7 @@ describe("mapping API (AFE-19)", () => {
     }[];
     const vercel = items.find((i) => i.source === "vercel")!;
     expect(vercel.placement).toMatchObject({
-      environment: { id: "production" },
+      environment: { id: "production", productionLike: true },
       service: null,
       unmapped: ["service"],
       confidence: "partial",
@@ -164,6 +186,15 @@ describe("mapping API (AFE-19)", () => {
     expect((await call("POST", "/api/mapping/preview", V, {})).statusCode).toBe(200);
     expect((await call("GET", "/api/mapping/unmapped", V)).statusCode).toBe(200);
     expect((await call("GET", "/api/mapping", {})).statusCode).toBe(401);
+    expect((await call("GET", "/api/setup", V)).statusCode).toBe(200);
+    expect(
+      (
+        await call("PATCH", "/api/setup", V, {
+          changes: [{ environment: "production", field: "productionLike", value: false }],
+        })
+      ).statusCode,
+    ).toBe(403);
+    expect((await call("POST", "/api/setup/infer", V, {})).statusCode).toBe(403);
   });
 
   let webRuleId = "";
@@ -187,7 +218,7 @@ describe("mapping API (AFE-19)", () => {
       id: "prod-eu",
       name: "Prod EU",
       kind: "production",
-      order: 50,
+      order: 10,
     });
 
     const bad = await call("POST", "/api/mapping/rules", A, {
@@ -275,9 +306,10 @@ describe("mapping API (AFE-19)", () => {
       };
     }[];
     const by = (s: string) => items.find((i) => i.source === s)!.placement;
+    // The environment by an inferred rule (counts as a default, not configured).
     expect(by("github")).toMatchObject({
       service: { id: "web-shop" },
-      environment: { id: "production" },
+      environment: { id: "production-web" },
       confidence: "default",
     });
     expect(by("vercel").service?.id).toBe("web-shop");
@@ -333,7 +365,18 @@ describe("mapping API (AFE-19)", () => {
     expect(del.json().ruleIds).toHaveLength(2);
     const delEnv = await call("DELETE", "/api/mapping/environments/prod-eu", A);
     expect(delEnv.statusCode).toBe(409);
-    expect((await call("DELETE", "/api/mapping/environments/development", A)).statusCode).toBe(200);
+    // An inferred environment: deleting it on the Mapping page means "not an environment".
+    expect((await call("DELETE", "/api/mapping/environments/production", A)).statusCode).toBe(200);
+    expect((await call("DELETE", "/api/mapping/environments/nope", A)).statusCode).toBe(404);
+    const setup = (await call("GET", "/api/setup", V)).json();
+    expect(setup.environments.find((e: { id: string }) => e.id === "production")).toMatchObject({
+      origin: "inferred",
+      included: { value: false, origin: "admin", via: "override", setBy: { name: "Alice" } },
+    });
+    const envIds = (await call("GET", "/api/mapping", V))
+      .json()
+      .environments.map((e: { id: string }) => e.id);
+    expect(envIds).toEqual(["prod-eu", "production-web"]);
 
     const audit = await auditEvents();
     expect(audit.map((e) => `${e.data.entity}:${e.data.operation}`).slice(-4)).toEqual([
@@ -368,7 +411,7 @@ describe("mapping API (AFE-19)", () => {
           field: "vercel.target",
           match: "exact",
           pattern: "production",
-          targetId: "staging",
+          targetId: "prod-eu",
           priority: 1,
         },
       ],
@@ -381,7 +424,7 @@ describe("mapping API (AFE-19)", () => {
     expect(vercel).toMatchObject({
       changed: true,
       observations: { "vercel.target": ["production"] },
-      proposed: { environment: { id: "staging" }, service: { id: "web-shop" } },
+      proposed: { environment: { id: "prod-eu" }, service: { id: "web-shop" } },
     });
     expect(
       (
@@ -416,9 +459,11 @@ describe("mapping API (AFE-19)", () => {
     expect((await call("GET", "/api/mapping/unmapped?limit=0", V)).statusCode).toBe(400);
   });
 
-  it("keeps tenants apart: another tenant sees defaults and gets 404 for our ids", async () => {
+  it("keeps tenants apart: another tenant sees none of ours and gets 404 for our ids", async () => {
     const b = (await call("GET", "/api/mapping", B)).json();
     expect(b.services).toEqual([]);
+    expect(b.environments).toEqual([]);
+    expect((await call("GET", "/api/setup", B)).json().environments).toEqual([]);
     expect(b.rules).toEqual([]);
     expect(b.revision).toBe(0);
     expect((await call("PUT", "/api/mapping/services/payments", B, { name: "x" })).statusCode).toBe(
@@ -480,5 +525,249 @@ describe("mapping audit outbox", () => {
       await afe.app.close();
       await pool.end();
     }
+  });
+});
+
+describe("setup API: inferred setup and admin overrides (D-0012)", () => {
+  let pool: pg.Pool;
+  let afe: AfeApp;
+  const jobs = new InlineJobQueue();
+  const call = (method: string, url: string, headers: Record<string, string>, body?: unknown) =>
+    afe.app.inject({
+      method: method as "GET",
+      url,
+      headers: {
+        ...headers,
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { payload: JSON.stringify(body) } : {}),
+    });
+  const patch = (changes: unknown[], headers = A) =>
+    call("PATCH", "/api/setup", headers, { changes });
+  const infer = () =>
+    afe.jobDefinitions.find((j) => j.name === SETUP_INFER_JOB)!.handler({ tenantId: "default" });
+  const envOf = (body: { environments: { id: string }[] }, id: string) =>
+    body.environments.find((e) => e.id === id) as unknown as Record<
+      string,
+      Record<string, unknown>
+    >;
+  const overrideRows = async (tenant = "default") =>
+    (
+      await pool.query(
+        `SELECT subject, field, value, set_by, set_by_name, set_at, kept_inferred
+           FROM setup_overrides WHERE tenant_id = $1 ORDER BY subject, field`,
+        [tenant],
+      )
+    ).rows;
+
+  let m = 0;
+  const deploy = (
+    env: string,
+    sha: string,
+    minute: number,
+    extra: Partial<CanonicalEventInputLike> = {},
+  ) => {
+    m++;
+    return ev({
+      sourceEventId: `setup:${m}`,
+      occurredAt: new Date(Date.UTC(2026, 9, 2, 8, minute)),
+      observedAt: new Date(Date.UTC(2026, 9, 2, 8, minute, 30)),
+      target: {
+        type: "deployment",
+        id: `acme/web/deployments/${m}`,
+        repository: "acme/web",
+        environment: env,
+      },
+      correlation: { environments: [env], commitShas: [sha], deploymentIds: [`github:${m}`] },
+      data: {
+        deployment: { sha, ref: "main", productionEnvironment: env === "production" },
+        run: { event: "push" },
+      },
+      ...extra,
+    });
+  };
+
+  beforeAll(async () => {
+    pool = await createTestPool();
+    await pool.query("INSERT INTO tenants (id, name) VALUES ('other', 'Other')");
+    for (let i = 0; i < 6; i++) {
+      const sha = `${i}`.repeat(40);
+      await ingestEvent(pool, "default", deploy("staging", sha, i * 8));
+      await ingestEvent(pool, "default", deploy("production", sha, i * 8 + 4));
+    }
+    for (let i = 1; i <= 3; i++) {
+      await ingestEvent(
+        pool,
+        "default",
+        deploy(`pr-${i}`, `${i}`.repeat(40).replace(/./, "f"), 50 + i),
+      );
+    }
+    afe = await buildAfe({
+      pool,
+      jobs,
+      logLevel: "silent",
+      config: loadConfig({ DATABASE_URL: "unused" }),
+      connectors: defaultModules,
+      authProvider: auth,
+    });
+    jobs.register(afe.jobDefinitions);
+  });
+  afterAll(async () => {
+    await afe.app.close();
+    await pool.end();
+  });
+
+  it("queues inference on first read, then shows every field with its provenance", async () => {
+    const first = (await call("GET", "/api/setup", V)).json();
+    expect(first.computedAt).toBeNull();
+    expect(jobs.sent.map((j) => j.name)).toContain(SETUP_INFER_JOB);
+    await jobs.drain();
+    const body = (await call("GET", "/api/setup", V)).json();
+    expect(body.environments.map((e: { id: string }) => e.id)).toEqual([
+      "staging",
+      "production",
+      "previews",
+    ]);
+    expect(envOf(body, "production").productionLike).toMatchObject({
+      value: true,
+      origin: "inferred",
+      confidence: "certain",
+    });
+    expect(envOf(body, "staging").order).toMatchObject({ value: 10, confidence: "strong" });
+    expect(envOf(body, "staging").gating).toMatchObject({ value: "automatic", origin: "inferred" });
+    expect(envOf(body, "previews").gating).toMatchObject({ value: "per_change" });
+    expect(envOf(body, "production").kind).toBe("production");
+    expect(body.noticed).toEqual([]);
+    expect(body.fields).toContain("productionLike");
+  });
+
+  it("admins override fields; each change is audited with who; reads show who and when", async () => {
+    const res = await patch([
+      { environment: "production", field: "gating", value: "on_demand" },
+      { environment: "staging", field: "name", value: "Stage" },
+    ]);
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(envOf(body, "production").gating).toMatchObject({
+      value: "on_demand",
+      origin: "admin",
+      via: "override",
+      setBy: { id: "token:admin-a", name: "Alice" },
+      inferred: { value: "automatic" },
+    });
+    expect(envOf(body, "staging").name).toMatchObject({ value: "Stage", origin: "admin" });
+    // Afe noticed: inference disagrees with the admin's value (reported, not applied).
+    expect(body.noticed.map((x: { id: string }) => x.id)).toEqual([
+      "disagreement:production:gating",
+    ]);
+    const audit = await queryEvents(pool, "default", {
+      filter: { actions: ["config.mapping.changed"] },
+      order: "asc",
+    });
+    expect(audit.events.at(-1)!.data).toMatchObject({
+      entity: "setup",
+      after: { changes: [{ environment: "production", field: "gating", value: "on_demand" }, {}] },
+    });
+    // Placement follows the effective name.
+    const items = (await call("GET", "/api/deployments", V)).json().items as {
+      placement: { environment: { id: string; name: string } | null };
+    }[];
+    expect(items.some((i) => i.placement.environment?.name === "Stage")).toBe(true);
+  });
+
+  it("inference never overwrites an override: the job has no write path to setup_overrides", async () => {
+    const before = await overrideRows();
+    expect(before).toHaveLength(2);
+    // New data that disagrees even more, then a run.
+    await ingestEvent(pool, "default", deploy("production", "a".repeat(40), 200));
+    await infer();
+    expect(await overrideRows()).toEqual(before);
+    const body = (await call("GET", "/api/setup", V)).json();
+    expect(envOf(body, "production").gating).toMatchObject({ value: "on_demand", origin: "admin" });
+
+    // Structurally: the inference writer cannot write overrides, and nobody
+    // can write them without declaring the admin writer.
+    const client = await pool.connect();
+    try {
+      for (const writer of ["inference", null]) {
+        await client.query("BEGIN");
+        if (writer) await client.query("SELECT set_config('afe.setup_writer', $1, true)", [writer]);
+        await expect(
+          client.query(
+            "UPDATE setup_overrides SET value = '\"automatic\"' WHERE tenant_id = 'default'",
+          ),
+        ).rejects.toThrow(/only the admin writer/);
+        await client.query("ROLLBACK");
+      }
+    } finally {
+      client.release();
+    }
+    // And the job's module imports no override writer.
+    const source = readFileSync(new URL("../src/setup/inference.ts", import.meta.url), "utf8");
+    for (const name of ["setSetupOverride", "clearSetupOverrides", "forgetSetupOverrideAuthor"]) {
+      expect(source).not.toContain(name);
+    }
+    expect(source).not.toContain("setup_overrides");
+  });
+
+  it("keep silences a disagreement; clear goes back to Afe's guess", async () => {
+    const kept = (await patch([{ environment: "production", field: "gating", keep: true }])).json();
+    expect(kept.noticed).toEqual([]);
+    expect(envOf(kept, "production").gating).toMatchObject({ value: "on_demand", origin: "admin" });
+    const cleared = (
+      await patch([{ environment: "production", field: "gating", clear: true }])
+    ).json();
+    expect(envOf(cleared, "production").gating).toMatchObject({
+      value: "automatic",
+      origin: "inferred",
+    });
+  });
+
+  it("'not an environment' takes it out of the mapping; validation and admin-only rules hold", async () => {
+    expect(
+      (await patch([{ environment: "previews", field: "included", value: false }])).statusCode,
+    ).toBe(200);
+    const mapping = (await call("GET", "/api/mapping", V)).json();
+    expect(mapping.environments.map((e: { id: string }) => e.id)).not.toContain("previews");
+
+    expect((await patch([{ environment: "nope", field: "name", value: "x" }])).statusCode).toBe(
+      404,
+    );
+    expect(
+      (await patch([{ environment: "production", field: "gating", value: "often" }])).statusCode,
+    ).toBe(400);
+    expect(
+      (await patch([{ environment: "production", field: "kind", value: "x" }])).statusCode,
+    ).toBe(400);
+    expect(
+      (await patch([{ environment: "production", field: "productionLike", value: false }], V))
+        .statusCode,
+    ).toBe(403);
+    // An admin-created environment is deleted on the Mapping page, not excluded here.
+    expect((await call("POST", "/api/mapping/environments", A, { name: "EU" })).statusCode).toBe(
+      201,
+    );
+    expect((await patch([{ environment: "eu", field: "included", value: false }])).statusCode).toBe(
+      400,
+    );
+    expect((await call("POST", "/api/setup/infer", A, {})).statusCode).toBe(202);
+  });
+
+  it("keeps tenants apart: another tenant sees nothing of ours and cannot change it", async () => {
+    const ours = await overrideRows();
+    const b = (await call("GET", "/api/setup", B)).json();
+    expect(b.environments).toEqual([]);
+    expect(b.noticed).toEqual([]);
+    expect(
+      (await patch([{ environment: "production", field: "productionLike", value: false }], B))
+        .statusCode,
+    ).toBe(404);
+    expect(await overrideRows("other")).toEqual([]);
+    expect(await overrideRows()).toEqual(ours);
+    // B's inference sees none of A's events.
+    await afe.jobDefinitions
+      .find((j) => j.name === SETUP_INFER_JOB)!
+      .handler({ tenantId: "other" });
+    expect((await call("GET", "/api/setup", B)).json().environments).toEqual([]);
   });
 });

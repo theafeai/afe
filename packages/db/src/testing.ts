@@ -38,3 +38,27 @@ export async function seedLegacyToolPolicy(
     ],
   );
 }
+
+/**
+ * Puts a tenant in the state an upgraded tenant is in after migration 0040:
+ * the four environments that used to be seeded (`production`, `staging`,
+ * `preview`, `development`) as admin rows, with the built-in name rules on.
+ * For tests that are about something other than the setup. Never used by
+ * production: new tenants get no default environments (D-0009).
+ */
+export async function seedPreInferenceMapping(pool: pg.Pool, tenantId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO mapping_settings (tenant_id, builtin_rules_default) VALUES ($1, true)
+     ON CONFLICT (tenant_id) DO UPDATE SET builtin_rules_default = true`,
+    [tenantId],
+  );
+  await pool.query(
+    `INSERT INTO mapping_environments (tenant_id, id, name, kind, sort_order)
+     VALUES ($1, 'production', 'Production', 'production', 10),
+            ($1, 'staging', 'Staging', 'staging', 20),
+            ($1, 'preview', 'Preview', 'preview', 30),
+            ($1, 'development', 'Development', 'development', 40)
+     ON CONFLICT (tenant_id, id) DO NOTHING`,
+    [tenantId],
+  );
+}

@@ -38,3 +38,20 @@ export type {
   RuleKind,
   Service as MappingService,
 } from "./mapping/types.ts";
+export type {
+  AdminEnvironment,
+  Batching,
+  Cadence,
+  EffectiveEnvironment,
+  EnvironmentSource,
+  Gating,
+  InferredField,
+  InferredValue,
+  OverrideField,
+  SetupActor,
+  SetupConfidence,
+  SetupEvidence,
+  SetupNotice,
+  SetupOrigin,
+  SetupValue,
+} from "./setup/types.ts";

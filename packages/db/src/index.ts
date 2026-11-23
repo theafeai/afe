@@ -105,6 +105,7 @@ export {
   insertMappingEnvironment,
   insertMappingRule,
   insertMappingService,
+  listAdminEnvironments,
   listMappingAuditOutboxAcrossTenants,
   listMappingEnvironments,
   listMappingRules,
@@ -150,6 +151,16 @@ export {
   type ListDriftFindingsOptions,
 } from "./drift.ts";
 
+export {
+  clearSetupOverrides,
+  forgetSetupOverrideAuthor,
+  getSetupVersion,
+  listInferredSetup,
+  listSetupOverrides,
+  replaceInferredSetup,
+  setSetupOverride,
+  type SetupOverrideWrite,
+} from "./setup.ts";
 export * from "./users.ts";
 export * from "./github-admin-identities.ts";
 export * from "./email.ts";

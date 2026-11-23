@@ -8,7 +8,7 @@ import type pg from "pg";
 import type { CanonicalEventInputLike } from "@afe/core";
 import { EnvKeyProvider, Secret } from "@afe/core/security";
 import { ingestEvent, upsertConnection } from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createTestPool, seedPreInferenceMapping } from "@afe/db/testing";
 import type { GitHubAppConfig } from "@afe/connector-github";
 import {
   installationFixture,
@@ -175,6 +175,8 @@ describe("commit containment (AFE-22)", () => {
     await pool.query(
       "INSERT INTO tenants (id, name) VALUES ('other', 'Other'), ('noperm', 'No permission')",
     );
+    // Tenants set up before inferred environments (these tests are not about setup).
+    for (const t of ["default", "other", "noperm"]) await seedPreInferenceMapping(pool, t);
     const jobs = new InlineJobQueue();
     afe = await buildAfe({
       authProvider: auth,
