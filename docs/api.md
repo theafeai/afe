@@ -50,19 +50,20 @@ resources answer `404`.
 
 ## Endpoints
 
-| Method and path                                       | Purpose                                                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `GET /api/events`                                     | Filtered, paginated event list, each with provenance                                       |
-| `GET /api/events/:id`                                 | One event: full canonical event, provenance, raw payload                                   |
-| `GET /api/events/:id/raw`                             | The raw source payload bytes (download, for debugging)                                     |
-| `GET /api/deployments`                                | "Who deployed what to where, and when" view across tools                                   |
-| `/api/mapping/...`                                    | Environment and service mapping (see [below](#environment-and-service-mapping))            |
-| `GET /api/containment`                                | Is commit X included in what is live, per environment (see [below](#commit-containment))   |
-| `GET /api/environments/state`                         | What is live where: service × environment matrix (see [below](#environments-and-journeys)) |
-| `GET /api/environments/:service/:environment/history` | Placements of one matrix cell over time, with their causes                                 |
-| `GET /api/journeys`                                   | Where a commit went: change → CI → artifact → config → deploy → runtime                    |
-| `GET /api/events/:id/links`                           | Events related to one event, with typed evidence and confidence                            |
-| `/api/drift/...`                                      | Drift and untracked deploy findings, settings (see [below](#drift-findings))               |
+| Method and path                                       | Purpose                                                                                      |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET /api/events`                                     | Filtered, paginated event list, each with provenance                                         |
+| `GET /api/events/:id`                                 | One event: full canonical event, provenance, raw payload                                     |
+| `GET /api/events/:id/raw`                             | The raw source payload bytes (download, for debugging)                                       |
+| `GET /api/deployments`                                | "Who deployed what to where, and when" view across tools                                     |
+| `/api/mapping/...`                                    | Environment and service mapping (see [below](#environment-and-service-mapping))              |
+| `GET /api/containment`                                | Is commit X included in what is live, per environment (see [below](#commit-containment))     |
+| `GET /api/environments/state`                         | What is live where: service × environment matrix (see [below](#environments-and-journeys))   |
+| `GET /api/environments/:service/:environment/history` | Placements of one matrix cell over time, with their causes                                   |
+| `GET /api/journeys`                                   | Where a commit went: change → CI → artifact → config → deploy → runtime                      |
+| `GET /api/events/:id/links`                           | Events related to one event, with typed evidence and confidence                              |
+| `/api/drift/...`                                      | Drift and untracked deploy findings, settings (see [below](#drift-findings))                 |
+| `/api/setup`                                          | Inferred setup and admin overrides (see [below](#setup-inferred-environments-and-overrides)) |
 
 Errors: `400 {"error":"bad_request","message":...}` for invalid parameters
 (including unknown parameters: a typo never silently widens a query),
@@ -722,6 +723,84 @@ unmapped); `targets` match its `targets[].key`.
 `severities` replaces the overrides). Invalid types or severities answer
 `400`. Alerting applies to findings that open after the change; severities
 apply at the next evaluation (the next read).
+
+## Setup: inferred environments and overrides
+
+Model and rules: [environment-mapping.md](environment-mapping.md#inferred-setup)
+(D-0012: Afe infers, the admin adjusts; inference never overwrites the admin).
+
+### `GET /api/setup` (viewer)
+
+```json
+{
+  "revision": 4,
+  "computedAt": "2026-11-23T10:20:00.000Z",
+  "environments": [
+    {
+      "id": "production",
+      "origin": "inferred",
+      "family": false,
+      "kind": "production",
+      "included": { "value": true, "origin": "none", "inferred": null },
+      "name": { "value": "production", "origin": "inferred", "confidence": "certain",
+                "reason": "GitHub reports this name", "evidence": [...], "inferred": {...} },
+      "order": { "value": 20, "origin": "inferred", "confidence": "strong", ... },
+      "productionLike": { "value": true, "origin": "inferred", "confidence": "certain", ... },
+      "gating": { "value": "on_demand", "origin": "admin", "via": "override",
+                  "setBy": { "id": "token:…", "name": "Priya" }, "setAt": "…",
+                  "inferred": { "value": "approval", "confidence": "certain", "reason": "…", "evidence": [...] } },
+      "batching": { "value": "each_change", ... },
+      "cadence": { "value": { "medianSeconds": 7200, "p90Seconds": 9000, "deployments": 12 }, ... },
+      "sources": [{ "field": "github.environment", "match": "exact", "pattern": "production" }],
+      "firstInferredAt": "…"
+    }
+  ],
+  "noticed": [
+    { "id": "disagreement:production:gating", "kind": "disagreement", "environment": "production",
+      "field": "gating", "current": {...}, "inferred": {...}, "actions": ["keep", "use_inferred"] }
+  ],
+  "fields": ["name", "order", "productionLike", "gating", "batching", "included"],
+  "gatingValues": ["automatic", "approval", "on_demand", "per_change"],
+  "batchingValues": ["each_change", "batches"]
+}
+```
+
+Every field is `{value, origin, via?, confidence?, reason?, evidence?, setBy?,
+setAt?, inferred}`: `origin` `inferred` (with confidence, reason and
+evidence), `admin` (`via` `override` with who and when, or `mapping` for the
+admin's environment row) or `none`. `inferred` is Afe's own guess, also when
+an admin value wins ("Use Afe's guess"). Environments are in effective order;
+ones the admin excluded are listed with `included.value: false`. `kind` is
+legacy; read `productionLike`. Mapping environments (`GET /api/mapping`,
+placements) carry `productionLike` too. The first read of a tenant never
+inferred queues a run. Locally managed users get `403` (not yet integrated
+with per-user resource authorization).
+
+### `PATCH /api/setup` (admin)
+
+```json
+{
+  "changes": [
+    { "environment": "production", "field": "gating", "value": "approval" },
+    { "environment": "staging", "field": "name", "clear": true },
+    { "environment": "production", "field": "productionLike", "keep": true },
+    { "environment": "previews", "field": "included", "value": false }
+  ]
+}
+```
+
+Each change gives exactly one of `value` (set an override; checked per
+field), `clear` (remove it: back to Afe's guess) or `keep` (keep the current
+value against Afe's current guess, which silences that disagreement until
+the guess changes). 1 to 100 changes, one per environment and field, applied
+atomically as one audited mapping change (`config.mapping.changed`, entity
+`setup`). Answers the new setup (as `GET`) plus `revision`. Errors: `400`
+(invalid value or field, `included` on an admin environment, `keep` without
+a guess), `404` (unknown environment, including another tenant's).
+
+### `POST /api/setup/infer` (admin)
+
+Queues an inference run for the tenant now. `202 {"queued": true}`.
 
 ## Account email (optional SMTP)
 

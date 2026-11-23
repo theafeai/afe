@@ -12,7 +12,7 @@ import {
   type CanonicalEventInputLike,
 } from "@afe/core";
 import { ingestEvent } from "@afe/db";
-import { createTestPool } from "@afe/db/testing";
+import { createTestPool, seedPreInferenceMapping } from "@afe/db/testing";
 import { C, DG, syntheticInputs } from "../../../docs/research/prototypes/synthetic-dataset.ts";
 import { buildAfe, type AfeApp } from "../src/index.ts";
 import { createMappingModule } from "../src/mapping/index.ts";
@@ -64,6 +64,8 @@ describe("correlation API (AFE-20)", () => {
   beforeAll(async () => {
     pool = await createTestPool();
     await pool.query("INSERT INTO tenants (id, name) VALUES ('other', 'Other')");
+    // Tenants set up before inferred environments (these tests are not about setup).
+    for (const t of ["default", "other"]) await seedPreInferenceMapping(pool, t);
     for (const { id: _id, ...input } of syntheticInputs) await ingestEvent(pool, "default", input);
 
     // Gaps: GitHub was blind while worker W2's image was published (evidence

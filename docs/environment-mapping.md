@@ -18,8 +18,10 @@ matrix (research doc [0001](research/0001-cross-tool-flow.md), gap
 ## Model
 
 - `Service {id, name, description?}`: id is a slug (`^[a-z0-9][a-z0-9_-]{0,63}$`).
-- `Environment {id, name, order, kind}`: `order` is the matrix column
-  position; `kind` is `production | staging | preview | development | other`.
+- `Environment {id, name, order, kind, productionLike}`: `order` is the matrix
+  column position; `productionLike` (D-0010) gives the heavy chip;
+  `kind` (`production | staging | preview | development | other`) is legacy,
+  kept for compatibility (derived for inferred environments).
 - `MappingRule {id, kind, field, match, pattern, caseSensitive, priority,
 targetId, enabled, note?}`: `kind: service` rules assign a service,
   `kind: environment` rules an environment. The two rule sets are
@@ -58,13 +60,13 @@ matchedRuleIds, confidence, service, environment}` (pure, in core).
   resolver (`ctx.mapping.placements(tenantId, events)` on the server).
 - **Precedence**, per dimension: the tenant's enabled rules by ascending
   `priority` (ties by id), then the enabled built-in rules in their fixed
-  order. The first rule with a matching value wins. A rule whose target does
+  order, then the inferred rules (`inferred:*`). The first rule with a matching value wins. A rule whose target does
   not exist (or whose pattern no longer compiles) is inactive and reported
   (`inactiveReason` in `GET /api/mapping`, `inactive` in the preview).
 - **Unmapped is explicit.** No match → `null`, listed in `unmapped`, shown in
   the UI as "unmapped service/environment". Nothing is guessed. `confidence`:
   `configured` (both by tenant rules), `default` (both mapped, one by a
-  built-in), `partial` (one unmapped), `unmapped`.
+  built-in or inferred rule), `partial` (one unmapped), `unmapped`.
 - **Fast.** `compileMapping` compiles every pattern once per configuration
   (the server caches it per tenant and revision) and caches results per
   distinct set of raw values (bounded, 10 000 entries), so a page of
@@ -95,11 +97,14 @@ backreferences, lookaround, named groups, `\p{…}`, `\u…`, nested
 quantifiers like `a**`, stray `{`. Tests check equivalence with `RegExp` on
 the supported syntax and that classic ReDoS patterns run in linear time.
 
-## Built-in defaults
+## Built-in rules
 
-Out of the box a tenant has four environments (`production` 10, `staging` 20,
-`preview` 30, `development` 40) and environment rules (`BUILTIN_RULES`, ids
-`builtin:*`), evaluated after the tenant's rules:
+No environment is seeded (D-0009, D-0024): a tenant's environments come from
+the [inferred setup](#inferred-setup) plus the ones its admin creates. The
+built-in environment rules (`BUILTIN_RULES`, ids `builtin:*`) remain, and are
+evaluated after the tenant's rules, but they target the ids `production`,
+`staging`, `preview` and `development`, so they only apply where an
+environment with that id exists:
 
 - `vercel.target` exactly `production` → production, `preview` → preview;
 - on `github.environment`, `argocd.environment`, `vercel.target`: leading
@@ -111,12 +116,131 @@ Out of the box a tenant has four environments (`production` 10, `staging` 20,
 - on `argocd.namespace` and `argocd.application`: suffixes like `-prod`,
   `-staging`, `-dev` → the matching environment.
 
-There are no built-in service rules: services are the tenant's to define.
-Override a default by adding a rule (tenant rules come first) or switch it off
-(`PUT /api/mapping/builtin-rules/:id`). The default environments are virtual
-until the tenant's first change, which copies them into its table (after that
-they can be renamed, reordered or deleted; built-in rules targeting a deleted
-environment become inactive).
+They fold an org's own names into fixed buckets, so they are **off by
+default** for tenants set up since inferred setup
+(`mapping_settings.builtin_rules_default = false`; `inactiveReason` "off by
+default: environments are inferred"). An admin can still switch any of them
+on (`PUT /api/mapping/builtin-rules/:id`). There are no built-in service
+rules: services are the tenant's to define.
+
+### Upgrading (migration 0040)
+
+Nothing stored is changed or deleted:
+
+- Tenants that had changed their mapping (a `mapping_settings` row) keep their
+  environment rows, which are now admin environments, and keep the built-in
+  rules on (`builtin_rules_default = true`). What they see does not change;
+  inference only adds environments their rules do not already place, and
+  reports disagreements in "Afe noticed".
+- Tenants that never changed their mapping used four virtual default
+  environments that were never stored. After the upgrade they have none:
+  their environments are inferred from the names their tools report (for
+  example `Production – web` and Vercel `production` become two
+  environments, where before both were "Production"). An admin who wants the
+  old buckets creates the environments and switches the built-in rules on,
+  or adds rules.
+- Until the first inference run (at most ten minutes after start, or
+  immediately on `POST /api/setup/infer`, or queued by the first
+  `GET /api/setup`) such a tenant's environments are unmapped.
+
+## Inferred setup
+
+Code: `@afe/core/setup` (signals, rules, merge), `@afe/db` `setup.ts`
+(migration `0040_inferred_setup.sql`), `apps/server/src/setup/` (job and
+API). Decisions: D-0012 (Afe infers, the admin adjusts; inference never
+overwrites the admin), D-0013 (rules first, no LLM), D-0009, D-0024.
+
+### Two stores
+
+| Store             | Written by                                          | Holds                                                                                         |
+| ----------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `inferred_setup`  | the `setup.infer` job only (`replaceInferredSetup`) | per environment and field: value, confidence, one-line reason, evidence, first inferred       |
+| `setup_overrides` | admin API calls only (`PATCH /api/setup`, Mapping)  | per environment and field: value, who (`set_by`, `set_by_name`), when, the guess kept against |
+
+Both are keyed `(tenant_id, subject, field)`, subject `environment:<id>`.
+Each table refuses `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` unless the
+transaction declared its writer (`set_config('afe.setup_writer', 'inference'
+| 'admin', true)`, done by the `@afe/db` functions), so the inference job has
+no write path to overrides at all. Tests check this, and that the job's
+module imports no override writer.
+
+**Effective value** = override ?? the admin's environment row (Mapping page)
+?? inferred ?? none. For an admin environment the row's `kind` is the
+admin's statement about production (`production` → production-like). An
+inferred value is never applied over an admin value: it is shown beside it
+(`inferred` on every field) and, when it disagrees with confidence
+`probable` or better, listed in "Afe noticed".
+
+### Environments from what tools report
+
+The job reads up to 10 000 of the tenant's newest `deployment.*` and
+`argocd.sync.*` events. A per-connector **signal extractor**
+(`DEFAULT_SIGNAL_EXTRACTORS`; GitHub, Vercel, Argo CD, Terraform) turns each
+into source-neutral signals: environment name as reported, deployment
+reached or not, commit, ref, tool-declared production, transient, how it
+started, approval waits and protection rules. Adding a connector means adding
+an extractor.
+
+Each reported name is first resolved with the admin's own mapping (tenant
+rules, enabled built-in rules): if it lands in an admin environment, it is
+evidence for that environment. Otherwise it becomes an inferred environment
+with the tool's name and the slug as id (`Production – web` →
+`production-web`; names from several tools with the same slug merge).
+Short-lived names (`pr-42`, `preview/feature-x`, or GitHub
+`transient_environment`) collapse into one **family** (`previews`) with a
+safe-regex pattern. The names and patterns are stored as `sources` and
+become inferred mapping rules (`inferred:*`, evaluated after the built-in
+rules), which is how events are placed in inferred environments. At most 50
+environments (the mapping limit) are kept, the busiest first.
+
+### Rules (strongest first, each with confidence and evidence)
+
+| Field            | Rule                                                                                                                                                                                                                                                                                                                               |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `order`          | For commits that reached A and B: A first in ≥ 80 % → A < B (strong with ≥ 5 commits, else probable); together within a minute in ≥ 80 % of ≥ 5 → parallel (same position). Otherwise first-seen order (weak); environments with no relation go after the chain. Cycles keep first-seen order                                      |
+| `productionLike` | Tool-declared (GitHub `production_environment`, Vercel `production` target): certain > short-lived: false, strong > approval gate and a single deploy branch: strong > name pattern: probable > last in the order: weak                                                                                                            |
+| `gating`         | Required reviewers seen (`deployment.review_*`): approval, certain > a protection rule: approval, strong > short-lived: per change, strong > how ≥ 60 % of deployments started (`push` automatic, `workflow_dispatch` on demand, `pull_request` per change): strong for GitHub's own word, else probable, weak under 3 deployments |
+| `batching`       | Median commits that reached the upstream environment between two deployments here > 1.5 → batches (strong with ≥ 5 intervals)                                                                                                                                                                                                      |
+| `cadence`        | Median and p90 time between deployments (≥ 3 deployments)                                                                                                                                                                                                                                                                          |
+| `name`           | The reported name (certain; strong when several spellings merged); a family's name (strong)                                                                                                                                                                                                                                        |
+
+Rules are deterministic (same events, same facts, in any order) and run in
+the deployment: no LLM, no data leaves it. Evidence holds tool names,
+environment names, counts and rule names only, never repository names,
+logins or commit messages. Not inferred yet: GitHub Environments' own
+protection settings (not fetched; only what deployments and reviews show),
+and order disagreements are not reported.
+
+### When it runs
+
+Job `setup.infer`: every ten minutes for every tenant with events, one tenant
+at a time; on demand for one tenant (`POST /api/setup/infer`, and the first
+`GET /api/setup` of a tenant that has never been inferred). Each run replaces
+the tenant's facts atomically; facts of environments that no longer appear
+in the retained events are deleted, so inferred data never outlives the
+events it came from.
+
+### Afe noticed
+
+Reported, never applied:
+
+- `disagreement`: an admin value (override or admin row) differs from a
+  `probable` or stronger guess for `productionLike`, `gating` or `batching`.
+  Actions: keep (stores the guess in `kept_inferred`; the notice returns only
+  if the guess changes) or use Afe's guess (clears the override).
+- `new_environment`: an inferred environment first seen after the admin
+  first adjusted the setup (created an environment or set an override), with
+  no decision yet. Actions: add (`included: true`) or not an environment
+  (`included: false`: it leaves the mapping and its events become unmapped).
+
+### Mapping page interplay
+
+The existing Mapping page keeps working on the effective environments:
+editing or targeting an inferred environment with a rule makes it an admin
+environment (a row; an admin creating an environment is an override) and
+clears name/order overrides, so the newest admin edit wins; deleting an
+inferred environment sets `included: false`; deleting an admin environment
+also clears its overrides.
 
 ## Storage and audit
 
@@ -134,8 +258,11 @@ outbox row; if that fails, the `mapping.audit-outbox` job (every minute)
 retries. Ingestion is idempotent, so a retry never duplicates. The event
 records who (the authenticated principal: token fingerprint or user), and in
 `data`: `revision`, `entity` (`service | environment | rule | builtin_rule |
-rule_order`), `operation`, `id`, `before` and `after` summaries. That is how
-the audit log shows who changed how deployments are classified.
+rule_order | setup`), `operation`, `id`, `before` and `after` summaries. That
+is how the audit log shows who changed how deployments are classified. Setup
+override changes (`PATCH /api/setup`) are mapping changes too: one event per
+request, `before`/`after` listing each changed field. Inference runs are not
+changes and write no event.
 
 ## UI
 
@@ -146,7 +273,10 @@ delete, move up/down), the rule form with a live preview (debounced
 deployments would change, and how), built-in defaults with on/off switches,
 unmapped values with "Create rule" (pre-fills the form), and how recent
 deployments classify now. The Deployments page shows the resolved
-service · environment under "Where".
+service · environment under "Where". The page lists the effective
+environments (inferred ones included); its hint "Built-in defaults; your first
+change makes them your own" is out of date until the web UI is updated (the
+Adjust screen for the setup API comes after M0).
 
 ## Integration and follow-ups
 

@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { TOOL_PERMISSION_MODES, type ToolPolicy } from "@afe/core";
 import { revokeCredential } from "./credentials.ts";
+import { forgetSetupOverrideAuthor } from "./setup.ts";
 
 export interface LocalUser {
   id: string;
@@ -114,6 +115,8 @@ export async function deleteLocalUser(
       tenantId,
       id,
     ]);
+    // Setup overrides stay (they are the org's), but no longer name the user.
+    await forgetSetupOverrideAuthor(db, tenantId, [`local:${id}`, id]);
     await db.query("DELETE FROM users WHERE tenant_id=$1 AND id=$2", [tenantId, id]);
     await db.query("COMMIT");
     return "deleted";
