@@ -33,8 +33,9 @@ deny rules are preserved. Saving removes obsolete grants; operators should
 back them up first when needed. Disabled accounts remain disabled. This changes
 server authorization immediately on upgrade, without waiting for a migration.
 
-Terraform reports lack a verifiable personal source identity; managed users
-receive no Terraform access. A custom grant is not a fallback. Existing
+[ADR 0016](0018-terraform-delivery-actions.md) adds a verified personal identity
+for explicitly selected remote Terraform workspaces. CLI Terraform reports lack a
+verifiable personal source identity; managed users receive no access to those reports. A custom grant is not a fallback. Existing
 administrator observation remains available.
 
 ## Cloud-only follow-up scope
@@ -61,5 +62,5 @@ or promise an availability date. Before implementation:
 - Test grants, revocations, denies, source outages, concurrency, replay, disabled
   users, cross-tenant access and edition transitions end to end.
 
-Source changes remain authoritative for inherited access. A verified personal
-Terraform resolver is separate work; custom workspace grants do not implement it.
+Source changes remain authoritative for inherited access. The remote resolver in
+ADR 0016 does not authorize CLI reports; custom workspace grants do not implement it.

@@ -217,6 +217,18 @@ the linked credential ciphertext while retaining the identity and policy for
 relinking. GitHub account names and credential references remain in
 `user_tool_accounts`; personal tokens remain encrypted in `credentials`.
 
+### Vercel action consent and operational receipts (AFE-58)
+
+`vercel_action_credentials` stores tenant/user/connection/project identifiers,
+allowed catalog operations and a credential reference; the separate personal
+action token is encrypted through the standard credential repository. It is
+revalidated at use and revoked on replacement, disabling or user deletion.
+`vercel_action_requests` stores tenant, actor, connection, project, operation,
+request UUID, intent digest, project lock key, state, timestamps, upstream HTTP
+status, target deployment ID and optional new deployment ID. No input values, arbitrary provider
+responses, Git source, environment values or credentials are persisted. These
+receipts expire under the tenant retention policy and are not an audit log.
+
 ## ArgoCD operational receipts (AFE-59)
 
 `argocd_action_requests` stores tenant/request UUID, Afe actor ID, connection ID,
@@ -234,7 +246,7 @@ sync/revision and deployment-history metadata. Log transport remains AFE-54.
 
 ## GitHub identities, access cache and Sign in with GitHub (M1)
 
-Migrations `0037`–`0039` (D-0024/D-0025, security review P4 and P7).
+Migrations `0039`–`0041` (D-0024/D-0025, security review P4 and P7).
 
 | Data                               | Fields                                                                                                                                  | Table                      | Sensitivity                               | Kept until / deleted by                                                                                                                                                                                    |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -262,3 +274,22 @@ Migrations `0037`–`0039` (D-0024/D-0025, security review P4 and P7).
 - The OAuth `code`, `state`, the pre-login cookie and the user token are never
   logged. The user token is stored only through the credentials repository (R2),
   as for Profile linking.
+
+## Remote Terraform operations (AFE-60)
+
+Remote connection config stores the server origin, organization and workspace ID.
+Personal Terraform tokens are encrypted in `credentials` as `user_terraform_token`;
+`user_tool_accounts` retains only the public account name, source user ID, server
+origin, operation opt-in and credential reference. No token is returned.
+
+`terraform_action_requests` stores tenant/request/actor/connection IDs, action,
+resource key, prepared-state and input hashes, state, source HTTP status, optional
+created run ID and creation time. The hourly retention job deletes expired rows.
+Sanitized actor/target/outcome IDs and state may appear in application logs.
+No inputs, variables, source bodies, state/plan/output values, credentials or logs
+are stored in receipts or events. Requests and reads never fabricate deployment
+events. Workspace/run/policy metadata and aggregate plan change counts are
+transient reads shown only to the verified source user. Full plans, outputs,
+configuration archives, state files and log content are not fetched. Provider
+responses can contain signed log URLs; these remain transient and are never
+returned or logged.

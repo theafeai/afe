@@ -12,7 +12,7 @@ sessions. The bootstrap `AFE_ADMIN_TOKEN` remains the administrator; newly
 created users cannot manage other users or connections.
 
 Run `afe migrate` before starting the updated server (migrations 0026–0027; GitHub
-identity, access cache and Sign in with GitHub need 0037–0039).
+identity, access cache and Sign in with GitHub need 0039–0041).
 Existing bootstrap and static viewer token behavior is preserved. A custom
 `authProvider` supplied by a hosted build retains control of authentication;
 it can compose `withLocalUsers` if it wants local credentials as well.
@@ -140,7 +140,7 @@ per authorization check; exceeding this fails closed.
 ### GitHub identity
 
 Linking GitHub (OAuth or token) stores the numeric GitHub user id together with
-the login (`user_external_identities`, migration `0037`). Afe matches GitHub
+the login (`user_external_identities`, migration `0039`). Afe matches GitHub
 accounts by that id only: a renamed login, or a login someone else takes over,
 never maps to another Afe user. One GitHub account can link to at most one Afe
 user per tenant; linking it to a second user returns `409 identity_in_use`.
@@ -150,7 +150,7 @@ administrator storage account and the identity moves to it from the old one; the
 old link and grants are not transferred. An identity never moves to or from a
 managed user. Administrator storage accounts are never signed in to with
 Sign in with GitHub.
-Links made before `0037` stored only the login; their id is filled in from GitHub's
+Links made before `0039` stored only the login; their id is filled in from GitHub's
 `/user`, with the user's own token, on the next access refresh. Unlinking or
 deleting the user removes the identity.
 
@@ -158,7 +158,7 @@ deleting the user removes the identity.
 
 Building a managed user's views needs the list of repositories their own GitHub
 account can read. Afe caches it per user for **at most five minutes**
-(`user_source_access`, migration `0038`) and uses it for **read views only**:
+(`user_source_access`, migration `0040`) and uses it for **read views only**:
 event lists and details, environments, journeys, drift, mapping and run
 metadata.
 
@@ -185,7 +185,7 @@ metadata.
 
 Users can sign in to Afe with GitHub instead of an Afe credential. It is **off by
 default**. An administrator turns it on with `PUT /api/admin/github-sign-in`
-(migration `0039`):
+(migration `0041`):
 
 ```json
 { "enabled": true, "autoProvision": false, "allowedOrgs": [] }
@@ -284,10 +284,12 @@ remain available as a fallback. Arbitrary Google
 sign-in is not treated as proof of GitHub, Vercel or ArgoCD resource access.
 Google can be added as a tool when a Google integration defines its resources.
 
-Terraform CLI reports have no personal upstream identity. Its source mode
-therefore grants managed users no access in open source. Administrators retain
-their existing tenant-wide observation access. A verified Terraform identity
-resolver would be needed before inherited user access could be supported.
+Terraform CLI reports have no personal upstream identity and remain unavailable
+to managed users. Remote HCP Terraform/TFE workspace selections support verified
+personal user-token links and inherited Source permissions. Read access is
+separate from the explicit delivery-operation opt-in. See
+[Terraform setup and permissions](terraform-actions.md#install-and-authorize).
+Administrator observation of existing CLI reports remains unchanged.
 
 SMTP and transactional email are optional and are not required for manual
 provisioning or sign-in.

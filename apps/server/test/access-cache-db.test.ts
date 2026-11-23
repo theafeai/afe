@@ -287,7 +287,7 @@ describe("access cache through the API (P4)", () => {
     expect((await pool.query("SELECT 1 FROM user_external_identities")).rowCount).toBe(0);
   });
 
-  it("backfills the numeric id of links made before migration 0037 on the next refresh", async () => {
+  it("backfills the numeric id of links made before migration 0039 on the next refresh", async () => {
     await link();
     await pool.query("DELETE FROM user_external_identities");
     await pool.query("DELETE FROM user_source_access");

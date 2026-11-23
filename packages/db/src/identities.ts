@@ -1,6 +1,6 @@
 /**
  * User identities at upstream providers, the per-user source access cache and
- * Sign in with GitHub settings (M1: migrations 0037-0039). Every function takes
+ * Sign in with GitHub settings (M1: migrations 0039-0041). Every function takes
  * the tenant id and puts it in every statement (docs/security/rules.md R5).
  */
 import type pg from "pg";
@@ -134,7 +134,7 @@ export async function bindExternalIdentity(
 }
 
 /**
- * Backfill for links made before 0037: records the identity resolved with the
+ * Backfill for links made before 0039: records the identity resolved with the
  * user's own token unless the user already has one or the account belongs to
  * someone else. Never moves an identity between users.
  */

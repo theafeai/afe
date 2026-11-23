@@ -1,5 +1,5 @@
 /**
- * Inferred setup and admin overrides (D-0012, D-0024; migration 0040).
+ * Inferred setup and admin overrides (D-0012, D-0024; migration 0042).
  * Every function is tenant-scoped.
  *
  * The two stores have separate writers, enforced by the database: a

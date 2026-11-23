@@ -123,7 +123,7 @@ default: environments are inferred"). An admin can still switch any of them
 on (`PUT /api/mapping/builtin-rules/:id`). There are no built-in service
 rules: services are the tenant's to define.
 
-### Upgrading (migration 0040)
+### Upgrading (migration 0042)
 
 Nothing stored is changed or deleted:
 
@@ -146,7 +146,7 @@ Nothing stored is changed or deleted:
 ## Inferred setup
 
 Code: `@afe/core/setup` (signals, rules, merge), `@afe/db` `setup.ts`
-(migration `0040_inferred_setup.sql`), `apps/server/src/setup/` (job and
+(migration `0042_inferred_setup.sql`), `apps/server/src/setup/` (job and
 API). Decisions: D-0012 (Afe infers, the admin adjusts; inference never
 overwrites the admin), D-0013 (rules first, no LLM), D-0009, D-0024.
 

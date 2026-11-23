@@ -39,3 +39,8 @@ items stay visible while the first page refreshes.
 The visual checks and screenshots are in
 [screenshots/afe-94](screenshots/afe-94/README.md). Server authorization, source
 version checks, confirmation and idempotency remain authoritative at execution.
+
+Vercel project/deployment/page dependencies also invalidate workspace context
+immediately. Refresh retains known content, shows loading/error state and blocks
+preparation/confirmation until capability checks resolve. Credential opt-in is
+explicit; unavailable context never grants a write capability.

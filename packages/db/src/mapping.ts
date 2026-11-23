@@ -27,7 +27,7 @@ export interface StoredMappingConfig extends MappingConfig {
   builtinOverrides: Record<string, boolean>;
   /**
    * Built-in rules without an override are on: true for tenants whose
-   * mapping existed before inferred setup (migration 0040), else false.
+   * mapping existed before inferred setup (migration 0042), else false.
    */
   builtinDefaultEnabled: boolean;
 }

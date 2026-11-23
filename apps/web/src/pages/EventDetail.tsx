@@ -273,6 +273,15 @@ export function EventDetailPage({ id }: { id: string }) {
           <GitHubRunControls key={e.id} eventId={e.id} />
         </>
       )}
+      {e.source === "vercel" && e.connectionId && e.target.project && (
+        <p>
+          <Link
+            to={`/vercel?${new URLSearchParams({ connectionId: e.connectionId, projectId: e.target.project, deploymentId: e.target.id ?? "" })}`}
+          >
+            Open Vercel deployment workspace
+          </Link>
+        </p>
+      )}
       <JourneyLinks event={e} />
       {!managed && subject && (
         <ContainmentPanel repository={subject.repository} commit={subject.commit} />

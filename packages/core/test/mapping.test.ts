@@ -16,7 +16,7 @@ import {
   type MappingRule,
 } from "../src/mapping/index.ts";
 
-/** The four environments tenants set up before inferred setup (migration 0040) have. */
+/** The four environments tenants set up before inferred setup (migration 0042) have. */
 const environments: Environment[] = [
   { id: "production", name: "Production", order: 10, kind: "production" },
   { id: "staging", name: "Staging", order: 20, kind: "staging" },

@@ -6,7 +6,7 @@
  * Its only write is `replaceInferredSetup`. It has no path to admin
  * overrides: this module must not import an override writer (a test checks
  * the imports), and the database refuses override writes from the inference
- * writer anyway (migration 0040).
+ * writer anyway (migration 0042).
  */
 import type { FastifyBaseLogger } from "fastify";
 import type pg from "pg";

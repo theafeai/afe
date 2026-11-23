@@ -5,14 +5,18 @@ machine or in CI including GitHub Actions. Afe never invokes Terraform. The
 user's shell/CI job runs it with the user's existing permissions, then the
 reporter sends only operation/result metadata to Afe.
 
+Remote infrastructure operations are a separate opt-in path: see
+[Terraform delivery operations](../terraform-actions.md). CLI report behavior below
+is unchanged.
+
 ## Connection path decision
 
-| Path                                     | Initial support         | Reason / limit                                                                                                                                             |
-| ---------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local Terraform CLI                      | Signed metadata reports | Works with local Docker, no cloud subscription or inbound tunnel                                                                                           |
-| Terraform in GitHub Actions              | Same reporter           | Optional repository/commit/GitHub run identifiers link existing events                                                                                     |
-| HCP Terraform / Terraform Enterprise API | Deferred                | Has remote run history and can support independent polling/backfill; requires a separate API/permissions/host-safety implementation and account validation |
-| Existing uninstrumented CLI runs         | Not observed            | Terraform CLI has no durable read-only run-history API                                                                                                     |
+| Path                                     | Initial support         | Reason / limit                                                                                                                         |
+| ---------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Local Terraform CLI                      | Signed metadata reports | Works with local Docker, no cloud subscription or inbound tunnel                                                                       |
+| Terraform in GitHub Actions              | Same reporter           | Optional repository/commit/GitHub run identifiers link existing events                                                                 |
+| HCP Terraform / Terraform Enterprise API | Remote operations       | Opt-in personal-token operations and source polling; see the separate capability matrix. Background ingestion/backfill remain deferred |
+| Existing uninstrumented CLI runs         | Not observed            | Terraform CLI has no durable read-only run-history API                                                                                 |
 
 This observes what an authenticated runner reports. A signed successful apply
 is **not** verification of current infrastructure, drift, resource contents or

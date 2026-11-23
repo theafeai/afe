@@ -45,7 +45,7 @@ export async function seedLegacyToolPolicy(
 }
 
 /**
- * Puts a tenant in the state an upgraded tenant is in after migration 0040:
+ * Puts a tenant in the state an upgraded tenant is in after migration 0042:
  * the four environments that used to be seeded (`production`, `staging`,
  * `preview`, `development`) as admin rows, with the built-in name rules on.
  * For tests that are about something other than the setup. Never used by

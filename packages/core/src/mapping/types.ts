@@ -103,7 +103,7 @@ export interface MappingConfig {
   builtinOverrides?: Record<string, boolean>;
   /**
    * Whether a built-in rule without an override is on (default true).
-   * Tenants whose mapping existed before inferred setup (migration 0040)
+   * Tenants whose mapping existed before inferred setup (migration 0042)
    * keep them on; tenants created since start with them off, because they
    * fold the org's own environment names into fixed buckets (D-0009).
    */

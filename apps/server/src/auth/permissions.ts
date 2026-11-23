@@ -77,7 +77,7 @@ async function accountAccess(
 
 /**
  * Runs with every GitHub access refresh:
- * - backfills the numeric GitHub id of links made before migration 0037;
+ * - backfills the numeric GitHub id of links made before migration 0039;
  * - for users created by Sign in with GitHub, re-checks membership of an allowed
  *   organization. Proven loss disables the user (which ends their sessions);
  *   a membership that cannot be proven denies access without disabling.
@@ -89,7 +89,7 @@ export async function githubRefreshChecks(
   account: ToolAccount,
 ): Promise<void> {
   // A failed read throws: the refresh fails and denies (L2). It never skips the
-  // membership re-check. No identity row (links made before 0037) means backfill.
+  // membership re-check. No identity row (links made before 0039) means backfill.
   const identity = await getExternalIdentityForUser(ctx.pool, tenantId, userId, "github");
   if (!identity) {
     await backfillIdentity(ctx, tenantId, userId, account);

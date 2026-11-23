@@ -153,3 +153,51 @@ it("offers GitHub sign-in without workflow editing consent", async () => {
   expect(screen.queryByRole("checkbox", { name: /workflow/i })).toBeNull();
   expect(screen.getByText(/Contents read for workflow definitions/)).toBeTruthy();
 });
+
+it("links a personal Terraform token with explicit operation opt-in", async () => {
+  const submitted: unknown[] = [];
+  setFetch(async (url, init) => {
+    if (url === "/api/session")
+      return json({
+        principal: { id: "alice", roles: ["viewer"], kind: "session", managedUser: true },
+      });
+    if (url === "/api/profile")
+      return json({
+        managedUser: true,
+        tools: [
+          {
+            tool: "terraform",
+            mode: "source",
+            linked: false,
+            accountName: null,
+            sourceEnabled: true,
+            sourceAvailable: true,
+            oauthAvailable: false,
+          },
+        ],
+      });
+    if (url === "/api/profile/tools/terraform/token") {
+      submitted.push(JSON.parse(init!.body as string));
+      return json({ ok: true });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  window.history.replaceState(null, "", "/profile");
+  render(<App />);
+  fireEvent.change(await screen.findByLabelText("Access token"), {
+    target: { value: "PERSONAL_TOKEN" },
+  });
+  fireEvent.change(screen.getByLabelText("Connection ID"), {
+    target: { value: "remote-connection" },
+  });
+  const optin = screen.getByRole("checkbox", {
+    name: "Enable delivery operations with my personal Terraform user token",
+  }) as HTMLInputElement;
+  expect(optin.checked).toBe(false);
+  fireEvent.click(optin);
+  fireEvent.click(screen.getByRole("button", { name: "Link account" }));
+  await screen.findByText("Terraform account linked.");
+  expect(submitted).toEqual([
+    { token: "PERSONAL_TOKEN", connectionId: "remote-connection", actionsEnabled: true },
+  ]);
+});
