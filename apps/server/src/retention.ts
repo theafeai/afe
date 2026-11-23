@@ -4,7 +4,13 @@
  * together with their raw payloads. Batched, so it never holds long locks;
  * when a run hits its batch limit it enqueues a follow-up run.
  */
-import { listTenantsWithEvents, purgeEventsBefore, type PurgeOptions } from "@afe/db";
+import {
+  listTenantsWithEvents,
+  purgeEventsBefore,
+  purgeUserSourceAccessBefore,
+  type PurgeOptions,
+} from "@afe/db";
+import { ACCESS_CACHE_TTL_MS } from "./auth/access-cache.ts";
 import type { ConnectorModule, ServerContext } from "./context.ts";
 import type { JobDefinition } from "./jobs.ts";
 
@@ -35,6 +41,12 @@ export async function runRetentionPurge(
   const now = options.now?.() ?? new Date();
   const out: RetentionRunResult = { tenants: 0, events: 0, rawPayloads: 0, incomplete: [] };
   for (const tenantId of await listTenantsWithEvents(ctx.pool)) {
+    // Cached access lists that can no longer be served are not kept (data inventory).
+    await purgeUserSourceAccessBefore(
+      ctx.pool,
+      tenantId,
+      new Date(now.getTime() - ACCESS_CACHE_TTL_MS),
+    );
     const cutoff = await ctx.retention.cutoff(tenantId, now);
     if (cutoff === null) continue;
     out.tenants += 1;

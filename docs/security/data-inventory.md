@@ -222,3 +222,30 @@ replacement. Credentials remain in the existing encrypted credential repository.
 User-requested managed-resource diff payloads are read transiently and reduced to
 resource identity and changed flags. The workspace returns minimized health,
 sync/revision and deployment-history metadata. Log transport remains AFE-54.
+
+## GitHub identities, access cache and Sign in with GitHub (M1)
+
+Migrations `0037`–`0039` (D-0024/D-0025, security review P4 and P7).
+
+| Data                               | Fields                                                                                                                                  | Table                      | Sensitivity                               | Kept until / deleted by                                                                                                                                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User's GitHub identity             | tenant, user UUID, provider `github`, numeric GitHub user id (`subject`), login (display only), `provisioned` flag, verified time       | `user_external_identities` | Personal data                             | unlinking GitHub in Profile, or user deletion. Written on Profile linking and Sign in with GitHub; backfilled for older links on the next access refresh (GitHub `/user` with the user's own token)        |
+| Cached repository access of a user | tenant, user UUID, tool `github`, linked credential id, list of `repository:<owner>/<name>` the user's own token could list, fetch time | `user_source_access`       | Confidential (names private repositories) | served for at most 5 minutes; deleted on unlink, relink, any policy or deny-rule change, user disable, user deletion and failed refresh; rows past the TTL are removed by the hourly `retention.purge` job |
+| Sign in with GitHub settings       | enabled, auto-provision, allowed organization logins, default role (always `viewer`)                                                    | `github_sign_in`           | Low                                       | while the tenant exists; changed by administrators only                                                                                                                                                    |
+| Pending GitHub sign-in states      | SHA-256 of the OAuth `state`, SHA-256 of the pre-login browser cookie, same-origin `next` path, expiry (10 minutes)                     | `github_sign_in_states`    | Low                                       | single use (deleted when the callback runs); expired rows deleted when the next flow starts                                                                                                                |
+
+- **Staleness (read views only).** A user whose GitHub access is revoked upstream
+  can keep seeing read-only data (event lists and details, environments,
+  journeys, drift, mapping, run metadata) for repositories they lost for at most
+  five minutes. The TTL is a hard limit: an older row is never served, and a
+  failed refresh denies with no grace period. Mutations, prepare/confirm, receipt
+  replay, job log reads, artifact and archive downloads, workflow-source reads,
+  automations and notification sends never use the cache; they check access live
+  (ADR 0014).
+- `user_source_access.rules` is never shown to other users or administrators and
+  never leaves the server. Access-scoped correlation snapshots are kept only in
+  process memory, keyed by tenant and the SHA-256 of the sorted rules, and hold
+  no per-user data.
+- The OAuth `code`, `state`, the pre-login cookie and the user token are never
+  logged. The user token is stored only through the credentials repository (R2),
+  as for Profile linking.

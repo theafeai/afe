@@ -111,9 +111,14 @@ describe("API authentication (AFE-27)", () => {
       expect(pub.sort()).toEqual([
         "DELETE /api/session",
         "GET /api/account/email",
+        "GET /api/login/github/available",
+        "GET /api/login/github/callback",
         "HEAD /api/account/email",
+        "HEAD /api/login/github/available",
+        "HEAD /api/login/github/callback",
         "POST /api/account/redeem",
         "POST /api/account/reset",
+        "POST /api/login/github",
         "POST /api/session",
       ]);
       // Webhooks, /healthz and the UI stay public.

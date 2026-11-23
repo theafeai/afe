@@ -102,6 +102,14 @@ export async function deleteLocalUser(
       tenantId,
       id,
     ]);
+    await db.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
+    await db.query("DELETE FROM user_external_identities WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
     await db.query("DELETE FROM user_tool_permissions WHERE tenant_id=$1 AND user_id=$2", [
       tenantId,
       id,
@@ -149,6 +157,11 @@ export async function setLocalUserDisabled(
      WHERE tenant_id=$1 AND id=$2 RETURNING id`,
     [tenantId, id, disabled],
   );
+  // Cached source access never outlives a disable (P4): the next read re-checks upstream.
+  await pool.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2", [
+    tenantId,
+    id,
+  ]);
   return Boolean(result.rowCount);
 }
 export async function setUserToolPolicy(
@@ -205,6 +218,12 @@ export async function setUserToolPolicy(
           ),
     ],
   );
+  // Any policy change (mode or deny rules) drops the user's cached access for the tool.
+  await pool.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2 AND tool=$3", [
+    tenantId,
+    userId,
+    tool,
+  ]);
 }
 export async function getUserToolPolicy(
   pool: pg.Pool | pg.PoolClient,

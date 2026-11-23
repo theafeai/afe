@@ -7,7 +7,7 @@ import {
   registerArgocdOidcRoutes,
 } from "./argocd-oidc.ts";
 import { createHash, randomBytes } from "node:crypto";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   GitHubApiError,
   GitHubHttp,
@@ -19,11 +19,15 @@ import { createArgoCdClient } from "@afe/connector-argocd";
 import { parseCookies, SESSION_COOKIE } from "./session.ts";
 import { Secret } from "@afe/core/security";
 import {
+  bindExternalIdentity,
+  deleteExternalIdentity,
+  deleteUserSourceAccess,
   getConnection,
   getCredential,
   getGitHubAdminIdentity,
   getLocalUser,
   getUserToolPolicy,
+  githubSubject,
   revokeCredential,
   storeCredential,
 } from "@afe/db";
@@ -71,7 +75,14 @@ export async function toolAccounts(
     )
   ).rows;
 }
-async function saveAccount(
+/** The linked GitHub account is already bound to another Afe user of the tenant. */
+export class IdentityConflictError extends Error {
+  constructor() {
+    super("upstream identity already linked to another user");
+  }
+}
+
+export async function saveAccount(
   ctx: ServerContext,
   tid: string,
   uid: string,
@@ -80,6 +91,8 @@ async function saveAccount(
   token: string,
   context: ToolAccount["context"],
   guard?: (db: pg.PoolClient) => Promise<void>,
+  /** GitHub only: the numeric id and login GitHub's /user returned for `token`. */
+  identity?: { subject: string; login: string; provisioned?: boolean },
 ) {
   const client = await ctx.pool.connect();
   try {
@@ -88,6 +101,14 @@ async function saveAccount(
     await client.query("SELECT id FROM users WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [tid, uid]);
     if (guard) await guard(client);
     else if (tool === "argocd") await clearArgocdOidcStates(client, tid, uid);
+    // One GitHub account links to at most one Afe user per tenant, matched by numeric id.
+    if (identity) {
+      const bound = await bindExternalIdentity(client, tid, uid, {
+        provider: "github",
+        ...identity,
+      });
+      if (bound === "conflict") throw new IdentityConflictError();
+    }
     const old = await client.query<ToolAccount>(
       "SELECT credential_id FROM user_tool_accounts WHERE tenant_id=$1 AND user_id=$2 AND tool=$3",
       [tid, uid, tool],
@@ -103,7 +124,10 @@ async function saveAccount(
       [tid, uid, tool, name, stored.id, JSON.stringify(context)],
     );
     if (old.rows[0]) await revokeCredential(client, tid, old.rows[0].credential_id);
+    // Relinking never reuses cached access of the previous credential.
+    await deleteUserSourceAccess(client, tid, uid, tool);
     await client.query("COMMIT");
+    ctx.access?.forgetUser(tid, uid);
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
@@ -112,7 +136,11 @@ async function saveAccount(
   }
 }
 
-/** Always revalidate upstream access. Failures produce no source grants. Never trust saved resource lists. */
+/**
+ * Revalidates upstream access. Failures produce no source grants. Saved resource
+ * lists are trusted only within the access cache TTL, for read views
+ * (`user_source_access`, see access-cache.ts); never for actions.
+ */
 export async function sourceAccess(
   ctx: ServerContext,
   tid: string,
@@ -193,6 +221,13 @@ export async function sourceAccess(
   return [];
 }
 
+function identityConflict(reply: FastifyReply) {
+  return reply.code(409).send({
+    error: "identity_in_use",
+    message: "This GitHub account is already linked to another Afe user.",
+  });
+}
+
 export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerContext) {
   registerArgocdOidcRoutes(app, ctx, saveAccount);
   app.get("/api/profile", { config: { access: "viewer" } }, async (req) => {
@@ -264,7 +299,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           error: "invalid_token",
           message: "Enter your GitHub fine-grained or personal access token.",
         });
-      let login: string;
+      let login: string, subject: string;
       try {
         const identity = await new GitHubHttp({ maxRetries: 0 }).request<{
           id: number;
@@ -283,6 +318,7 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
         )
           throw new Error("invalid identity");
         login = identity.data.login;
+        subject = String(identity.data.id);
       } catch (error) {
         if (error instanceof GitHubRateLimitError)
           return reply.code(429).send({
@@ -305,7 +341,15 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
         return reply
           .code(403)
           .send({ error: "forbidden", message: "This GitHub identity is disabled." });
-      await saveAccount(ctx, tid, uid, "github", login, value, {});
+      try {
+        await saveAccount(ctx, tid, uid, "github", login, value, {}, undefined, {
+          subject,
+          login: login.slice(0, 100),
+        });
+      } catch (error) {
+        if (error instanceof IdentityConflictError) return identityConflict(reply);
+        throw error;
+      }
       return { ok: true };
     },
   );
@@ -379,10 +423,16 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           token,
           bucket: "user",
         });
-        if (!user.data.id || !user.data.login) throw new Error("invalid identity");
-        await saveAccount(ctx, tid, uid, "github", user.data.login, token.reveal(), {});
+        const subject = githubSubject(user.data.id);
+        if (!subject || typeof user.data.login !== "string" || !user.data.login)
+          throw new Error("invalid identity");
+        await saveAccount(ctx, tid, uid, "github", user.data.login, token.reveal(), {}, undefined, {
+          subject,
+          login: user.data.login.slice(0, 100),
+        });
         return reply.redirect("/profile?linked=github", 303);
-      } catch {
+      } catch (error) {
+        if (error instanceof IdentityConflictError) return identityConflict(reply);
         return reply.code(502).send({
           error: "link_failed",
           message: "GitHub account linking failed. Start again from your profile.",
@@ -568,7 +618,10 @@ export function registerToolAccountRoutes(app: FastifyInstance, ctx: ServerConte
           [tid, uid, req.params.tool],
         );
         if (old.rows[0]) await revokeCredential(client, tid, old.rows[0].credential_id);
+        if (req.params.tool === "github") await deleteExternalIdentity(client, tid, uid, "github");
+        await deleteUserSourceAccess(client, tid, uid, req.params.tool);
         await client.query("COMMIT");
+        ctx.access?.forgetUser(tid, uid);
         return { ok: true };
       } catch (e) {
         await client.query("ROLLBACK");

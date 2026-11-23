@@ -174,6 +174,18 @@ timestamps to fill the database with history.
   ADR 0006).
 - Vercel signs with HMAC-SHA1; this is the provider's choice. HMAC-SHA1 remains
   secure as a MAC; we accept it.
+- **Accepted risk until S2 (M1).** Profile linking and Sign in with GitHub store,
+  encrypted, a GitHub OAuth user token with the `repo` scope: write access to every
+  private repository the developer can reach. It is the most valuable asset in the
+  system. Replacing it with a write-capable GitHub App with expiring, fine-grained
+  user tokens is required before a public or hosted launch (security review S2,
+  needs an ADR amending 0011).
+- Read views may show a repository's data for up to five minutes after GitHub
+  revokes a user's access (access cache, P4). Actions always check live.
+- Sign in with GitHub is a public route (`/api/login/github*`): login CSRF is
+  prevented by a single-use state bound to a pre-login browser cookie; organization
+  membership is proven per sign-in; auto-provisioning is off by default and limited
+  to organizations with this tenant's own active App installation.
 
 ## References
 

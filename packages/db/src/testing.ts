@@ -37,4 +37,9 @@ export async function seedLegacyToolPolicy(
       JSON.stringify(policy.denied ?? []),
     ],
   );
+  await pool.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2 AND tool=$3", [
+    tenantId,
+    userId,
+    tool,
+  ]);
 }

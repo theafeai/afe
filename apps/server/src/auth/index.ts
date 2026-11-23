@@ -44,6 +44,8 @@ declare module "fastify" {
     principal?: Principal;
     /** Tenant of the authenticated caller. Read it with `requestTenant(req)`. */
     tenantId?: string;
+    /** The web session that authenticated the request, if any: expiry (epoch ms) and login method. */
+    webSession?: { expiresAt: number; via: string };
   }
   interface FastifyContextConfig {
     /** Access level of the route; defaults to `defaultRouteAccess(method, url)`. */
@@ -103,6 +105,32 @@ export interface AuthOptions {
   uiEnabled: boolean;
 }
 
+/** Set-Cookie values for a web UI session (or for clearing it, with `null`). */
+export function sessionCookieHeaders(
+  req: FastifyRequest,
+  publicUrl: string | undefined,
+  sessions: SessionCodec,
+  value: { session: string; csrf: string } | null,
+): string[] {
+  const secure = secureCookies(req, publicUrl);
+  const maxAgeSec = value ? Math.floor(sessions.ttlMs / 1000) : 0;
+  return [
+    serializeCookie(SESSION_COOKIE, value?.session ?? "", {
+      path: SESSION_COOKIE_PATH,
+      maxAgeSec,
+      httpOnly: true,
+      secure,
+    }),
+    // Readable by the UI's JavaScript (double-submit CSRF token); worthless without the session.
+    serializeCookie(CSRF_COOKIE, value?.csrf ?? "", {
+      path: "/",
+      maxAgeSec,
+      httpOnly: false,
+      secure,
+    }),
+  ];
+}
+
 function isMutating(method: string): boolean {
   return !READ_METHODS.has(method.toUpperCase());
 }
@@ -136,7 +164,7 @@ function wantsHtml(req: FastifyRequest): boolean {
   return String(req.headers.accept ?? "").includes("text/html");
 }
 
-function secureCookies(req: FastifyRequest, publicUrl: string | undefined): boolean {
+export function secureCookies(req: FastifyRequest, publicUrl: string | undefined): boolean {
   return Boolean(publicUrl?.startsWith("https://")) || req.protocol === "https";
 }
 
@@ -191,6 +219,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
 
     const cookies = parseCookies(req.headers.cookie);
     let principal = await provider.authenticate({ headers: req.headers, cookies });
+    let webSession: { expiresAt: number; via: string } | undefined;
     if (!principal && !req.headers.authorization) {
       const session = sessions.verify(cookies[SESSION_COOKIE]);
       if (session) {
@@ -209,6 +238,7 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
             }
           }
           principal = p;
+          webSession = { expiresAt: session.exp, via: session.via };
         }
       }
     }
@@ -275,29 +305,13 @@ export function registerAuth(app: FastifyInstance, options: AuthOptions): Regist
     }
     req.principal = principal;
     req.tenantId = tenantId;
+    if (webSession) req.webSession = webSession;
   });
 
   // --- Web UI sessions ------------------------------------------------------
 
-  const cookieHeaders = (req: FastifyRequest, value: { session: string; csrf: string } | null) => {
-    const secure = secureCookies(req, publicUrl);
-    const maxAgeSec = value ? Math.floor(sessions.ttlMs / 1000) : 0;
-    return [
-      serializeCookie(SESSION_COOKIE, value?.session ?? "", {
-        path: SESSION_COOKIE_PATH,
-        maxAgeSec,
-        httpOnly: true,
-        secure,
-      }),
-      // Readable by the UI's JavaScript (double-submit CSRF token); worthless without the session.
-      serializeCookie(CSRF_COOKIE, value?.csrf ?? "", {
-        path: "/",
-        maxAgeSec,
-        httpOnly: false,
-        secure,
-      }),
-    ];
-  };
+  const cookieHeaders = (req: FastifyRequest, value: { session: string; csrf: string } | null) =>
+    sessionCookieHeaders(req, publicUrl, sessions, value);
 
   const principalView = (p: Principal) => ({
     id: p.id,
