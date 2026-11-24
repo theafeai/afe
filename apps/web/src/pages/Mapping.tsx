@@ -8,7 +8,6 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import {
   mappingApi,
   ruleBody,
-  type EnvironmentKind,
   type MappingState,
   type MatchType,
   type PlacementView,
@@ -31,6 +30,7 @@ import { formatDateTime } from "../format.ts";
 import { icons } from "../icons.tsx";
 import { Link } from "../router.tsx";
 import { useToast } from "../toast.tsx";
+import { EnvironmentChip } from "./environments-ui.tsx";
 import "./Mapping.css";
 
 const LABEL_FIELD = "argocd.label:<key>";
@@ -464,13 +464,16 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
 function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<EnvironmentKind>("other");
+  // The org's own environments (D-0009, D-0010): no built-in kinds to pick,
+  // only whether one is production-like. `kind` stays in the API for compatibility.
+  const [productionLike, setProductionLike] = useState(false);
   const envs = state.environments;
-  const list = useMappingList(envs, (e) => `${e.name} ${e.id} ${e.kind}`);
+  const isPl = (e: (typeof envs)[number]) => e.productionLike ?? e.kind === "production";
+  const list = useMappingList(envs, (e) => `${e.name} ${e.id}${isPl(e) ? " production-like" : ""}`);
   const close = () => {
     setAdding(false);
     setName("");
-    setKind("other");
+    setProductionLike(false);
   };
   const move = (i: number, by: number) => {
     const a = envs[i]!;
@@ -484,7 +487,11 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
     e.preventDefault();
     if (!name.trim()) return;
     const ok = await act(
-      () => mappingApi.createEnvironment({ name: name.trim(), kind }),
+      () =>
+        mappingApi.createEnvironment({
+          name: name.trim(),
+          kind: productionLike ? "production" : "other",
+        }),
       `Environment “${name.trim()}” added.`,
     );
     if (ok) close();
@@ -533,20 +540,14 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
                 autoFocus
               />
             </div>
-            <div className="field">
-              <label htmlFor="env-kind">Kind</label>
-              <select
-                id="env-kind"
-                value={kind}
-                onChange={(e) => setKind(e.target.value as EnvironmentKind)}
-              >
-                {state.environmentKinds.map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={productionLike}
+                onChange={(e) => setProductionLike(e.target.checked)}
+              />
+              Production-like
+            </label>
           </div>
           <div className="button-row form-end">
             <button type="button" className="btn btn-ghost btn-sm" onClick={close}>
@@ -584,10 +585,9 @@ function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
               </span>
               <span className="entity-main">
                 <span className="entity-name">
-                  <strong>{e.name}</strong> <code>{e.id}</code>
+                  <EnvironmentChip name={e.name} productionLike={isPl(e)} /> <code>{e.id}</code>
                 </span>
               </span>
-              <span className="badge">{e.kind}</span>
               <span className="entity-actions">
                 <RowAction
                   label={`Move environment ${e.name} left`}

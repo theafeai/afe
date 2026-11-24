@@ -401,6 +401,31 @@ describe("mergeSetup (overrides win, inference never overwrites)", () => {
     expect(m.mappingEnvironments.find((e) => e.id === "production")!.productionLike).toBe(true);
   });
 
+  it("never derives a built-in kind from an org's environment names (AFE-117)", () => {
+    const events: InferenceEvent[] = [];
+    for (const [i, env] of ["uat", "qa-sandbox", "dev-eu"].entries()) {
+      events.push(gh({ env, min: i * 10, sha: `k${i}` }));
+    }
+    const f = inferSetup(events, { mapping: emptyMapping(), adminEnvironmentIds: [] });
+    const m = mergeSetup({ adminEnvironments: [], inferred: records(f), overrides: [] });
+    expect(m.environments.map((e) => [e.id, e.kind])).toEqual([
+      ["uat", "other"],
+      ["qa-sandbox", "other"],
+      ["dev-eu", "other"],
+    ]);
+    expect(m.mappingEnvironments.every((e) => e.kind === "other" && !e.productionLike)).toBe(true);
+    // Reasons name the org's environment, never Afe's words for it.
+    const reasons = f.filter((x) => x.field === "productionLike").map((x) => x.reason);
+    expect(reasons.join(" ")).not.toMatch(/\b(staging|development|preview)\b/);
+    // Compatibility: production-like is still `production`, a short-lived family `preview`.
+    const acmeMerged = mergeSetup({ adminEnvironments: [], inferred, overrides: [] });
+    expect(acmeMerged.environments.map((e) => [e.id, e.kind])).toEqual([
+      ["staging", "other"],
+      ["production", "production"],
+      ["previews", "preview"],
+    ]);
+  });
+
   it("an override wins, keeps Afe's guess beside it, and a disagreement is noticed", () => {
     const m = mergeSetup({
       adminEnvironments: [],

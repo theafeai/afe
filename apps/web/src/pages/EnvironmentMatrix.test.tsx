@@ -332,7 +332,7 @@ describe("Environment matrix (AFE-24)", () => {
     const cols = within(grid)
       .getAllByRole("columnheader")
       .map((h) => h.textContent);
-    expect(cols).toEqual(["Service", "Staging", "Production"]);
+    expect(cols).toEqual(["Service", "Staging", "Production (production-like)"]);
     expect(
       within(grid)
         .getAllByRole("rowheader")
@@ -465,6 +465,31 @@ describe("Environment matrix (AFE-24)", () => {
     expect(document.activeElement).toBe(await cellOf("Web", 0));
     fireEvent.keyDown(document.activeElement!, { key: "End" });
     expect(document.activeElement).toBe(within(await cellOf("Web", 1)).getByRole("button"));
+  });
+
+  it("shows the org's environment names only; production-like gets the shield chip (AFE-117)", async () => {
+    const base = matrix();
+    state = () => ({
+      ...base,
+      environments: [
+        { id: "staging", name: "uat", kind: "staging", order: 10, unmapped: false },
+        { id: "production", name: "Live", kind: "other", productionLike: true, order: 20 },
+        { id: "qa-sandbox", name: "qa-sandbox", kind: "development", order: 30, unmapped: false },
+      ].map((e) => ({ unmapped: false, ...e })),
+    });
+    render(<App />);
+    const grid = await screen.findByRole("grid");
+    const headers = within(grid).getAllByRole("columnheader").slice(1);
+    expect(headers.map((h) => h.textContent)).toEqual([
+      "uat",
+      "Live (production-like)",
+      "qa-sandbox",
+    ]);
+    expect(grid.textContent).not.toMatch(/\b(staging|development)\b/);
+    const chips = headers.map((h) => h.querySelector(".env-chip")!);
+    expect(chips.map((c) => c.classList.contains("pl"))).toEqual([false, true, false]);
+    // The production-like chip carries the shield; the others look the same.
+    expect(chips.map((c) => c.querySelector("svg") !== null)).toEqual([false, true, false]);
   });
 
   it("explains how to connect tools and set up mapping when there is nothing yet", async () => {

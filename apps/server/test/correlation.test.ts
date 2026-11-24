@@ -144,6 +144,16 @@ describe("correlation API (AFE-20)", () => {
         "staging",
         "preview",
       ]);
+      // Columns carry the production-like flag the UI styles by, never a kind (AFE-117).
+      expect(
+        body.environments
+          .slice(0, 3)
+          .map((e: { id: string; productionLike: boolean }) => [e.id, e.productionLike]),
+      ).toEqual([
+        ["production", true],
+        ["staging", false],
+        ["preview", false],
+      ]);
       expect(body.window).toMatchObject({ stale: false, truncated: false });
       const cells = Object.fromEntries(
         body.cells.map((c: { service: string; environment: string }) => [

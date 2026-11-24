@@ -429,9 +429,10 @@ function inferProductionLike(
       "productionLike",
       kind === "production",
       "probable",
+      // Never name a built-in kind beside the org's own name (AFE-117, D-0010).
       kind === "production"
         ? `The name ${name} reads as production`
-        : `The name ${name} reads as ${kind}`,
+        : `The name ${name} does not read as production`,
       [{ rule: "productionLike.name", detail: `Named ${name}` }],
     );
   }

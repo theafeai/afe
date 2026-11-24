@@ -1324,6 +1324,32 @@ legend {
   background: var(--surface-2);
 }
 
+/* Environment chips (ADR 0017 rule 9): one outline look for every environment;
+   only production-like (.pl) differs, as the solid ink chip with a shield. */
+.env-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 0.05rem 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.env-chip.pl {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.env-chip .icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: none;
+}
+
 /* Callouts and states -------------------------------------------------------- */
 .callout {
   border: 1px solid var(--border);

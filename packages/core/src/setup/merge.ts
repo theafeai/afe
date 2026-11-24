@@ -3,7 +3,6 @@
  * created (Mapping page), then inference. Pure. Inference is only ever
  * reported against an admin value ("Afe noticed"), never applied over it.
  */
-import { NAME_PATTERNS } from "../mapping/defaults.ts";
 import type { Environment, EnvironmentKind, MappingRule } from "../mapping/types.ts";
 import {
   subjectEnvironmentId,
@@ -46,12 +45,17 @@ const UNORDERED = 1_000_000;
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-function legacyKind(name: string, productionLike: boolean, family: boolean): EnvironmentKind {
+/**
+ * The legacy `kind` of an inferred environment, kept in the API for
+ * compatibility only (AFE-117). It is never derived from the name: an org's
+ * `uat` is not Afe's "staging" (D-0009, D-0010). Production-like environments
+ * are `production`, a short-lived family is `preview` (it is one by
+ * construction), every other environment is `other`. The UI shows no kind;
+ * it shows the production-like flag.
+ */
+function legacyKind(productionLike: boolean, family: boolean): EnvironmentKind {
   if (productionLike) return "production";
   if (family) return "preview";
-  for (const [kind, pattern] of NAME_PATTERNS) {
-    if (kind !== "production" && new RegExp(pattern, "i").test(name)) return kind;
-  }
   return "other";
 }
 
@@ -160,7 +164,7 @@ export function mergeSetup(inputs: SetupInputs): MergedSetup {
       gating: fromOverride("gating") ?? fromInferred("gating", null),
       batching: fromOverride("batching") ?? fromInferred("batching", null),
       cadence: fromInferred("cadence", null),
-      kind: admin ? admin.kind : legacyKind(name.value, productionLike.value, family),
+      kind: admin ? admin.kind : legacyKind(productionLike.value, family),
       sources,
       firstInferredAt:
         inf.size > 0 ? [...inf.values()].map((f) => f.firstInferredAt).sort()[0]! : null,

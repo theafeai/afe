@@ -551,6 +551,22 @@ describe(`design system (${DOC})`, () => {
     ).toEqual([]);
   });
 
+  it("rule 14: no built-in kind labels beside environment names (AFE-117)", () => {
+    // Rendering an environment's legacy `kind` (`{env.kind}`, `${e.kind}`), or
+    // offering the built-in kinds to pick (`environmentKinds`), puts Afe's
+    // dev/staging/prod words beside the org's own names. Show `.pl` only.
+    const label =
+      /\{\s*(?:env|environment|e|col|column)\??\.kind\s*\}|\$\{\s*(?:env|environment|e|col|column)\??\.kind\s*\}|\benvironmentKinds\b/g;
+    const found = violations(
+      (_f, text) => [...text.matchAll(label)].map((m) => m[0]),
+      CODE.filter((f) => f.endsWith(".tsx")),
+    );
+    expect(
+      found,
+      `Environments are the org's; label only production-like, never a kind (${DOC}, rule 14)`,
+    ).toEqual([]);
+  });
+
   it("typography: sentence case, never uppercase transforms", () => {
     const found = violations(
       (_f, text) =>

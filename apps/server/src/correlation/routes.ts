@@ -85,7 +85,14 @@ function sendError(reply: FastifyReply, err: unknown) {
 
 interface Dims {
   services: { id: string; name: string }[];
-  environments: { id: string; name: string; kind: string; order: number }[];
+  environments: {
+    id: string;
+    name: string;
+    /** Legacy, for API compatibility; the UI shows `productionLike` only (AFE-117). */
+    kind: string;
+    order: number;
+    productionLike: boolean;
+  }[];
 }
 
 async function dimensions(
@@ -112,7 +119,13 @@ function dimsOf(config: MappingConfig): Dims {
     services: config.services.map((s) => ({ id: s.id, name: s.name })),
     environments: [...config.environments]
       .sort((a, b) => a.order - b.order || (a.id < b.id ? -1 : 1))
-      .map((e) => ({ id: e.id, name: e.name, kind: e.kind, order: e.order })),
+      .map((e) => ({
+        id: e.id,
+        name: e.name,
+        kind: e.kind,
+        order: e.order,
+        productionLike: e.productionLike ?? e.kind === "production",
+      })),
   };
 }
 
@@ -211,7 +224,16 @@ export function registerCorrelationRoutes(
         environments: [
           ...dims.environments.map((e) => ({ ...e, unmapped: false })),
           ...(usesUnmapped("env")
-            ? [{ id: UNMAPPED, name: "Unmapped", kind: "other", order: null, unmapped: true }]
+            ? [
+                {
+                  id: UNMAPPED,
+                  name: "Unmapped",
+                  kind: "other",
+                  order: null,
+                  productionLike: false,
+                  unmapped: true,
+                },
+              ]
             : []),
         ],
         cells: sortedCells.map((c) => {

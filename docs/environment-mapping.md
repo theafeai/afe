@@ -21,7 +21,10 @@ matrix (research doc [0001](research/0001-cross-tool-flow.md), gap
 - `Environment {id, name, order, kind, productionLike}`: `order` is the matrix
   column position; `productionLike` (D-0010) gives the heavy chip;
   `kind` (`production | staging | preview | development | other`) is legacy,
-  kept for compatibility (derived for inferred environments).
+  kept for compatibility. For an inferred environment it is never derived from
+  the name (AFE-117): `production` when production-like, `preview` for a
+  short-lived family, else `other`. The UI shows no kind, only the
+  production-like chip (ADR 0017 rule 9).
 - `MappingRule {id, kind, field, match, pattern, caseSensitive, priority,
 targetId, enabled, note?}`: `kind: service` rules assign a service,
   `kind: environment` rules an environment. The two rule sets are
