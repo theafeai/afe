@@ -167,30 +167,52 @@ export function ToolBadge({ source }: { source: string }) {
   );
 }
 
+/** What the legend needs to know about a connection. */
+export type LegendConnection = Pick<ConnectionWithHealth, "source" | "status">;
+
+/**
+ * Why a tool on screen is not observing (AFE-119): its connections' status when they
+ * agree, otherwise "not observing"; "not connected" when it has no connection.
+ */
+function offState(statuses: readonly string[]): string {
+  if (statuses.length === 0) return "not connected";
+  const [first] = statuses;
+  return statuses.every((s) => s === first) ? humanize(first!).toLowerCase() : "not observing";
+}
+
 /**
  * The legend (ADR 0017 decision 3): shown, sticky, on every screen that colour-codes
- * tools. It lists the tenant's connected tools (from `sources`, or loaded from the
- * connections API when the page has not loaded them), each with its logo, name and
- * stroke swatch, then the screen's own `keys` and Afe's key. Hovering or focusing a
- * tool fades everything on the page from the other tools.
+ * tools. It lists the tools on screen (`sources`, or every tool with a connection),
+ * each with its logo, name and stroke swatch, then the screen's own `keys` and Afe's
+ * key. Hovering or focusing a tool fades everything on the page from the other tools.
+ *
+ * "N tools connected" counts only tools with an active connection, the ones Afe can
+ * observe now (AFE-119). Tools on screen whose connections are suspended, revoked,
+ * pending or disconnected stay listed, after the others, in a secondary state with
+ * the reason. Pass `connections` when the page has loaded them; otherwise the legend
+ * loads them itself to know their status.
  */
 export function ToolLegend({
   sources,
+  connections,
   counts,
   keys,
 }: {
   sources?: readonly string[];
+  connections?: readonly LegendConnection[];
   counts?: Readonly<Record<string, number>>;
   keys?: ReactNode;
 }) {
   const loaded = useAsync(
-    (signal) => (sources ? Promise.resolve(null) : api.connections(signal)),
-    [sources === undefined],
+    (signal) => (connections ? Promise.resolve(null) : api.connections(signal)),
+    [connections === undefined],
   );
-  const fromApi = Array.isArray(loaded.data?.connections)
-    ? loaded.data.connections.map((c) => c.source)
-    : [];
-  const tools = [...new Set(sources ?? fromApi)];
+  const known: readonly LegendConnection[] | null =
+    connections ?? (Array.isArray(loaded.data?.connections) ? loaded.data.connections : null);
+  const shown = [...new Set(sources ?? known?.map((c) => c.source) ?? [])];
+  const observing = new Set(known?.filter((c) => c.status === "active").map((c) => c.source));
+  const off = (t: string) => known !== null && !observing.has(t);
+  const tools = [...shown.filter((t) => !off(t)), ...shown.filter(off)];
   const ref = useRef<HTMLElement>(null);
   const fade = useCallback((tool: string | null) => {
     const root = ref.current?.closest("main") ?? document;
@@ -204,27 +226,39 @@ export function ToolLegend({
       <span className="legend-title">
         {icons.layers}
         <strong>Colour = source</strong>
-        <span>
-          · {tools.length} {tools.length === 1 ? "tool" : "tools"} connected
-        </span>
+        {known && (
+          <span>
+            ·{" "}
+            {observing.size === 0
+              ? "no tools connected"
+              : `${observing.size} ${observing.size === 1 ? "tool" : "tools"} connected`}
+          </span>
+        )}
       </span>
       <ul className="legend-tools">
-        {tools.map((t) => (
-          <li
-            key={t}
-            className={`lg t-${t}`}
-            tabIndex={0}
-            onMouseEnter={() => fade(t)}
-            onMouseLeave={() => fade(null)}
-            onFocus={() => fade(t)}
-            onBlur={() => fade(null)}
-          >
-            <ToolMark source={t} tile />
-            {toolLabel(t)}
-            <i className="lg-sw" aria-hidden="true" />
-            {counts?.[t] !== undefined && <span className="lg-n">{counts[t]}</span>}
-          </li>
-        ))}
+        {tools.map((t) => {
+          const reason = off(t)
+            ? offState(known!.filter((c) => c.source === t).map((c) => c.status))
+            : null;
+          return (
+            <li
+              key={t}
+              className={`lg t-${t}${reason ? " lg-off" : ""}`}
+              tabIndex={0}
+              {...(reason ? { title: `${toolLabel(t)}: ${reason}, not observed now` } : {})}
+              onMouseEnter={() => fade(t)}
+              onMouseLeave={() => fade(null)}
+              onFocus={() => fade(t)}
+              onBlur={() => fade(null)}
+            >
+              <ToolMark source={t} tile />
+              {toolLabel(t)}
+              <i className="lg-sw" aria-hidden="true" />
+              {reason && <span className="lg-state">{reason}</span>}
+              {counts?.[t] !== undefined && <span className="lg-n">{counts[t]}</span>}
+            </li>
+          );
+        })}
       </ul>
       <span className="legend-sep" aria-hidden="true" />
       <span className="legend-keys">
