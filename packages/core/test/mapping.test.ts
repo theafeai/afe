@@ -10,6 +10,7 @@ import {
   ruleInputSchema,
   SafeRegexError,
   slugify,
+  trimDashes,
   type Environment,
   type MappableEvent,
   type MappingConfig,
@@ -380,5 +381,40 @@ describe("validation", () => {
     expect(slugify("Prod – EU (west)")).toBe("prod-eu-west");
     expect(slugify("Ünïcode")).toBe("unicode");
     expect(slugify("–")).toBe("item");
+  });
+
+  it("slugify matches the earlier regex implementation", () => {
+    const before = (name: string) =>
+      name
+        .normalize("NFKD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 64)
+        .replace(/-+$/, "") || "item";
+    const alphabet = ["a", "Z", "0", "-", "_", " ", "é", "–", "!"];
+    let seed = 7;
+    const rand = (n: number) => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n;
+    for (let i = 0; i < 5000; i++) {
+      const name = Array.from({ length: rand(80) }, () => alphabet[rand(alphabet.length)]).join("");
+      expect(slugify(name), JSON.stringify(name)).toBe(before(name));
+    }
+    expect(slugify(`${"a".repeat(63)}-b`)).toBe("a".repeat(63));
+    expect(trimDashes("--a-b--")).toBe("a-b");
+    expect(trimDashes("--a-b--", false)).toBe("--a-b");
+    expect(trimDashes("----")).toBe("");
+  });
+
+  it("slugify runs in linear time on long runs of '-'", () => {
+    const t0 = performance.now();
+    for (const name of [
+      "-".repeat(200_000),
+      `a${"-".repeat(200_000)}!`,
+      `${"-".repeat(100_000)}a${"-".repeat(100_000)}`,
+    ])
+      slugify(name);
+    expect(trimDashes(`${"-".repeat(200_000)}x${"-".repeat(200_000)}`)).toBe("x");
+    expect(performance.now() - t0).toBeLessThan(500);
   });
 });

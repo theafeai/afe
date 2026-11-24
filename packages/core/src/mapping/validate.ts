@@ -23,16 +23,26 @@ export const mappingIdSchema = z
   .string()
   .regex(MAPPING_ID_PATTERN, "id must be lower case letters, digits, - and _ (max 64)");
 
+/**
+ * `s` without leading (if `leading`) and trailing "-". A loop rather than
+ * `/^-+|-+$/g`, which backtracks quadratically on long runs of "-".
+ */
+export function trimDashes(s: string, leading = true): string {
+  let start = 0;
+  let end = s.length;
+  if (leading) while (start < end && s.charCodeAt(start) === 0x2d) start++;
+  while (end > start && s.charCodeAt(end - 1) === 0x2d) end--;
+  return s.slice(start, end);
+}
+
 /** Derives a slug id from a display name ("Payments API" → "payments-api"). */
 export function slugify(name: string): string {
-  const s = name
+  const collapsed = name
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
+    .replace(/[^a-z0-9]+/g, "-");
+  const s = trimDashes(trimDashes(collapsed).slice(0, 64), false);
   return s || "item";
 }
 

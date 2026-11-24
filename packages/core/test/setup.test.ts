@@ -4,6 +4,7 @@ import type { MappingConfig } from "../src/mapping/index.ts";
 import {
   familyOf,
   inferSetup,
+  numberedStem,
   mergeSetup,
   setupChangesSchema,
   type InferenceEvent,
@@ -243,6 +244,41 @@ describe("inferSetup (ADR 0019 rules)", () => {
     expect(familyOf("hotfix-7", true)).toMatchObject({ id: "hotfix-previews" });
     const branch = familyOf("preview/feature.x", false)!;
     expect(compileSafeRegex(branch.pattern, { ignoreCase: true }).test("preview/other")).toBe(true);
+  });
+
+  it("numbered stems match the earlier regex on every short input", () => {
+    const before = (v: string) => /^(.*?[^-_ #/])[-_ #/]*(\d+)$/.exec(v)?.[1] ?? null;
+    const alphabet = ["a", "!", "0", "7", "-", "_", " ", "#", "/", "\n", "\u2028"];
+    const check = (v: string) => expect(numberedStem(v), JSON.stringify(v)).toBe(before(v));
+    // Exhaustive up to length 4, then random strings up to length 24.
+    let level = [""];
+    for (let len = 0; len <= 4; len++) {
+      level.forEach(check);
+      level = level.flatMap((p) => alphabet.map((c) => p + c));
+    }
+    let seed = 11;
+    const rand = (n: number) => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n;
+    for (let i = 0; i < 20_000; i++)
+      check(Array.from({ length: rand(25) }, () => alphabet[rand(alphabet.length)]).join(""));
+    expect(numberedStem("pr-42")).toBe("pr");
+    expect(numberedStem("env12")).toBe("env");
+    expect(numberedStem("123")).toBe("1");
+    expect(numberedStem("-1")).toBeNull();
+  });
+
+  it("family detection runs in linear time on adversarial names", () => {
+    const t0 = performance.now();
+    for (const v of [
+      `!${"00".repeat(100_000)}`,
+      `!${"00".repeat(100_000)}!`,
+      `${"-".repeat(200_000)}1`,
+      `a${"0-".repeat(100_000)}`,
+    ]) {
+      familyOf(v, true);
+      familyOf(v, false);
+    }
+    expect(numberedStem(`!${"00".repeat(100_000)}`)).toBe("!");
+    expect(performance.now() - t0).toBeLessThan(500);
   });
 });
 
