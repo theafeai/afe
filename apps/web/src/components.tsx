@@ -157,7 +157,7 @@ export function toolLabel(source: string): string {
   return TOOL_LABEL[source] ?? source;
 }
 
-/** The tool's logo on its brand tile plus its name (ADR 0017 decision 4). */
+/** The tool's logo on its brand tile plus its name (ADR 0021 decision 4). */
 export function ToolBadge({ source }: { source: string }) {
   return (
     <span className={`tool-badge t-${source}`} data-tool={source}>
@@ -181,7 +181,7 @@ function offState(statuses: readonly string[]): string {
 }
 
 /**
- * The legend (ADR 0017 decision 3): shown, sticky, on every screen that colour-codes
+ * The legend (ADR 0021 decision 3): shown, sticky, on every screen that colour-codes
  * tools. It lists the tools on screen (`sources`, or every tool with a connection),
  * each with its logo, name and stroke swatch, then the screen's own `keys` and Afe's
  * key. Hovering or focusing a tool fades everything on the page from the other tools.
@@ -272,7 +272,7 @@ export function ToolLegend({
   );
 }
 
-/** Live (ADR 0017 decision 5.3): Afe is watching this happen now. */
+/** Live (ADR 0021 decision 5.3): Afe is watching this happen now. */
 export function LiveIndicator({ children = "Live" }: { children?: ReactNode }) {
   return (
     <span className="live">
@@ -283,7 +283,7 @@ export function LiveIndicator({ children = "Live" }: { children?: ReactNode }) {
 }
 
 /**
- * Where a value came from (ADR 0017 decision 9): Afe inferred it (spectrum dot,
+ * Where a value came from (ADR 0021 decision 9): Afe inferred it (spectrum dot,
  * "inferred" and its confidence) or a person set it (person icon, "set by").
  */
 export function ProvenancePill({
@@ -311,7 +311,7 @@ export function ProvenancePill({
 
 // --- Status ------------------------------------------------------------------------
 
-/** The tones a status can take; each is a solid shape (ADR 0017 decision 8). */
+/** The tones a status can take; each is a solid shape (ADR 0021 decision 8). */
 export type StatusTone = "ok" | "warn" | "bad" | "wait" | "idle" | "live";
 
 /**

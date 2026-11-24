@@ -1,4 +1,4 @@
-# ADR 0017: Spectrum design language
+# ADR 0021: Spectrum design language
 
 - Status: Accepted
 - Date: 2026-11-23

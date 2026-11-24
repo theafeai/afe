@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-24
-- Related: [ADR 0017](0017-spectrum-design-language.md) rule 9 (how environments look)
+- Related: [ADR 0021](0021-spectrum-design-language.md) rule 9 (how environments look)
 - Reference: [Environment mapping](../environment-mapping.md), "Built-in rules" and
   "Inferred setup"
 
@@ -43,7 +43,7 @@ different production targets became one "Production".
    against, so the same disagreement is not reported again.
 5. **Production-like instead of fixed kinds.** Environments are the org's own. The only
    classification Afe applies is a `productionLike` flag, which gives the environment
-   the solid chip (ADR 0017 rule 9). Afe never derives a kind from a name. The legacy
+   the solid chip (ADR 0021 rule 9). Afe never derives a kind from a name. The legacy
    `kind` field stays in the API for compatibility only: `production` for
    production-like environments, `preview` for a family of short-lived environments,
    `other` for everything else.

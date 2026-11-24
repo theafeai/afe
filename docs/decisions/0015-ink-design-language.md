@@ -1,6 +1,6 @@
 # ADR 0015: Ink design language
 
-- Status: Accepted. Superseded in part by [ADR 0017](0017-spectrum-design-language.md):
+- Status: Accepted. Superseded in part by [ADR 0021](0021-spectrum-design-language.md):
   the palette (colours only for signal), the selection blue, outline status glyphs,
   lime confidence, the typeface and title size, the logo, the tool-row rule and the
   shadow rule

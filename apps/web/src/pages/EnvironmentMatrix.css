@@ -258,7 +258,7 @@
 .env-matrix td.env-cellwrap > .env-cell {
   height: 100%;
 }
-/* Selection is Afe's (ADR 0017 decision 6): a spectrum border with a two-hue glow. */
+/* Selection is Afe's (ADR 0021 decision 6): a spectrum border with a two-hue glow. */
 .env-cellwrap[aria-selected="true"] > .env-cell {
   border: 1.5px solid transparent;
   border-radius: var(--radius-sm);

@@ -2,7 +2,7 @@
 
 This applies to every change in this folder, on top of the root `AGENTS.md` and
 `CLAUDE.md`. The binding references are `docs/design-system.md` and
-[ADR 0017](../../docs/decisions/0017-spectrum-design-language.md) (Spectrum, on the
+[ADR 0021](../../docs/decisions/0021-spectrum-design-language.md) (Spectrum, on the
 Ink base of [ADR 0015](../../docs/decisions/0015-ink-design-language.md)). If this
 file and those disagree, they win; fix this file.
 

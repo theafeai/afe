@@ -1,5 +1,5 @@
 /*
- * Afe design tokens. Direction "Spectrum" (ADR 0017), on the Ink base (ADR 0015).
+ * Afe design tokens. Direction "Spectrum" (ADR 0021), on the Ink base (ADR 0015).
  * A calm neutral base where colour has jobs, and only these:
  *
  * - Tools: each tool's own brand colour, from its logo. Three tokens per tool and
@@ -73,7 +73,7 @@
   --conf-conflict: var(--bad);
   --conf-unknown: var(--muted);
 
-  /* Tools (ADR 0017 decision 1): brand colours, stroke / text / tile */
+  /* Tools (ADR 0021 decision 1): brand colours, stroke / text / tile */
   --github: #24292f;
   --github-text: #24292f;
   --github-tile: #edeff2;
@@ -90,7 +90,7 @@
   --terraform-text: #844fba;
   --terraform-tile: #f1eaf9;
 
-  /* Afe's spectrum (ADR 0017 decision 5): the same in both themes */
+  /* Afe's spectrum (ADR 0021 decision 5): the same in both themes */
   --sp-1: #e14bd2;
   --sp-2: #7b61ff;
   --sp-3: #3a8dff;
@@ -335,7 +335,7 @@ p a,
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
 }
-/* Focus belongs to Afe (ADR 0017 decision 6): a solid ink outline at a 2px offset
+/* Focus belongs to Afe (ADR 0021 decision 6): a solid ink outline at a 2px offset
    (always >= 3:1) plus a two-hue spectrum halo. Tools never draw offset rings. */
 :focus-visible {
   outline: 2px solid var(--ink);
@@ -483,7 +483,7 @@ details > summary:hover {
   text-decoration: none;
 }
 /* The Afe wordmark (icons.tsx BrandMark): "afe" in currentColor plus the
-   spectrum dot (ADR 0017 decision 12), sized by height. */
+   spectrum dot (ADR 0021 decision 12), sized by height. */
 .brand-mark {
   height: 1.375rem;
   width: auto;
@@ -564,7 +564,7 @@ details > summary:hover {
   background: var(--surface-2);
   color: var(--text);
 }
-/* Active navigation is Afe's (ADR 0017 decision 5.1): a violet-to-cyan wash and
+/* Active navigation is Afe's (ADR 0021 decision 5.1): a violet-to-cyan wash and
    a drifting spectrum rail at the sidebar edge. */
 .sidebar nav a[aria-current="page"] {
   background: linear-gradient(
@@ -698,7 +698,7 @@ main {
   position: relative;
   isolation: isolate;
 }
-/* The page aurora (ADR 0017 decision 5.1): a faint four-hue wash at the top of
+/* The page aurora (ADR 0021 decision 5.1): a faint four-hue wash at the top of
    every page, at most --aurora alpha, fading out within 260px. It sits behind the
    page header, never behind data rows, and --muted text keeps >= 4.5:1 on it. */
 main::before {
@@ -829,7 +829,7 @@ main::before {
 .page-header h1 {
   margin-bottom: var(--space-1);
 }
-/* The page-title accent (ADR 0017 decision 5.1): a short drifting spectrum bar. */
+/* The page-title accent (ADR 0021 decision 5.1): a short drifting spectrum bar. */
 .page-header h1::after,
 .h-acc::after {
   content: "";
@@ -1324,7 +1324,7 @@ legend {
   background: var(--surface-2);
 }
 
-/* Environment chips (ADR 0017 rule 9): one outline look for every environment;
+/* Environment chips (ADR 0021 rule 9): one outline look for every environment;
    only production-like (.pl) differs, as the solid ink chip with a shield. */
 .env-chip {
   display: inline-flex;
@@ -1380,7 +1380,7 @@ legend {
   background: var(--ok-bg);
 }
 /* The observation-gap panel is the one attention item on a page: a warn edge and
-   a soft yellow glow (ADR 0017 decision 7). */
+   a soft yellow glow (ADR 0021 decision 7). */
 .callout-gap {
   position: relative;
   border-color: var(--warn-border);
@@ -1593,7 +1593,7 @@ legend {
   vertical-align: middle;
   letter-spacing: 0;
 }
-/* Tools (ADR 0017 decisions 1–4). ToolMark is the tool's real logo in its text
+/* Tools (ADR 0021 decisions 1–4). ToolMark is the tool's real logo in its text
    colour; .tm is the logo on its brand tile; ToolBadge is a tile plus the name.
    The tool colour only ever identifies a tool, never a status. */
 .tool-mark {
@@ -1659,7 +1659,7 @@ legend {
   transition: opacity 0.2s;
 }
 
-/* The tool legend (ToolLegend, ADR 0017 decision 3): sticky under the page title on
+/* The tool legend (ToolLegend, ADR 0021 decision 3): sticky under the page title on
    every screen that colour-codes tools. Lists only the connected tools, each with
    its logo, name and stroke swatch, then the screen's other keys and Afe's. */
 .legend {
@@ -1867,7 +1867,7 @@ legend {
   animation: ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
-/* Provenance (ProvenancePill, ADR 0017 decision 9): what Afe inferred (spectrum dot,
+/* Provenance (ProvenancePill, ADR 0021 decision 9): what Afe inferred (spectrum dot,
    "inferred", confidence meter) or what a person set (person icon, "set by"). */
 .prov {
   display: inline-flex;
@@ -1913,7 +1913,7 @@ legend {
   background: var(--surface);
 }
 
-/* Status (StatusMark, ADR 0017 decision 8): always a solid shape plus a word. A
+/* Status (StatusMark, ADR 0021 decision 8): always a solid shape plus a word. A
    filled disc for ok and bad (and neutral states), a filled triangle for warn, a
    spectrum ring for in progress. Tools never draw solid shapes. */
 .si {

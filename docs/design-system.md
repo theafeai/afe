@@ -5,7 +5,7 @@ implements [ADR 0009](decisions/0009-web-ui-design-system.md), the type scale of
 [ADR 0012](decisions/0012-readable-type-scale.md), the tool colours of
 [ADR 0013](decisions/0013-tool-colour-coding.md), the Ink base of
 [ADR 0015](decisions/0015-ink-design-language.md) and the Spectrum design language
-of [ADR 0017](decisions/0017-spectrum-design-language.md). Humans and
+of [ADR 0021](decisions/0021-spectrum-design-language.md). Humans and
 agents follow it for **all** UI work, new features included. The rules marked
 **[enforced]** are checked by `apps/web/src/design-system.test.ts`, which runs
 in `pnpm test`; a violation fails CI.
@@ -58,7 +58,7 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
     `--aurora` and tokens built from them appear only in the selectors listed in
     `SPECTRUM_SELECTORS` in the test (Afe itself, selection and focus, live,
     Afe's inferences, all-tools summaries), and never in `.ts`/`.tsx`. Adding a
-    selector there is a design decision recorded in ADR 0017. **[enforced]**
+    selector there is a design decision recorded in ADR 0021. **[enforced]**
 12. **Colours keep their jobs.** Tool tokens (`--<tool>*`, `--t*`) never appear in
     a status rule (`.s-*`, `.si`, `.tri`, `.outcome*`, `.health*`, `.status*`,
     `.conf*`, `.gap-*`, `.severity*`, …), and status tokens (`--ok*`, `--warn*`
@@ -425,13 +425,13 @@ When nothing existing fits:
    styled): add it to `SEMANTIC_HOOKS` in `design-system.test.ts` with a
    one-line reason.
 5. **A new tool:** its logo in `TOOL_PATHS`, `--<tool>`, `--<tool>-text` and
-   `--<tool>-tile` in light and both dark blocks (chosen by the rule in ADR 0017
+   `--<tool>-tile` in light and both dark blocks (chosen by the rule in ADR 0021
    decision 1), a `.t-<tool>` class, and its label in `toolLabel`.
 6. **A new use of the spectrum:** only for one of its five jobs, and only by adding
-   the selector to `SPECTRUM_SELECTORS` with a note in ADR 0017. A new job needs a
+   the selector to `SPECTRUM_SELECTORS` with a note in ADR 0021. A new job needs a
    new decision.
 7. **A change to the direction itself** (palette, typeface, navigation model)
-   needs a new ADR that supersedes the relevant part of ADR 0017.
+   needs a new ADR that supersedes the relevant part of ADR 0021.
 
 ## UI change checklist
 

@@ -24,7 +24,7 @@ matrix (research doc [0001](research/0001-cross-tool-flow.md), gap
   kept for compatibility. For an inferred environment it is never derived from
   the name (AFE-117): `production` when production-like, `preview` for a
   short-lived family, else `other`. The UI shows no kind, only the
-  production-like chip (ADR 0017 rule 9).
+  production-like chip (ADR 0021 rule 9).
 - `MappingRule {id, kind, field, match, pattern, caseSensitive, priority,
 targetId, enabled, note?}`: `kind: service` rules assign a service,
   `kind: environment` rules an environment. The two rule sets are

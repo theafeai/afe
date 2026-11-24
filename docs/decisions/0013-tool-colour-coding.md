@@ -2,7 +2,7 @@
 
 - Status: Accepted; the tool-coloured row rule and the Afe mark superseded by
   [ADR 0015](0015-ink-design-language.md). Superseded in part by
-  [ADR 0017](0017-spectrum-design-language.md): the tool colour tokens, reconciliation
+  [ADR 0021](0021-spectrum-design-language.md): the tool colour tokens, reconciliation
   magenta and journey highlights
 - Date: 2026-11-01
 - Linear: AFE-65

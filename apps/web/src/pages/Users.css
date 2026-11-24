@@ -80,7 +80,7 @@
 .users-row:hover:not(:disabled) {
   background: var(--surface-2);
 }
-/* The person being edited: selection is Afe's spectrum (ADR 0017 decision 6). */
+/* The person being edited: selection is Afe's spectrum (ADR 0021 decision 6). */
 .users-row[aria-pressed="true"] {
   background: linear-gradient(
     90deg,

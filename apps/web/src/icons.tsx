@@ -324,7 +324,7 @@ function useSvgId(prefix: string): string {
 }
 
 /**
- * The Afe wordmark (ADR 0017 decision 12): "afe" in currentColor (ink on light,
+ * The Afe wordmark (ADR 0021 decision 12): "afe" in currentColor (ink on light,
  * white on dark) plus a dot in Afe's spectrum.
  */
 export function BrandMark() {
@@ -341,7 +341,7 @@ export function BrandMark() {
 }
 
 /**
- * Tool logos (AFE-65, ADR 0017), drawn in the tool's text colour through its
+ * Tool logos (AFE-65, ADR 0021), drawn in the tool's text colour through its
  * `.t-<tool>` class (see `.tool-mark` in styles.css). Outlines from Simple Icons
  * (CC0-1.0); the marks are the tools' trademarks and only identify the
  * integration. Every key here needs `--<key>`, `--<key>-text`, `--<key>-tile` in
@@ -363,7 +363,7 @@ export const TOOL_PATHS: Record<string, string> = {
 const GLYPH_A =
   "M344.5 520Q338.8 498.8 336.5 474.3Q334.2 449.8 334.2 416.7H330V175.2Q330 139.7 308.5 120.5Q287 101.3 243.8 101.3Q202.5 101.3 178 116.1Q153.5 130.8 147 158.8H15Q24.2 89 84.5 44.5Q144.8 0 248.5 0Q356 0 412 48.3Q468 96.7 468 188.3V416.7Q468 441.2 471.4 466.3Q474.8 491.5 482.3 520ZM167 530Q90.5 530 45.3 491.5Q0 453 0 388.5Q0 318.2 52.2 275.8Q104.5 233.3 199.2 220L353 197.5V281L222 301.2Q179.3 307.7 158.7 324.5Q138 341.3 138 371.3Q138 398.7 157.4 412.8Q176.8 427 210.5 427Q260.8 427 295.4 400.7Q330 374.3 330 337.8L343.8 416.3Q322.8 472.3 277.6 501.2Q232.3 530 167 530Z";
 
-/** The Afe tool mark (ADR 0017 decision 12): an "a" on a spectrum tile. */
+/** The Afe tool mark (ADR 0021 decision 12): an "a" on a spectrum tile. */
 function AfeMark() {
   const id = useSvgId("afe-tile");
   return (

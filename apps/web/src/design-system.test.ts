@@ -1,5 +1,5 @@
 /**
- * Design-system guard (ADR 0009, ADR 0017, docs/design-system.md). Static checks
+ * Design-system guard (ADR 0009, ADR 0021, docs/design-system.md). Static checks
  * over the web UI sources so new features use the shared tokens and classes
  * instead of drifting, and so each colour keeps its job: tools their brand
  * colours, status its solid shapes, Afe its spectrum. A failure names the rule in
@@ -67,10 +67,10 @@ const INLINE_STYLE_KEYS = new Set([
 const COLOUR_LITERAL_FILES = new Set<string>();
 
 /**
- * ADR 0017 decision 5: the selectors that may read Afe's spectrum (--sp-*,
+ * ADR 0021 decision 5: the selectors that may read Afe's spectrum (--sp-*,
  * --spectrum, --aurora and any token built from them), grouped by the spectrum's
  * five jobs. Every selector of a rule that reads the spectrum must contain one of
- * these. Adding a selector here is a design decision: record it in ADR 0017.
+ * these. Adding a selector here is a design decision: record it in ADR 0021.
  */
 const SPECTRUM_SELECTORS: Record<string, string[]> = {
   "Afe itself (brand, aurora, title accent, active nav)": [
@@ -91,7 +91,7 @@ const SPECTRUM_SELECTORS: Record<string, string[]> = {
   "all tools together": [".spark", ".key-sp"],
 };
 
-/** Selectors that show a status; tool colours never appear in them (ADR 0017 decision 8). */
+/** Selectors that show a status; tool colours never appear in them (ADR 0021 decision 8). */
 const STATUS_SELECTOR =
   /\.(?:s-[\w-]+|si|tri|outcome[\w-]*|flag|gap-[\w-]+|conf[\w-]*|health[\w-]*|status[\w-]*|severity[\w-]*|drift-status[\w-]*|alert-[\w-]+|callout-(?:error|ok|gap))(?![\w-])/;
 /** Selectors that show a tool; status colours never appear in them. */
@@ -99,7 +99,7 @@ const TOOL_SELECTOR = /\.(?:t-[\w-]+|lg(?:-[\w-]+)?|tm|tool-badge|tool-mark)(?![
 const STATUS_TOKEN = /var\(--(?:(?:ok|warn|bad)(?:-[\w-]+)?|conf-[\w-]+|s|s-text)\)/;
 
 /**
- * Page files that render tool marks without their own <ToolLegend> (ADR 0017
+ * Page files that render tool marks without their own <ToolLegend> (ADR 0021
  * decision 3), each with the reason. Everything else that colour-codes tools
  * shows the legend.
  */
