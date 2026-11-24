@@ -28,7 +28,18 @@ export interface Environment {
   name: string;
   /** Column position (ascending). */
   order: number;
+  /**
+   * Legacy classification, kept for compatibility. New code reads
+   * `productionLike` (ADR 0019): environments are the org's own, and
+   * only the production-like flag changes how one is shown.
+   */
   kind: EnvironmentKind;
+  /**
+   * Production-like (the heavy chip). Effective value from the setup
+   * (`@afe/core/setup`): admin override, else the admin row's kind, else
+   * inference. Absent in configurations built without the setup.
+   */
+  productionLike?: boolean;
 }
 
 export const RULE_KINDS = ["service", "environment"] as const;
@@ -78,7 +89,7 @@ export interface MappingRule {
   targetId: string;
   enabled: boolean;
   note?: string | null;
-  /** True for the built-in defaults (evaluated after every tenant rule). */
+  /** True for the built-in defaults and inferred rules (evaluated after every tenant rule). */
   builtIn?: boolean;
 }
 
@@ -88,8 +99,21 @@ export interface MappingConfig {
   environments: Environment[];
   /** Tenant rules (any order; sorted by priority when compiled). */
   rules: MappingRule[];
-  /** Built-in rule id → enabled. Missing ids are enabled. */
+  /** Built-in rule id → enabled. Missing ids use `builtinDefaultEnabled`. */
   builtinOverrides?: Record<string, boolean>;
+  /**
+   * Whether a built-in rule without an override is on (default true).
+   * Tenants whose mapping existed before inferred setup (migration 0042)
+   * keep them on; tenants created since start with them off, because they
+   * fold the org's own environment names into fixed buckets (ADR 0019).
+   */
+  builtinDefaultEnabled?: boolean;
+  /**
+   * Rules derived from the inferred setup (ids `inferred:*`, `builtIn`
+   * true), evaluated after the built-in rules. They place an event in an
+   * environment Afe inferred from the names the tools report.
+   */
+  inferredRules?: MappingRule[];
 }
 
 /**

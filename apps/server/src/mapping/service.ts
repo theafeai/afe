@@ -1,7 +1,9 @@
 /**
  * Mapping service (AFE-19): loads and compiles a tenant's mapping
- * configuration (cached per revision), resolves events at read time, and
- * appends the audit events of mapping changes from the outbox.
+ * configuration merged with its setup (inferred environments plus admin
+ * overrides, ADR 0019; cached per mapping revision and setup version),
+ * resolves events at read time, and appends the audit events of mapping
+ * changes from the outbox.
  */
 import type { FastifyBaseLogger } from "fastify";
 import type pg from "pg";
@@ -22,10 +24,15 @@ import {
   type PlacementConfidence,
   type PlacementResolution,
 } from "@afe/core/mapping";
+import { mergeSetup, type MergedSetup } from "@afe/core/setup";
 import {
   deleteMappingAuditOutboxEntry,
   getMappingConfig,
   getMappingRevision,
+  getSetupVersion,
+  listAdminEnvironments,
+  listInferredSetup,
+  listSetupOverrides,
   listMappingAuditOutboxAcrossTenants,
   queryEvents,
   recordMappingAuditOutboxFailure,
@@ -35,7 +42,13 @@ import {
 /** Resolved placement as returned by the API (ids plus display names). */
 export interface PlacementView {
   service: { id: string; name: string } | null;
-  environment: { id: string; name: string; kind: string; order: number } | null;
+  environment: {
+    id: string;
+    name: string;
+    kind: string;
+    order: number;
+    productionLike: boolean;
+  } | null;
   confidence: PlacementConfidence;
   matchedRuleIds: string[];
   /** Dimensions no rule assigned; shown as "unmapped", never guessed. */
@@ -50,7 +63,15 @@ export function placementView(config: MappingConfig, r: PlacementResolution): Pl
   if (!e) unmapped.push("environment");
   return {
     service: s ? { id: s.id, name: s.name } : null,
-    environment: e ? { id: e.id, name: e.name, kind: e.kind, order: e.order } : null,
+    environment: e
+      ? {
+          id: e.id,
+          name: e.name,
+          kind: e.kind,
+          order: e.order,
+          productionLike: e.productionLike ?? e.kind === "production",
+        }
+      : null,
     confidence: r.confidence,
     matchedRuleIds: r.matchedRuleIds,
     unmapped,
@@ -82,8 +103,17 @@ function labelsFromBody(body: Buffer): Record<string, string> | null {
 }
 
 export interface LoadedMapping {
+  /**
+   * The effective configuration: the tenant's own (services, rules, admin
+   * environments) with the setup merged in (`environments` are the effective
+   * ones, `inferredRules` place events in inferred environments).
+   */
   config: StoredMappingConfig;
   mapping: CompiledMapping;
+  /** The merged setup with provenance per field (`GET /api/setup`). */
+  setup: MergedSetup;
+  /** Cache key: mapping revision and setup version. */
+  version: string;
 }
 
 export class MappingService {
@@ -95,13 +125,28 @@ export class MappingService {
     readonly log: FastifyBaseLogger,
   ) {}
 
-  /** The tenant's current configuration, compiled (cached per revision). */
+  /** The tenant's current configuration and setup, compiled (cached per version). */
   async load(tenantId: string): Promise<LoadedMapping> {
-    const revision = await getMappingRevision(this.pool, tenantId);
+    const [revision, setupVersion] = await Promise.all([
+      getMappingRevision(this.pool, tenantId),
+      getSetupVersion(this.pool, tenantId),
+    ]);
+    const version = `${revision}|${setupVersion}`;
     const hit = this.#cache.get(tenantId);
-    if (hit && hit.config.revision === revision) return hit;
-    const config = await getMappingConfig(this.pool, tenantId);
-    const loaded = { config, mapping: compileMapping(config) };
+    if (hit && hit.version === version) return hit;
+    const [own, adminEnvironments, inferred, overrides] = await Promise.all([
+      getMappingConfig(this.pool, tenantId),
+      listAdminEnvironments(this.pool, tenantId),
+      listInferredSetup(this.pool, tenantId),
+      listSetupOverrides(this.pool, tenantId),
+    ]);
+    const setup = mergeSetup({ adminEnvironments, inferred, overrides });
+    const config: StoredMappingConfig = {
+      ...own,
+      environments: setup.mappingEnvironments,
+      inferredRules: setup.inferredRules,
+    };
+    const loaded: LoadedMapping = { config, mapping: compileMapping(config), setup, version };
     if (this.#cache.size > 1000) this.#cache.clear();
     this.#cache.set(tenantId, loaded);
     return loaded;

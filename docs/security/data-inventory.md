@@ -42,7 +42,14 @@ secret masking. See [GitHub connector](../connectors/github.md#workflow-progress
 | Operational state                        | polling cursors, connection health, observation gaps, job queue rows                                                                                                                                                                 | connector / pg-boss tables                            | Low                                  |
 | Connection health and alerts (AFE-13)    | health state, timestamps, sanitised last error (no credentials), alert messages, outbox                                                                                                                                              | `connection_health`, `alerts`, `health_outbox`        | Low                                  |
 | Drift findings (AFE-26)                  | finding type, severity, target, mapped service/environment, explanation and evidence summaries (may name actors and images), alert delivery state; per-tenant drift settings                                                         | `drift_findings`, `drift_settings`                    | Confidential; may hold personal data |
+| Environment and service mapping (AFE-19) | admin-defined services, environments, rules and built-in switches; audit outbox                                                                                                                                                      | `mapping_*`                                           | Confidential                         |
+| Inferred setup (ADR 0019)                | per environment and field: inferred value (name, order, production-like, gating, batching, cadence, environment names/patterns), confidence, reason, evidence (tool and environment names, counts, rule names only)                  | `inferred_setup`                                      | Confidential (business)              |
+| Setup overrides (ADR 0019)               | per environment and field: the admin's value, `set_by` (recorded actor id, see below), `set_by_name` (display name), `set_at`, the inferred value kept against                                                                       | `setup_overrides`                                     | Confidential; names a person         |
 | Logs (stdout, not the DB)                | request method/path/status, delivery ids, error kinds                                                                                                                                                                                | –                                                     | Low (redacted)                       |
+
+Locally managed users see inferred setup and overrides only for environments
+their own events reach, without reasons, evidence, cadence, raw tool values,
+`set_by`/`set_by_name` or `set_at` (`GET /api/setup`, docs/api.md).
 
 Raw payloads are stored as received, after removing the fields listed in "What
 Afe deliberately does not store" when a source includes them; connectors list
@@ -57,19 +64,19 @@ the paths they strip and test it.
 
 ## What Afe deliberately does not store
 
-| Not stored                                                                 | Why / how it is avoided                                                                                                   |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Source code and file contents**                                          | Afe never clones repositories or downloads file contents/archives/diffs. Only commit SHAs, refs and commit metadata.      |
-| **Secret values** (repo/org/environment secrets)                           | Afe never calls secret-value endpoints; names of secrets are not needed and are not stored either.                        |
-| **Environment variable values** (Vercel env, Actions vars, Kubernetes env) | Stripped from payloads (e.g. Vercel deployment/project `env`, `build.env`); not fetched.                                  |
-| Kubernetes manifests, rendered resources, Helm values, `Secret` objects    | ArgoCD connector reads application status/history/operation state only, not manifests or resource trees with values.      |
-| Build and job logs                                                         | Logs routinely contain secrets; Afe links to them by URL instead.                                                         |
-| Plaintext credentials, tokens, private keys                                | Only envelope ciphertext; keys are outside the DB.                                                                        |
-| Webhook signatures and `Authorization`/`Cookie` headers                    | Verified, then dropped; headers stored with raw deliveries go through `redactHeaders`.                                    |
-| Webhook secrets in plaintext                                               | Stored like any other credential.                                                                                         |
-| End-user passwords                                                         | Authentication is delegated to the `AuthProvider` (admin token or SSO).                                                   |
-| Pull request bodies, issue text, review comments                           | Not needed to answer "who deployed what"; only PR number/title/URL where linked to a deployment.                          |
-| Email addresses                                                            | Not stored unless the source only identifies the actor by email (git commit author); then stored as the actor identifier. |
+| Not stored                                                                 | Why / how it is avoided                                                                                                                                                                                             |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Source code and file contents**                                          | Afe never clones repositories or downloads file contents/archives/diffs. Only commit SHAs, refs and commit metadata.                                                                                                |
+| **Secret values** (repo/org/environment secrets)                           | Afe never calls secret-value endpoints; names of secrets are not needed and are not stored either.                                                                                                                  |
+| **Environment variable values** (Vercel env, Actions vars, Kubernetes env) | Stripped from payloads (e.g. Vercel deployment/project `env`, `build.env`); not fetched.                                                                                                                            |
+| Kubernetes manifests, rendered resources, Helm values, `Secret` objects    | ArgoCD connector reads application status/history/operation state only, not manifests or resource trees with values.                                                                                                |
+| Build and job logs                                                         | Logs routinely contain secrets; Afe links to them by URL instead.                                                                                                                                                   |
+| Plaintext credentials, tokens, private keys                                | Only envelope ciphertext; keys are outside the DB.                                                                                                                                                                  |
+| Webhook signatures and `Authorization`/`Cookie` headers                    | Verified, then dropped; headers stored with raw deliveries go through `redactHeaders`.                                                                                                                              |
+| Webhook secrets in plaintext                                               | Stored like any other credential.                                                                                                                                                                                   |
+| End-user passwords                                                         | Authentication is delegated to the `AuthProvider` (admin token or SSO).                                                                                                                                             |
+| Pull request bodies, issue text, review comments                           | Not needed. `pull_request.body` is stripped from raw payloads; PR metadata (number, title, author, branches, SHAs) stays in the raw payload. Afe never requests PR files, diffs or patches (`pull_requests: read`). |
+| Email addresses                                                            | Not stored unless the source only identifies the actor by email (git commit author); then stored as the actor identifier.                                                                                           |
 
 ## Terraform CLI metadata
 
@@ -107,6 +114,8 @@ improvement over keeping an indefinite history.
 | Drift findings (summaries of their events)     | until resolved (or last seen) longer ago than the window          | the `drift.evaluate` job, every minute ([drift.md](../drift.md#retention))                                                       |
 | Webhook delivery ids                           | replay window (may be pruned after 30 days)                       | `pruneWebhookDeliveries`                                                                                                         |
 | Credentials                                    | until revoked or rotated                                          | revocation destroys the ciphertext; the metadata row (kind, timestamps, no secret) stays so the connection shows when it changed |
+| Inferred setup                                 | as long as the events it was inferred from                        | every `setup.infer` run (every 10 minutes) replaces the tenant's facts and deletes those no retained event supports              |
+| Setup overrides                                | until the admin clears them, or deletes the environment           | `PATCH /api/setup` (clear), environment deletion; on user deletion the override stays but `set_by`/`set_by_name` are removed     |
 | Connection configuration and capture state     | while the connection exists                                       | not purged by retention (contains no event history)                                                                              |
 
 - The window is measured on the event's `occurredAt` (when it happened in the
@@ -184,9 +193,29 @@ attachment headers; signed storage URLs and GitHub credentials stay server-side.
 Personal fine-grained tokens use the existing encrypted user GitHub credential
 kind. OAuth requests `repo read:user` without the `workflow` scope.
 
+## Afe actor identities in records (AFE-120)
+
+Events with source `afe` (connection lifecycle, `config.mapping.changed`
+including setup changes) and `setup_overrides.set_by` record who acted as a
+non-secret identity: a local user's `local:<uuid>` and name, a hosted
+provider's principal id, or for the static tokens `static:admin`
+("Administrator") and `static:viewer` ("Viewer"). The static-token principal
+id (`admin-token:<hex>`, the first 64 bits of an unkeyed, labelled SHA-256 of
+the token) is a value that lets anyone who reads it test guessed tokens
+offline, so it is never recorded there.
+
+Before AFE-120 that principal id was recorded in these events' `actor.id` and in
+`setup_overrides.set_by`. Those stored values are not rewritten (events are
+immutable). Reads map them to "Administrator"/"Viewer" for source `afe`, so the
+API and UI do not show them, but they remain in the database until the event
+retention window (default 30 days) purges the events; override rows keep them
+until the override is changed or cleared. The principal id is still used
+internally, and so stored, in `github_admin_identities`, action receipts
+(`*_action_requests.actor_id`) and the `session started` log line.
+
 ## Connection lifecycle identities (AFE-64)
 
-Lifecycle events retain the authenticated Afe principal id and optional display
+Lifecycle events retain the recorded Afe actor identity (above) and optional display
 name, separate from `data.credentialOwner` (upstream public user id/username or
 GitHub App id). GitHub installation accounts remain installation scope, not
 human credential ownership. Vercel connection configuration also stores the
@@ -199,7 +228,8 @@ event window. See [connection lifecycle](../connection-lifecycle.md).
 ## Administrator GitHub identity bindings (AFE-62)
 
 `github_admin_identities` stores the tenant ID, authenticated Afe principal ID
-(a non-secret token fingerprint for static administrators), and associated
+(a token fingerprint for static administrators; not shown in the UI or
+recorded in events, see AFE-120 above), and associated
 user UUID. The binding connects the administrator login to existing personal
 GitHub account storage and explicit tool policies. It is retained with the
 account; event retention does not purge it. Token rotation creates a new
@@ -234,6 +264,37 @@ replacement. Credentials remain in the existing encrypted credential repository.
 User-requested managed-resource diff payloads are read transiently and reduced to
 resource identity and changed flags. The workspace returns minimized health,
 sync/revision and deployment-history metadata. Log transport remains AFE-54.
+
+## GitHub identities, access cache and Sign in with GitHub
+
+Migrations `0039`–`0041` ([ADR 0020](../decisions/0020-access-through-own-tool-login.md)).
+
+| Data                               | Fields                                                                                                                                  | Table                      | Sensitivity                               | Kept until / deleted by                                                                                                                                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User's GitHub identity             | tenant, user UUID, provider `github`, numeric GitHub user id (`subject`), login (display only), `provisioned` flag, verified time       | `user_external_identities` | Personal data                             | unlinking GitHub in Profile, or user deletion. Written on Profile linking and Sign in with GitHub; backfilled for older links on the next access refresh (GitHub `/user` with the user's own token)        |
+| Cached repository access of a user | tenant, user UUID, tool `github`, linked credential id, list of `repository:<owner>/<name>` the user's own token could list, fetch time | `user_source_access`       | Confidential (names private repositories) | served for at most 5 minutes; deleted on unlink, relink, any policy or deny-rule change, user disable, user deletion and failed refresh; rows past the TTL are removed by the hourly `retention.purge` job |
+| Sign in with GitHub settings       | enabled, auto-provision, allowed organization logins, default role (always `viewer`)                                                    | `github_sign_in`           | Low                                       | while the tenant exists; changed by administrators only                                                                                                                                                    |
+| Pending GitHub sign-in states      | SHA-256 of the OAuth `state`, SHA-256 of the pre-login browser cookie, same-origin `next` path, expiry (10 minutes)                     | `github_sign_in_states`    | Low                                       | single use (deleted when the callback runs); expired rows deleted when the next flow starts                                                                                                                |
+
+- **Staleness (read views only).** A user whose GitHub access is revoked upstream
+  can keep seeing read-only data (event lists and details, environments,
+  journeys, drift, mapping, run metadata) for repositories they lost for at most
+  five minutes. The TTL is a hard limit: an older row is never served, and a
+  failed refresh denies with no grace period. Mutations, prepare/confirm, receipt
+  replay, job log reads, artifact and archive downloads, workflow-source reads,
+  automations and notification sends never use the cache; they check access live
+  (ADR 0014).
+- A refresh that was running when the user's access was invalidated never writes
+  its rules (per-user invalidation generation, checked before and after the
+  write). A failed identity read during a refresh denies instead of skipping
+  the organization membership re-check.
+- `user_source_access.rules` is never shown to other users or administrators and
+  never leaves the server. Access-scoped correlation snapshots are kept only in
+  process memory, keyed by tenant and the SHA-256 of the sorted rules, and hold
+  no per-user data.
+- The OAuth `code`, `state`, the pre-login cookie and the user token are never
+  logged. The user token is stored only through the credentials repository (R2),
+  as for Profile linking.
 
 ## Remote Terraform operations (AFE-60)
 

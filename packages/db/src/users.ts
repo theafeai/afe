@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { TOOL_PERMISSION_MODES, type ToolPolicy } from "@afe/core";
 import { revokeCredential } from "./credentials.ts";
+import { forgetSetupOverrideAuthor } from "./setup.ts";
 
 export interface LocalUser {
   id: string;
@@ -106,10 +107,20 @@ export async function deleteLocalUser(
       tenantId,
       id,
     ]);
+    await db.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
+    await db.query("DELETE FROM user_external_identities WHERE tenant_id=$1 AND user_id=$2", [
+      tenantId,
+      id,
+    ]);
     await db.query("DELETE FROM user_tool_permissions WHERE tenant_id=$1 AND user_id=$2", [
       tenantId,
       id,
     ]);
+    // Setup overrides stay (they are the org's), but no longer name the user.
+    await forgetSetupOverrideAuthor(db, tenantId, [`local:${id}`, id]);
     await db.query("DELETE FROM users WHERE tenant_id=$1 AND id=$2", [tenantId, id]);
     await db.query("COMMIT");
     return "deleted";
@@ -153,6 +164,11 @@ export async function setLocalUserDisabled(
      WHERE tenant_id=$1 AND id=$2 RETURNING id`,
     [tenantId, id, disabled],
   );
+  // Cached source access never outlives a disable (ADR 0020): the next read re-checks upstream.
+  await pool.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2", [
+    tenantId,
+    id,
+  ]);
   return Boolean(result.rowCount);
 }
 export async function setUserToolPolicy(
@@ -209,6 +225,12 @@ export async function setUserToolPolicy(
           ),
     ],
   );
+  // Any policy change (mode or deny rules) drops the user's cached access for the tool.
+  await pool.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2 AND tool=$3", [
+    tenantId,
+    userId,
+    tool,
+  ]);
 }
 export async function getUserToolPolicy(
   pool: pg.Pool | pg.PoolClient,

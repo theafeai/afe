@@ -40,7 +40,10 @@ admin; optional `AFE_VIEWER_TOKEN` is read-only. Both at least 32 characters,
 no whitespace, distinct. Comparison is constant time (SHA-256 digests compared
 with `timingSafeEqual`, both tokens checked on every call). Tenant is always
 `default`. Principal ids are token fingerprints (truncated SHA-256 with a
-label), never the token.
+label), never the token. A fingerprint is unkeyed, so it can confirm a guessed
+token: it stays inside authentication and is never recorded in events or shown
+(AFE-120); records use `static:admin` ("Administrator") / `static:viewer`
+("Viewer") via `principalIdentity`.
 
 `TenantResolver` is now on `ServerContext` (`ctx.tenantResolver`). The server
 default `principalTenantResolver` returns `principal.tenantId` and rejects a

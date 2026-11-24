@@ -1,6 +1,6 @@
 import { EmailRecoveryLink } from "./AccountEmail.tsx";
-import { useId, useState, type FormEvent } from "react";
-import { api, ApiError } from "../api/client.ts";
+import { useEffect, useId, useState, type FormEvent } from "react";
+import { api, ApiError, request } from "../api/client.ts";
 import type { SessionInfo } from "../api/types.ts";
 import { useDocumentTitle } from "../components.tsx";
 import { BrandMark } from "../icons.tsx";
@@ -21,13 +21,73 @@ export function safeNext(next: string | null): string | null {
   }
 }
 
+const GITHUB_ERRORS: Record<string, string> = {
+  not_linked: "No Afe account is linked to this GitHub account. Ask your administrator.",
+  not_member: "Your GitHub account is not an active member of an allowed organization.",
+  disabled: "This Afe account is disabled.",
+  github_disabled: "GitHub access is turned off for this Afe account.",
+  identity_in_use: "This GitHub account is linked to another Afe user.",
+  invalid_state: "The sign-in link expired or was opened in another browser. Try again.",
+  rate_limited: "Too many sign-in attempts. Try again later.",
+  unavailable: "Sign in with GitHub is not enabled.",
+  failed: "GitHub sign-in failed. Try again.",
+};
+
+/** The message for a failed start of GitHub sign-in (QA L4). */
+export function githubStartError(err: unknown): string {
+  if (err instanceof ApiError && err.status === 429) return GITHUB_ERRORS.rate_limited!;
+  if (err instanceof ApiError && err.status === 409) return GITHUB_ERRORS.unavailable!;
+  return GITHUB_ERRORS.failed!;
+}
+
+/** "Sign in with GitHub", shown only when the server has it enabled. */
+function GitHubSignIn({
+  next,
+  onError,
+}: {
+  next: string | null;
+  onError: (message: string | null) => void;
+}) {
+  const [available, setAvailable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const c = new AbortController();
+    void request<{ available: boolean }>("GET", "/api/login/github/available", undefined, c.signal)
+      .then((r) => setAvailable(r.available))
+      .catch(() => {});
+    return () => c.abort();
+  }, []);
+  if (!available) return null;
+  const start = async () => {
+    setBusy(true);
+    onError(null);
+    try {
+      const { url } = await request<{ url: string }>("POST", "/api/login/github", {
+        next: next && !next.startsWith("/api/") ? next : "/",
+      });
+      window.location.assign(url);
+    } catch (err) {
+      setBusy(false);
+      onError(githubStartError(err));
+    }
+  };
+  return (
+    <button type="button" className="btn btn-wide" disabled={busy} onClick={() => void start()}>
+      {busy ? "Opening GitHub…" : "Sign in with GitHub"}
+    </button>
+  );
+}
+
 export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void }) {
   useDocumentTitle("Sign in");
   const id = useId();
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [params] = useSearchParams();
+  const githubError = params.get("github_error");
+  const [error, setError] = useState<string | null>(
+    githubError ? (GITHUB_ERRORS[githubError] ?? GITHUB_ERRORS.failed!) : null,
+  );
   const navigate = useNavigate();
 
   const submit = async (e: FormEvent) => {
@@ -86,6 +146,7 @@ export function LoginPage({ onLogin }: { onLogin: (session: SessionInfo) => void
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
+        <GitHubSignIn next={safeNext(params.get("next"))} onError={setError} />
         {error && (
           <div className="callout callout-error" role="alert">
             <strong>Not signed in.</strong> {error}

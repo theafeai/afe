@@ -35,7 +35,12 @@ export function createCorrelationModule(options: CorrelationModuleOptions = {}):
   const service = (ctx: ServerContext): CorrelationService => {
     let s = services.get(ctx);
     if (!s) {
-      s = new CorrelationService(ctx.pool, ctx.retention, ctx.log, options);
+      const created = new CorrelationService(ctx.pool, ctx.retention, ctx.log, options);
+      // A local access change (unlink, policy, disable) drops that user's scoped snapshot.
+      ctx.access?.onInvalidate((tenantId, fingerprint) =>
+        created.forgetScoped(tenantId, fingerprint),
+      );
+      s = created;
       services.set(ctx, s);
     }
     return s;

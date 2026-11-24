@@ -13,6 +13,7 @@ import {
 } from "@afe/db";
 import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
 import { buildAfe, defaultModules, loadConfig, type AfeApp } from "../src/index.ts";
+import { ACCESS_CACHE_TTL_MS } from "../src/auth/access-cache.ts";
 
 const admin = "a".repeat(40);
 let pool: pg.Pool, afe: AfeApp;
@@ -20,8 +21,10 @@ let user: Awaited<ReturnType<typeof createLocalUser>>;
 let eventIds: string[];
 const headers = (token = admin) => ({ authorization: `Bearer ${token}` });
 let cookie: string, csrf: string;
+let now = Date.now();
 beforeEach(async () => {
   pool = await createTestPool();
+  now = Date.now();
   vi.stubEnv("AFE_USER_GITHUB_CLIENT_ID", "test-client");
   vi.stubEnv("AFE_USER_GITHUB_CLIENT_SECRET", "test-secret");
   afe = await buildAfe({
@@ -34,6 +37,7 @@ beforeEach(async () => {
     }),
     keys: new EnvKeyProvider({ keys: { k1: randomBytes(32) } }),
     connectors: defaultModules,
+    clock: () => now,
   });
   user = await createLocalUser(pool, "default", `u-${randomBytes(8).toString("hex")}`);
   eventIds = [];
@@ -340,6 +344,10 @@ it("OAuth state is session-bound and single use; upstream revocation removes acc
   expect(profile.body).not.toContain("upstream-secret");
   expect(profile.json().tools[0].accountName).toBe("alice");
   revoked = true;
+  // Read views may serve the cached access for at most the 5-minute TTL (ADR 0020)...
+  expect((await read("/api/events")).json().items).toHaveLength(1);
+  // ...after which the failed refresh denies.
+  now += ACCESS_CACHE_TTL_MS;
   const remaining = (await read("/api/events")).json().items;
   expect(remaining).toEqual([]);
   const unlink = await afe.app.inject({

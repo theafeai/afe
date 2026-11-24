@@ -11,6 +11,7 @@ import {
   REQUIRED_PERMISSIONS,
   SUBSCRIBED_EVENTS,
   OPTIONAL_SUBSCRIBED_EVENTS,
+  OPTIONAL_PERMISSION_NOTICES,
   applyRepositoryChange,
   buildAppManifest,
   checkPermissions,
@@ -224,6 +225,9 @@ describe("permissions", () => {
       writable: [],
       extra: [],
       optionalMissing: ["attestations", "contents", "packages", "pull_requests"],
+      optionalNotices: [
+        { permission: "pull_requests", message: OPTIONAL_PERMISSION_NOTICES.pull_requests },
+      ],
     });
   });
 
@@ -235,6 +239,9 @@ describe("permissions", () => {
       writable: ["actions"],
       extra: ["contents"],
       optionalMissing: ["attestations", "packages", "pull_requests"],
+      optionalNotices: [
+        { permission: "pull_requests", message: OPTIONAL_PERMISSION_NOTICES.pull_requests },
+      ],
     });
     expect(describePermissionProblems(check)).toBe(
       "write access granted (Afe needs read only): actions; missing read permission: deployments, environments",

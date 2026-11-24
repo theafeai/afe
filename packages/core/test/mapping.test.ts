@@ -4,19 +4,25 @@ import {
   compileGlob,
   compileMapping,
   compileSafeRegex,
-  DEFAULT_ENVIRONMENTS,
   isMappingField,
   observationsOf,
   resolvePlacement,
   ruleInputSchema,
   SafeRegexError,
   slugify,
+  type Environment,
   type MappableEvent,
   type MappingConfig,
   type MappingRule,
 } from "../src/mapping/index.ts";
 
-const environments = [...DEFAULT_ENVIRONMENTS];
+/** The four environments tenants set up before inferred setup (migration 0042) have. */
+const environments: Environment[] = [
+  { id: "production", name: "Production", order: 10, kind: "production" },
+  { id: "staging", name: "Staging", order: 20, kind: "staging" },
+  { id: "preview", name: "Preview", order: 30, kind: "preview" },
+  { id: "development", name: "Development", order: 40, kind: "development" },
+];
 
 function rule(
   id: string,
@@ -334,7 +340,7 @@ describe("resolvePlacement", () => {
     const ids = BUILTIN_RULES.map((r) => r.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const r of BUILTIN_RULES) {
-      expect(DEFAULT_ENVIRONMENTS.some((e) => e.id === r.targetId)).toBe(true);
+      expect(environments.some((e) => e.id === r.targetId)).toBe(true);
     }
   });
 });

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, onUnauthorized, request } from "./api/client.ts";
 import type { SessionInfo } from "./api/types.ts";
 import { Empty, ErrorBox } from "./components.tsx";
-import { BrandMark, icons } from "./icons.tsx";
+import { BrandMark, ToolMark, icons } from "./icons.tsx";
 import {
   ConnectArgoCD,
   ConnectGitHub,
@@ -83,10 +83,28 @@ export function Routes() {
 const NAV = [
   { to: "/", label: "Environments", icon: icons.environments, group: "observe" },
   { to: "/events", label: "Events", icon: icons.events, group: "observe" },
-  { to: "/vercel", label: "Vercel deployments", icon: icons.deployments, group: "observe" },
-  { to: "/terraform", label: "Terraform", icon: icons.actions, group: "observe" },
-  { to: "/github", label: "GitHub Actions", icon: icons.actions, group: "observe" },
-  { to: "/argocd", label: "ArgoCD", icon: icons.connections, group: "observe" },
+  {
+    to: "/vercel",
+    label: "Vercel deployments",
+    icon: icons.deployments,
+    group: "observe",
+    tool: "vercel",
+  },
+  {
+    to: "/terraform",
+    label: "Terraform",
+    icon: icons.actions,
+    group: "observe",
+    tool: "terraform",
+  },
+  {
+    to: "/github",
+    label: "GitHub Actions",
+    icon: icons.actions,
+    group: "observe",
+    tool: "ghactions",
+  },
+  { to: "/argocd", label: "ArgoCD", icon: icons.connections, group: "observe", tool: "argocd" },
   { to: "/deployments", label: "Deployments", icon: icons.deployments, group: "observe" },
   { to: "/drift", label: "Drift", icon: icons.drift, group: "observe" },
   { to: "/connections", label: "Connections", icon: icons.connections, group: "setup" },
@@ -98,7 +116,17 @@ const NAV_GROUPS = [
   { id: "setup", label: "Setup" },
 ] as const;
 
-function NavLink({ to, label, icon }: { to: string; label: string; icon: ReactNode }) {
+function NavLink({
+  to,
+  label,
+  icon,
+  tool,
+}: {
+  to: string;
+  label: string;
+  icon: ReactNode;
+  tool?: string;
+}) {
   const { pathname } = useLocation();
   const active = pathname === to || pathname.startsWith(`${to}/`);
   return (
@@ -106,6 +134,7 @@ function NavLink({ to, label, icon }: { to: string; label: string; icon: ReactNo
       <Link to={to} aria-current={active ? "page" : undefined}>
         {icon}
         {label}
+        {tool && <ToolMark source={tool} tile />}
       </Link>
     </li>
   );

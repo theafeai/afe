@@ -36,12 +36,14 @@ import {
   toolLabel,
   useAsync,
   useDocumentTitle,
+  ToolLegend,
 } from "../components.tsx";
 import { formatDateTime } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
 import {
   CertaintyBadge,
   certaintyOf,
+  EnvironmentChip,
   GapFlagBadges,
   KindBadge,
   liveLabel,
@@ -236,14 +238,19 @@ function Matrix({
                 role="columnheader"
                 className={env.unmapped ? "env-unmapped" : undefined}
               >
-                <span className="env-col-name">{env.name}</span>
                 {env.unmapped ? (
-                  <HeaderUnmappedHint what="environment" />
+                  <>
+                    <span className="env-col-name">{env.name}</span>
+                    <HeaderUnmappedHint what="environment" />
+                  </>
                 ) : (
-                  env.kind !== "other" &&
-                  env.kind !== env.name.toLowerCase() && (
-                    <span className="muted small"> {env.kind}</span>
-                  )
+                  // The org's name only, never a built-in kind beside it (AFE-117).
+                  <span className="env-col-name">
+                    <EnvironmentChip
+                      name={env.name}
+                      productionLike={env.productionLike ?? env.kind === "production"}
+                    />
+                  </span>
                 )}
               </th>
             ))}
@@ -494,6 +501,7 @@ export function EnvironmentMatrix() {
           </button>
         </div>
       </header>
+      <ToolLegend sources={connections.data?.connections.map((c) => c.source) ?? []} />
       <ScopeNotice />
 
       {connections.data && <GapBanners connections={connections.data.connections} />}

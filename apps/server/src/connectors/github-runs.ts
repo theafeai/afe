@@ -47,11 +47,12 @@ export function registerGitHubRunRoutes(app: FastifyInstance, rt: GitHubRuntime)
   let activeDownloads = 0;
   let activeProgress = 0;
 
-  async function authorize(req: FastifyRequest, id: string) {
+  /** `live`: log reads re-check upstream access now, never from the read cache (ADR 0020). */
+  async function authorize(req: FastifyRequest, id: string, live = false) {
     const tenant = requestTenant(req);
     if (!UUID.test(id)) throw new RunError(404, "not_found", "Event not found.");
     const event = await getEvent(ctx.pool, tenant, id);
-    const access = await requestEventAccess(ctx.pool, req, ctx);
+    const access = await requestEventAccess(ctx.pool, req, ctx, { live });
     if (!event || (access && !eventAllowed(access, event)))
       throw new RunError(404, "not_found", "Event not found.");
     const subject = githubRunSubject(event);
@@ -223,7 +224,7 @@ export function registerGitHubRunRoutes(app: FastifyInstance, rt: GitHubRuntime)
     async (req, reply) => {
       reply.header("cache-control", "no-store");
       try {
-        const a = await authorize(req, req.params.id);
+        const a = await authorize(req, req.params.id, true);
         const jobId = Number(req.params.jobId);
         if (!/^\d+$/.test(req.params.jobId) || !positiveId(jobId))
           throw new RunError(400, "bad_request", "Invalid job id.");

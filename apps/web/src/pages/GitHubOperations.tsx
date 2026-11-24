@@ -16,6 +16,8 @@ import {
   KeyValue,
   Loading,
   SectionHead,
+  StatusWord,
+  outcomeTone,
   useAsync,
   useDocumentTitle,
 } from "../components.tsx";
@@ -25,6 +27,7 @@ import { formatBytes, humanize } from "../format.ts";
 import { Link, useLocation } from "../router.tsx";
 import { TimeAgo } from "./environments-ui.tsx";
 import { ProgressState } from "./GitHubRunPanel.tsx";
+import { ToolPageError } from "./tool-link.tsx";
 import "./GitHubOperations.css";
 type Item = {
   id: number;
@@ -132,7 +135,12 @@ const RECEIPT_OUTCOME: Record<GitHubOperationReceipt["state"], string> = {
   released: "none",
 };
 function ReceiptState({ state }: { state: GitHubOperationReceipt["state"] }) {
-  return <span className={`badge outcome outcome-${RECEIPT_OUTCOME[state]}`}>{state}</span>;
+  const outcome = RECEIPT_OUTCOME[state];
+  return (
+    <StatusWord tone={outcomeTone(outcome)} className={`outcome outcome-${outcome}`}>
+      {state}
+    </StatusWord>
+  );
 }
 type Row = {
   title: React.ReactNode;
@@ -502,7 +510,13 @@ export function GitHubOperationsPage() {
         </div>
       </header>
       {resources.loading && <Loading label="Loading GitHub repositories…" />}
-      {resources.error && <ErrorBox error={resources.error} onRetry={resources.reload} />}
+      {resources.error && (
+        <ToolPageError
+          error={resources.error}
+          onRetry={resources.reload}
+          shows="your repositories and workflow runs"
+        />
+      )}
       {!resources.loading && resources.data && (
         <section className="card gh-picker" aria-label="Repositories">
           {choices.length ? (

@@ -140,6 +140,58 @@ describe("web UI (AFE_WEB_DIR)", () => {
     await app.close();
   });
 
+  // AFE-121: a mistyped top-level address shows the app's "Page not found", not raw JSON.
+  it("serves the app shell with 404 for browser navigations to unknown pages", async () => {
+    const web = path.join(tmp, "web-unknown");
+    await mkdir(path.join(web, "assets"), { recursive: true });
+    await writeFile(path.join(web, "index.html"), "<!doctype html><title>Afe SPA</title>");
+    const app = await createAfe({
+      authProvider: trustedTestAuth(),
+      pool,
+      logLevel: "silent",
+      config: { ...loadConfig({ DATABASE_URL: "unused" }), webDir: web },
+    });
+    const browser = { accept: "text/html,application/xhtml+xml,*/*;q=0.8" };
+    for (const [url, headers] of [
+      ["/nonsense", browser],
+      ["/nonsense/deeper?x=1", browser],
+      ["/etc/passwd", browser],
+      ["/nonsense", { accept: "*/*", "sec-fetch-mode": "navigate" }],
+    ] as const) {
+      const res = await app.inject({ method: "GET", url, headers });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.headers["content-type"], url).toMatch(/^text\/html/);
+      expect(res.headers["cache-control"], url).toBe("no-cache");
+      expect(res.headers["x-content-type-options"], url).toBe("nosniff");
+      expect(res.body, url).toContain("Afe SPA");
+    }
+    // Known client routes keep 200.
+    expect((await app.inject({ method: "GET", url: "/events", headers: browser })).statusCode).toBe(
+      200,
+    );
+    // API, webhooks, assets, files and non-browser clients keep the JSON 404.
+    for (const [url, headers] of [
+      ["/api/nope", browser],
+      ["/api", browser],
+      ["/webhooks/unknown", browser],
+      ["/assets/missing", browser],
+      ["/healthz/x", browser],
+      ["/favicon.png", browser],
+      ["/../package.json", browser],
+      ["/robots.txt", browser],
+      ["/nonsense", { accept: "application/json" }],
+      ["/nonsense", {}],
+    ] as const) {
+      const res = await app.inject({ method: "GET", url, headers });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.headers["content-type"], url).toMatch(/^application\/json/);
+    }
+    expect(
+      (await app.inject({ method: "POST", url: "/nonsense", headers: browser })).statusCode,
+    ).toBe(404);
+    await app.close();
+  });
+
   it("serves no UI when AFE_WEB_DIR is unset", async () => {
     const app = await createAfe({
       authProvider: trustedTestAuth(),

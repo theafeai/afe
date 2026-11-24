@@ -6,9 +6,11 @@
  */
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type pg from "pg";
 import { z } from "zod";
 import {
   ACTIONS,
+  principalIdentity,
   sourceEventId,
   type CanonicalEvent,
   type CanonicalEventInputLike,
@@ -41,6 +43,7 @@ import {
 } from "@afe/core/mapping";
 import {
   changeMapping,
+  clearSetupOverrides,
   countMappingServices,
   deleteMappingEnvironment,
   deleteMappingRule,
@@ -57,18 +60,20 @@ import {
   MappingConflictError,
   maxMappingRulePriority,
   setBuiltinRuleOverride,
+  setSetupOverride,
   setMappingRuleOrder,
   updateMappingEnvironment,
   updateMappingRule,
   updateMappingService,
   type MappingChange,
 } from "@afe/db";
+import { environmentSubject, type SetupActor } from "@afe/core/setup";
 import { requestEventAccess } from "../auth/permissions.ts";
 import { requestTenant } from "../auth/index.ts";
 import type { ServerContext } from "../context.ts";
 import { placementView, type MappingService, type PlacementView } from "./service.ts";
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
@@ -81,13 +86,13 @@ class HttpError extends Error {
 
 const notFound = () => new HttpError(404, "not_found", "not found");
 
-function parse<T>(schema: z.ZodType<T>, body: unknown): T {
+export function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const r = schema.safeParse(body ?? {});
   if (!r.success) throw new HttpError(400, "bad_request", describeIssues(r.error));
   return r.data;
 }
 
-function send(reply: FastifyReply, err: unknown) {
+export function send(reply: FastifyReply, err: unknown) {
   if (err instanceof HttpError) {
     return reply.code(err.status).send({ error: err.code, message: err.message, ...err.extra });
   }
@@ -98,10 +103,17 @@ function send(reply: FastifyReply, err: unknown) {
 }
 
 /** Who made the change, from the authenticated principal (never a request field). */
-function actorOf(p: Principal | undefined) {
+export function actorOf(p: Principal | undefined) {
   if (!p) return { type: "unknown" as const };
   const type = p.kind === "token" || p.kind === "session" ? ("token" as const) : ("user" as const);
-  return { type, id: p.id, ...(p.name ? { name: p.name } : {}) };
+  return { type, ...principalIdentity(p.id, p.name) };
+}
+
+/** Who set a setup override, from the authenticated principal. */
+export function setupActorOf(p: Principal | undefined): SetupActor {
+  if (!p) return { id: "unknown", name: null };
+  const who = principalIdentity(p.id, p.name);
+  return { id: who.id, name: who.name ?? null };
 }
 
 type Summary = JsonObject | null;
@@ -125,8 +137,8 @@ const ruleSummary = (r: MappingRule | null): Summary =>
       }
     : null;
 
-interface ChangeDescription {
-  entity: "service" | "environment" | "rule" | "builtin_rule" | "rule_order";
+export interface ChangeDescription {
+  entity: "service" | "environment" | "rule" | "builtin_rule" | "rule_order" | "setup";
   operation: "created" | "updated" | "deleted" | "reordered";
   id: string;
   before: Summary;
@@ -208,6 +220,29 @@ function limitParam(q: Record<string, unknown>, def: number): number {
   return n;
 }
 
+/**
+ * Runs one audited mapping (or setup) change: serialised per tenant, bumps
+ * the revision, writes the `config.mapping.changed` event in the same
+ * transaction and appends it after commit.
+ */
+export async function auditedMappingChange<T>(
+  pool: pg.Pool,
+  service: MappingService,
+  req: FastifyRequest,
+  apply: (tx: pg.PoolClient, revision: number) => Promise<{ result: T; change: ChangeDescription }>,
+): Promise<{ result: T; revision: number }> {
+  const tenantId = requestTenant(req);
+  const done = await changeMapping(pool, tenantId, async (tx, revision) => {
+    const r = await apply(tx, revision);
+    return {
+      result: r.result,
+      event: mappingChangedEvent(req.principal, revision, r.change),
+    } satisfies MappingChange<T>;
+  });
+  await service.publish(tenantId, done.outboxId, done.event);
+  return { result: done.result, revision: done.revision };
+}
+
 export function registerMappingRoutes(
   app: FastifyInstance,
   ctx: ServerContext,
@@ -215,25 +250,13 @@ export function registerMappingRoutes(
 ): void {
   const pool = ctx.pool;
 
-  /** Runs one audited change and appends its audit event after commit. */
-  async function change<T>(
+  const change = <T>(
     req: FastifyRequest,
     apply: (
-      tx: Parameters<Parameters<typeof changeMapping>[2]>[0],
+      tx: pg.PoolClient,
       revision: number,
     ) => Promise<{ result: T; change: ChangeDescription }>,
-  ): Promise<{ result: T; revision: number }> {
-    const tenantId = requestTenant(req);
-    const done = await changeMapping(pool, tenantId, async (tx, revision) => {
-      const r = await apply(tx, revision);
-      return {
-        result: r.result,
-        event: mappingChangedEvent(req.principal, revision, r.change),
-      } satisfies MappingChange<T>;
-    });
-    await service.publish(tenantId, done.outboxId, done.event);
-    return { result: done.result, revision: done.revision };
-  }
+  ) => auditedMappingChange(pool, service, req, apply);
 
   app.get("/api/mapping", async (req) => {
     const tenantId = requestTenant(req);
@@ -268,7 +291,7 @@ export function registerMappingRoutes(
       rules: config.rules.map((r) => ({ ...r, inactiveReason: inactive.get(r.id) ?? null })),
       builtinRules: BUILTIN_RULES.map((r) => ({
         ...r,
-        enabled: config.builtinOverrides[r.id] ?? r.enabled,
+        enabled: config.builtinOverrides[r.id] ?? (config.builtinDefaultEnabled && r.enabled),
         inactiveReason: inactive.get(r.id) ?? null,
       })),
       fields: [...MAPPING_FIELDS, "argocd.label:<key>"],
@@ -409,11 +432,38 @@ export function registerMappingRoutes(
     }
   });
 
-  /** Environments exist for the tenant (defaults until the first change). */
+  /** The environment exists for the tenant: an admin row or one Afe inferred (included or not). */
   const environmentExists = async (tenantId: string, id: string) => {
-    const { config } = await service.load(tenantId);
-    return config.environments.some((e) => e.id === id);
+    const { setup } = await service.load(tenantId);
+    return setup.environments.some((e) => e.id === id);
   };
+
+  /** An environment Afe inferred that has no admin row yet. */
+  const inferredOnly = async (tenantId: string, id: string) => {
+    const { setup } = await service.load(tenantId);
+    return setup.environments.find((e) => e.id === id && e.origin === "inferred") ?? null;
+  };
+
+  /**
+   * Makes an inferred environment an admin environment (a row), with its
+   * effective name, order and kind: an admin edit or rule targets it, and
+   * an admin creating an environment is an override (ADR 0019).
+   */
+  async function materialise(
+    tx: pg.PoolClient,
+    tenantId: string,
+    id: string,
+    values?: Partial<Pick<Environment, "name" | "kind" | "order">>,
+  ): Promise<Environment | null> {
+    const inferred = await inferredOnly(tenantId, id);
+    if (!inferred) return null;
+    return insertMappingEnvironment(tx, tenantId, {
+      id,
+      name: values?.name ?? inferred.name.value,
+      kind: values?.kind ?? inferred.kind,
+      order: values?.order ?? Math.min(inferred.order.value, 1_000_000),
+    });
+  }
 
   app.put<{ Params: { id: string } }>("/api/mapping/environments/:id", async (req, reply) => {
     try {
@@ -423,21 +473,36 @@ export function registerMappingRoutes(
       if (input.id && input.id !== req.params.id) {
         throw new HttpError(400, "bad_request", "the id cannot be changed");
       }
+      const actor = setupActorOf(req.principal);
       const { result, revision } = await change(req, async (tx) => {
         const before = await getMappingEnvironment(tx, tenantId, req.params.id);
-        if (!before) throw notFound();
-        const after = await updateMappingEnvironment(tx, tenantId, {
-          id: before.id,
-          name: input.name,
-          kind: input.kind,
-          order: input.order ?? before.order,
-        });
+        const subject = environmentSubject(req.params.id);
+        let after: Environment | null;
+        if (before) {
+          after = await updateMappingEnvironment(tx, tenantId, {
+            id: before.id,
+            name: input.name,
+            kind: input.kind,
+            order: input.order ?? before.order,
+          });
+        } else {
+          after = await materialise(tx, tenantId, req.params.id, {
+            name: input.name,
+            kind: input.kind,
+            ...(input.order !== undefined ? { order: input.order } : {}),
+          });
+          if (!after) throw notFound();
+          // Editing an environment on the Mapping page keeps it.
+          await setSetupOverride(tx, tenantId, { subject, field: "included", value: true }, actor);
+        }
+        // The Mapping page edit is the admin's newest word on name and order.
+        await clearSetupOverrides(tx, tenantId, subject, ["name", "order"]);
         return {
           result: after!,
           change: {
             entity: "environment",
-            operation: "updated",
-            id: before.id,
+            operation: before ? "updated" : "created",
+            id: req.params.id,
             before: environmentSummary(before),
             after: environmentSummary(after),
           },
@@ -453,9 +518,32 @@ export function registerMappingRoutes(
     try {
       const tenantId = requestTenant(req);
       if (!(await environmentExists(tenantId, req.params.id))) throw notFound();
+      const actor = setupActorOf(req.principal);
       const { revision } = await change(req, async (tx) => {
+        const subject = environmentSubject(req.params.id);
         const before = await getMappingEnvironment(tx, tenantId, req.params.id);
-        if (!before) throw notFound();
+        if (!before) {
+          // Inferred only: the admin says it is not an environment (ADR 0019).
+          const inferred = await inferredOnly(tenantId, req.params.id);
+          if (!inferred) throw notFound();
+          await setSetupOverride(tx, tenantId, { subject, field: "included", value: false }, actor);
+          return {
+            result: null,
+            change: {
+              entity: "environment",
+              operation: "deleted",
+              id: req.params.id,
+              before: {
+                id: inferred.id,
+                name: inferred.name.value,
+                kind: inferred.kind,
+                order: inferred.order.value,
+                inferred: true,
+              },
+              after: null,
+            },
+          };
+        }
         const used = await mappingRulesReferencing(tx, tenantId, "environment", before.id);
         if (used.length > 0) {
           throw new HttpError(409, "in_use", "rules assign this environment; delete them first", {
@@ -463,6 +551,7 @@ export function registerMappingRoutes(
           });
         }
         await deleteMappingEnvironment(tx, tenantId, before.id);
+        await clearSetupOverrides(tx, tenantId, subject);
         return {
           result: null,
           change: {
@@ -483,7 +572,7 @@ export function registerMappingRoutes(
   // --- Rules ----------------------------------------------------------------------
 
   async function checkTarget(
-    tx: Parameters<typeof getMappingService>[0],
+    tx: pg.PoolClient,
     tenantId: string,
     kind: RuleKind,
     targetId: string,
@@ -491,7 +580,9 @@ export function registerMappingRoutes(
     const exists =
       kind === "service"
         ? await getMappingService(tx, tenantId, targetId)
-        : await getMappingEnvironment(tx, tenantId, targetId);
+        : ((await getMappingEnvironment(tx, tenantId, targetId)) ??
+          // A rule may target an inferred environment: it becomes an admin one.
+          (await materialise(tx, tenantId, targetId)));
     if (!exists) throw new HttpError(400, "bad_request", `${kind} ${targetId} does not exist`);
   }
 
@@ -627,7 +718,8 @@ export function registerMappingRoutes(
       if (!builtin) throw notFound();
       const input = parse(builtinToggleSchema, req.body);
       const { config } = await service.load(tenantId);
-      const was = config.builtinOverrides[builtin.id] ?? builtin.enabled;
+      const was =
+        config.builtinOverrides[builtin.id] ?? (config.builtinDefaultEnabled && builtin.enabled);
       const { revision } = await change(req, async (tx) => {
         await setBuiltinRuleOverride(tx, tenantId, builtin.id, input.enabled);
         return {
@@ -678,6 +770,8 @@ export function registerMappingRoutes(
             ? input.rules.map((r, i) => toRule(r.id ?? `proposed:${i + 1}`, r, (i + 1) * 10))
             : current.config.rules,
           builtinOverrides: { ...current.config.builtinOverrides, ...input.builtinOverrides },
+          builtinDefaultEnabled: current.config.builtinDefaultEnabled,
+          inferredRules: current.config.inferredRules ?? [],
         };
         const proposed = compileMapping(proposedConfig);
         const events = await service.recentDeploymentEvents(tenantId, input.limit ?? 200);
@@ -714,7 +808,9 @@ export function registerMappingRoutes(
             proposed: counts(rows.map((r) => r.proposed)),
             changed: changed.length,
           },
-          inactive: proposed.inactive.filter((i) => i.reason !== "disabled"),
+          inactive: proposed.inactive.filter(
+            (i) => i.reason !== "disabled" && !i.reason.startsWith("off by default"),
+          ),
           items,
         };
       } catch (err) {

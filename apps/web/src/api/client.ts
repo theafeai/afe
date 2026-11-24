@@ -86,6 +86,25 @@ export function toApiError(status: number, body: unknown): ApiError {
   return new ApiError(status, code, message, obj);
 }
 
+/**
+ * Why a tool page cannot act yet when that is expected, not a denial (AFE-118,
+ * ADR 0020): the person has not linked their own account for the tool, or is signed
+ * in with a shared credential that cannot hold one. Real permission errors return
+ * `null` and stay errors.
+ */
+export type ToolLinkReason = "tool_not_linked" | "named_user_required";
+export function toolLinkState(error: unknown): { reason: ToolLinkReason; tool: string } | null {
+  if (!(error instanceof ApiError) || error.status !== 403) return null;
+  const reason = error.body?.reason;
+  const tool = error.body?.tool;
+  if (
+    (reason !== "tool_not_linked" && reason !== "named_user_required") ||
+    typeof tool !== "string"
+  )
+    return null;
+  return { reason, tool };
+}
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 let fetchImpl: FetchLike = (input, init) => fetch(input, init);

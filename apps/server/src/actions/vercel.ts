@@ -32,6 +32,12 @@ import {
 import { toolAccounts } from "../auth/tool-accounts.ts";
 import { requestTenant } from "../auth/index.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
+import {
+  namedUserRequired,
+  toolLinkBody,
+  toolNotLinked,
+  ToolLinkRequiredError,
+} from "./tool-link.ts";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (statusCode: number, message: string) =>
@@ -94,6 +100,7 @@ export class VercelOperations {
     try {
       return await fn();
     } catch (error) {
+      if (error instanceof ToolLinkRequiredError) return reply.code(403).send(toolLinkBody(error));
       if (error instanceof VercelRateLimitError)
         return reply.code(429).send({
           error: "vercel_rate_limited",
@@ -122,13 +129,17 @@ export class VercelOperations {
     const tid = requestTenant(req),
       uid = req.principal?.localUserId;
     if (!uid)
-      throw fail(403, "Use a managed Afe user and link your personal Vercel account in Profile.");
+      throw namedUserRequired(
+        "vercel",
+        "Sign in as a named Afe user, then link your personal Vercel account in Profile.",
+      );
     if ((await getUserToolPolicy(this.ctx.pool, tid, uid, "vercel")).mode !== "source")
       throw fail(403, "Vercel source access is disabled for this user.");
     const account = (await toolAccounts(this.ctx, tid, uid)).find((a) => a.tool === "vercel");
     const credential =
       account && (await getCredential(this.ctx.pool, this.ctx.keys, tid, account.credential_id));
-    if (!credential || !account) throw fail(403, "Link your personal Vercel account in Profile.");
+    if (!credential || !account)
+      throw toolNotLinked("vercel", "Link your personal Vercel account in Profile.");
     const reader = new VercelClient({ token: credential.secret, maxRetries: 0 });
     const user = await reader.getUser();
     if (!sourceId.safeParse(user.id).success) throw fail(502, "Invalid source identity.");

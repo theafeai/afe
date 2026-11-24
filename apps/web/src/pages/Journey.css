@@ -75,22 +75,22 @@
   font-size: var(--fs-sm);
 }
 .where-status-live {
-  color: var(--ok);
+  color: var(--ok-text);
 }
 .where-status-was_live {
   color: var(--muted);
 }
 .where-status-not_yet {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 .where-status-unknown {
-  color: var(--recon);
+  color: var(--muted);
 }
 .where-live {
   box-shadow: inset 4px 0 0 var(--ok);
 }
 .where-unknown {
-  box-shadow: inset 4px 0 0 var(--recon);
+  box-shadow: inset 4px 0 0 var(--border-strong);
 }
 .where-not_yet {
   box-shadow: inset 4px 0 0 var(--warn);
@@ -135,10 +135,8 @@
 .journey-col-head {
   position: absolute;
   top: 0;
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-sm);
+  font-weight: 500;
   color: var(--muted);
 }
 .journey-edges {
@@ -173,7 +171,7 @@
   stroke: var(--conf-certain);
 }
 .edge-strong .edge-line {
-  stroke: var(--conf-strong);
+  stroke: var(--conf-certain);
 }
 .edge-probable .edge-line {
   stroke: var(--conf-probable);
@@ -192,7 +190,7 @@
   fill: var(--conf-certain);
 }
 .arrow-strong path {
-  fill: var(--conf-strong);
+  fill: var(--conf-certain);
 }
 .arrow-probable path {
   fill: var(--conf-probable);
@@ -211,18 +209,16 @@
   stroke-width: 4px;
   stroke-linejoin: round;
 }
-.edge-certain .edge-label {
-  fill: var(--conf-certain);
-}
+.edge-certain .edge-label,
 .edge-strong .edge-label {
-  fill: var(--conf-strong);
+  fill: var(--ok-text);
 }
 .edge-probable .edge-label {
-  fill: var(--conf-probable);
+  fill: var(--warn-text);
 }
 .edge-weak .edge-label,
 .edge-conflict .edge-label {
-  fill: var(--conf-weak);
+  fill: var(--bad-text);
 }
 
 .journey-card {
@@ -263,6 +259,9 @@
 }
 .tool-edge-terraform {
   border-left-color: var(--terraform);
+}
+.tool-edge-ghactions {
+  border-left-color: var(--ghactions);
 }
 .conf-edge-weak {
   border-style: dashed;
@@ -323,9 +322,8 @@
 }
 .step-list h3 {
   margin: 0.75rem 0 0.3rem;
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-sm);
+  font-weight: 500;
   color: var(--muted);
 }
 .step-list ul {
@@ -368,8 +366,8 @@
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   align-items: center;
-  border-color: var(--highlight);
-  background: var(--highlight-bg);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
 }
 .highlight-banner .button-row {
   margin-left: auto;
@@ -415,14 +413,15 @@
     opacity: 1;
   }
 }
+/* A highlighted journey is a filter, not a selection: ink rule and a neutral tint. */
 .row-hl-on,
 .row-hl-on > .row-link {
-  box-shadow: inset 2px 0 0 var(--highlight);
-  background: var(--highlight-bg);
+  box-shadow: inset 2px 0 0 var(--ink);
+  background: var(--surface-2);
 }
 .row-hl-excluded,
 .row-hl-excluded > .row-link {
-  box-shadow: inset 2px 0 0 var(--conf-weak);
+  box-shadow: inset 2px 0 0 var(--bad);
 }
 .row-hl-dim > .row-link {
   opacity: 0.4;
@@ -434,10 +433,10 @@
 .hl-tag {
   font-size: var(--fs-sm);
   font-weight: 550;
-  color: var(--highlight);
+  color: var(--text);
 }
 .row-hl-excluded .hl-tag {
-  color: var(--conf-weak);
+  color: var(--bad-text);
 }
 
 @media (max-width: 640px) {

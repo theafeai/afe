@@ -23,7 +23,8 @@ import { getConnection, getCredential, getUserToolPolicy, listConnections } from
 import type { ServerContext } from "../context.ts";
 import { requestTenant } from "../auth/index.ts";
 import { toolAccounts } from "../auth/tool-accounts.ts";
-import { githubUserId } from "./github-identity.ts";
+import { canLinkAdminGitHub, githubUserId } from "./github-identity.ts";
+import { namedUserRequired, serveToolLinkErrors, toolNotLinked } from "./tool-link.ts";
 import { downloadGitHubJobLog, JobLogError } from "../connectors/github-log-download.ts";
 import { registerGitHubDownloads } from "./github-downloads.ts";
 
@@ -101,13 +102,25 @@ export class GitHubOperations {
   async identity(req: FastifyRequest) {
     const tid = requestTenant(req),
       uid = await githubUserId(this.ctx, req);
-    if (!uid) throw fail(403, "Link your GitHub identity in Profile to use GitHub operations.");
+    if (!uid)
+      throw !req.principal?.localUserId &&
+        !this.ctx.githubUserId &&
+        !canLinkAdminGitHub(this.ctx, req)
+        ? namedUserRequired(
+            "github",
+            "Sign in as a named Afe user, then link your GitHub account in Profile.",
+          )
+        : toolNotLinked("github", "Link your GitHub identity in Profile to use GitHub operations.");
     const policy = await getUserToolPolicy(this.ctx.pool, tid, uid, "github");
     if (policy.mode !== "source") throw fail(403, "GitHub access is disabled for this account.");
     const account = (await toolAccounts(this.ctx, tid, uid)).find((a) => a.tool === "github");
     const token =
       account && (await getCredential(this.ctx.pool, this.ctx.keys, tid, account.credential_id));
-    if (!token) throw fail(403, "Link a GitHub OAuth account or fine-grained token in Profile.");
+    if (!token)
+      throw toolNotLinked(
+        "github",
+        "Link a GitHub OAuth account or fine-grained token in Profile.",
+      );
     return { tid, uid, policy, token };
   }
   async request<T>(
@@ -787,6 +800,7 @@ function summary(item: SourceObject) {
   return result;
 }
 export function registerGitHubOperations(app: FastifyInstance, ctx: ServerContext) {
+  serveToolLinkErrors(app, "/api/actions/github");
   const service = new GitHubOperations(ctx);
   const root = "/api/actions/github/repositories/:owner/:repo";
   const scope = (req: FastifyRequest<{ Params: RepoParams }>, connectionId: unknown) =>

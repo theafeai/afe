@@ -1,6 +1,12 @@
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
-import type { Actor, CanonicalEventInputLike, Connection, Principal } from "@afe/core";
+import {
+  principalIdentity,
+  type Actor,
+  type CanonicalEventInputLike,
+  type Connection,
+  type Principal,
+} from "@afe/core";
 import { addHealthOutboxEntry, deleteHealthOutboxEntry, listHealthOutbox } from "@afe/db";
 import type { ServerContext } from "./context.ts";
 
@@ -13,9 +19,12 @@ export function credentialOwnerOf(connection: Connection) {
   );
 }
 
-/** The Afe caller is distinct from the account owning the source credential. */
+/**
+ * The Afe caller is distinct from the account owning the source credential.
+ * Never records a token fingerprint (AFE-120): see `principalIdentity`.
+ */
 export function applicationActor(principal: Principal): Actor {
-  return { type: "user", id: principal.id, ...(principal.name ? { name: principal.name } : {}) };
+  return { type: "user", ...principalIdentity(principal.id, principal.name) };
 }
 
 export function lifecycleEvent(

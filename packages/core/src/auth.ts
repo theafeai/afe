@@ -89,6 +89,32 @@ export function tokenFingerprint(token: string): string {
   return digest("afe-token-fingerprint-v1", token).toString("hex").slice(0, 16);
 }
 
+/**
+ * Recorded and displayed identities of the static-token principals (AFE-120).
+ *
+ * A static principal's `id` is a token fingerprint: a deterministic hash of
+ * the token alone, so anyone holding it can test guessed tokens offline. It
+ * stays inside authentication (sessions, ADR 0012 bindings, action receipts)
+ * and is never written to events or other records people read. Those carry
+ * these stable, non-secret identities instead, which also survive rotation.
+ */
+export const STATIC_ADMIN_ACTOR = { id: "static:admin", name: "Administrator" } as const;
+export const STATIC_VIEWER_ACTOR = { id: "static:viewer", name: "Viewer" } as const;
+
+const STATIC_PRINCIPAL_ID = /^(admin|viewer)-token:[0-9a-f]{16}$/;
+
+/**
+ * The identity to record or show for a principal id: a static-token
+ * fingerprint becomes `STATIC_ADMIN_ACTOR` / `STATIC_VIEWER_ACTOR`; any other
+ * id is returned unchanged with its name. Also maps ids recorded before
+ * AFE-120 when reading them back (records are never rewritten).
+ */
+export function principalIdentity(id: string, name?: string | null): { id: string; name?: string } {
+  const m = STATIC_PRINCIPAL_ID.exec(id);
+  if (m) return { ...(m[1] === "admin" ? STATIC_ADMIN_ACTOR : STATIC_VIEWER_ACTOR) };
+  return { id, ...(name ? { name } : {}) };
+}
+
 export interface StaticTokenAuthOptions {
   /** Full access. At least MIN_TOKEN_LENGTH characters. */
   adminToken: string;

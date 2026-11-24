@@ -3,6 +3,7 @@
 - Status: Accepted (authorized by AFE-77)
 - Date: 2026-11-01
 - Amends: ADR 0011 and ADR 0012 administrator GitHub linking
+- Live checks for read views amended by [ADR 0020](0020-access-through-own-tool-login.md)
 
 > Permission edition boundary superseded by [ADR 0015](0015-open-source-inherited-permissions.md):
 > open source allows Source or None only. Legacy Custom and Source + custom are

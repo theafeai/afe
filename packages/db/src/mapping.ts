@@ -7,8 +7,8 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { CanonicalEventInputLike, JsonObject } from "@afe/core";
+import type { AdminEnvironment } from "@afe/core/setup";
 import {
-  DEFAULT_ENVIRONMENTS,
   type Environment,
   type EnvironmentKind,
   type MappingConfig,
@@ -22,9 +22,14 @@ type Db = pg.Pool | pg.PoolClient;
 export interface StoredMappingConfig extends MappingConfig {
   /** 0 until the tenant's first change. */
   revision: number;
-  /** False while the tenant uses the built-in default environments. */
+  /** True once the tenant has changed its mapping (it has a settings row). */
   customised: boolean;
   builtinOverrides: Record<string, boolean>;
+  /**
+   * Built-in rules without an override are on: true for tenants whose
+   * mapping existed before inferred setup (migration 0042), else false.
+   */
+  builtinDefaultEnabled: boolean;
 }
 
 /** A unique id is already taken (service/environment id). */
@@ -95,9 +100,15 @@ export async function getMappingRevision(db: Db, tenantId: string): Promise<numb
   return rows[0] ? Number(rows[0].revision) : 0;
 }
 
+/**
+ * The tenant's own mapping configuration: its services, the environments the
+ * admin created (no defaults are seeded: ADR 0019), its rules and built-in
+ * rule switches. The inferred setup is merged on top by the caller
+ * (`mergeSetup` in `@afe/core/setup`).
+ */
 export async function getMappingConfig(db: Db, tenantId: string): Promise<StoredMappingConfig> {
-  const settings = await db.query<{ revision: string }>(
-    "SELECT revision FROM mapping_settings WHERE tenant_id = $1",
+  const settings = await db.query<{ revision: string; builtin_rules_default: boolean }>(
+    "SELECT revision, builtin_rules_default FROM mapping_settings WHERE tenant_id = $1",
     [tenantId],
   );
   const customised = settings.rows.length > 0;
@@ -106,13 +117,11 @@ export async function getMappingConfig(db: Db, tenantId: string): Promise<Stored
       "SELECT id, name, description FROM mapping_services WHERE tenant_id = $1 ORDER BY name, id",
       [tenantId],
     ),
-    customised
-      ? db.query<EnvironmentRow>(
-          `SELECT id, name, kind, sort_order FROM mapping_environments
-            WHERE tenant_id = $1 ORDER BY sort_order, name, id`,
-          [tenantId],
-        )
-      : null,
+    db.query<EnvironmentRow>(
+      `SELECT id, name, kind, sort_order FROM mapping_environments
+        WHERE tenant_id = $1 ORDER BY sort_order, name, id`,
+      [tenantId],
+    ),
     db.query<RuleRow>(
       `SELECT ${RULE_COLUMNS} FROM mapping_rules WHERE tenant_id = $1
         ORDER BY kind, priority, id`,
@@ -127,11 +136,10 @@ export async function getMappingConfig(db: Db, tenantId: string): Promise<Stored
     revision: customised ? Number(settings.rows[0]!.revision) : 0,
     customised,
     services: services.rows.map(toService),
-    environments: environments
-      ? environments.rows.map(toEnvironment)
-      : DEFAULT_ENVIRONMENTS.map((e) => ({ ...e })),
+    environments: environments.rows.map(toEnvironment),
     rules: rules.rows.map(toRule),
     builtinOverrides: Object.fromEntries(overrides.rows.map((r) => [r.rule_id, r.enabled])),
+    builtinDefaultEnabled: settings.rows[0]?.builtin_rules_default ?? false,
   };
 }
 
@@ -152,8 +160,8 @@ export interface MappingChangeResult<T> {
 /**
  * Applies one mapping change atomically. `apply` receives the transaction
  * client and the revision the change will have; it returns the result and the
- * audit event. Throwing rolls everything back. The first change of a tenant
- * copies the built-in default environments into its table first.
+ * audit event. Throwing rolls everything back. No environments are seeded
+ * (ADR 0019): a tenant's first change only creates its settings row.
  */
 export async function changeMapping<T>(
   pool: pg.Pool,
@@ -163,20 +171,10 @@ export async function changeMapping<T>(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const created = await client.query(
-      `INSERT INTO mapping_settings (tenant_id) VALUES ($1)
-         ON CONFLICT (tenant_id) DO NOTHING RETURNING tenant_id`,
+    await client.query(
+      `INSERT INTO mapping_settings (tenant_id) VALUES ($1) ON CONFLICT (tenant_id) DO NOTHING`,
       [tenantId],
     );
-    if (created.rows.length > 0) {
-      for (const e of DEFAULT_ENVIRONMENTS) {
-        await client.query(
-          `INSERT INTO mapping_environments (tenant_id, id, name, kind, sort_order)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [tenantId, e.id, e.name, e.kind, e.order],
-        );
-      }
-    }
     const { rows } = await client.query<{ revision: string }>(
       "SELECT revision FROM mapping_settings WHERE tenant_id = $1 FOR UPDATE",
       [tenantId],
@@ -284,6 +282,20 @@ export async function listMappingEnvironments(db: Db, tenantId: string): Promise
     [tenantId],
   );
   return rows.map(toEnvironment);
+}
+
+/** The environments the admin created, with when (for setup provenance). */
+export async function listAdminEnvironments(db: Db, tenantId: string): Promise<AdminEnvironment[]> {
+  const { rows } = await db.query<EnvironmentRow & { created_at: Date; updated_at: Date }>(
+    `SELECT id, name, kind, sort_order, created_at, updated_at FROM mapping_environments
+      WHERE tenant_id = $1 ORDER BY sort_order, name, id`,
+    [tenantId],
+  );
+  return rows.map((r) => ({
+    ...toEnvironment(r),
+    createdAt: r.created_at.toISOString(),
+    updatedAt: r.updated_at.toISOString(),
+  }));
 }
 
 export async function insertMappingEnvironment(

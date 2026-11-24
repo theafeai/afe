@@ -83,7 +83,10 @@ export interface ServiceColumn {
 export interface EnvironmentColumn {
   id: string;
   name: string;
+  /** Legacy, kept for API compatibility; never shown (AFE-117). */
   kind: string;
+  /** The org's production-like flag: the only environment styling (ADR 0021). */
+  productionLike?: boolean;
   order: number | null;
   unmapped: boolean;
 }

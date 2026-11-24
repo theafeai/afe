@@ -19,6 +19,7 @@ import {
 } from "@afe/db";
 import { requestTenant } from "./index.ts";
 import type { Principal } from "@afe/core";
+import type { AccessCache } from "./access-cache.ts";
 
 export const USER_TOOLS = ["github", "vercel", "argocd", "terraform"] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,7 +33,9 @@ const isSelf = (principal: Principal, id: string) => {
   );
 };
 
-export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
+export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool, access?: AccessCache) {
+  // The database layer already deleted the cached rows; drop the in-memory snapshot entry too.
+  const forget = (tid: string, id: string) => access?.forgetUser(tid, id);
   app.addHook("onSend", async (req, reply, payload) => {
     if (req.url.startsWith("/api/admin/users") || req.url.startsWith("/api/profile"))
       reply.header("cache-control", "no-store");
@@ -63,6 +66,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
           .code(409)
           .send({ error: "self_deletion", message: "You cannot delete your own user account." });
       const result = await deleteLocalUser(pool, tid, id);
+      if (result === "deleted") forget(tid, id);
       if (result === "not_found") return reply.code(404).send({ error: "not_found" });
       if (result === "administrator")
         return reply.code(409).send({
@@ -122,6 +126,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
         return reply.code(400).send({ error: "bad_request" });
       if (!(await setLocalUserDisabled(pool, requestTenant(req), req.params.id, req.body.disabled)))
         return reply.code(404).send({ error: "not_found" });
+      forget(requestTenant(req), req.params.id);
       return { ok: true };
     },
   );
@@ -186,6 +191,7 @@ export function registerUserRoutes(app: FastifyInstance, pool: pg.Pool) {
             "Open source supports only none or source with an empty custom array. Existing custom policies are blocked until reviewed. GitHub deny-only restrictions require a supported action and an exact lowercase repository:owner/name resource.",
         });
       await setUserToolPolicy(pool, tid, req.params.id, req.params.tool, p);
+      forget(tid, req.params.id);
       return { ok: true };
     },
   );

@@ -8,8 +8,9 @@
  * so resolving thousands of events costs a few map lookups each.
  *
  * Precedence, per dimension: enabled tenant rules by ascending priority
- * (ties: id), then enabled built-in rules in their fixed order; the first
- * rule whose field has a matching value wins. A rule whose target service or
+ * (ties: id), then enabled built-in rules in their fixed order, then the
+ * inferred rules (`config.inferredRules`, from the inferred setup); the
+ * first rule whose field has a matching value wins. A rule whose target service or
  * environment does not exist is inactive. No match → `null` (unmapped).
  */
 import { BUILTIN_RULES } from "./defaults.ts";
@@ -61,7 +62,7 @@ export interface InactiveRule {
 
 export interface CompiledMapping {
   readonly config: MappingConfig;
-  /** Effective rules per kind, in evaluation order (tenant rules, then built-ins). */
+  /** Effective rules per kind, in evaluation order (tenant rules, built-ins, inferred). */
   readonly order: Record<RuleKind, readonly MappingRule[]>;
   /** Rules that never apply (disabled, missing target, invalid pattern). */
   readonly inactive: readonly InactiveRule[];
@@ -87,10 +88,19 @@ export function compileMapping(config: MappingConfig): CompiledMapping {
   const compiled: Record<RuleKind, CompiledRule[]> = { service: [], environment: [] };
 
   const tenantRules = config.rules.filter((r) => !r.builtIn).sort(byPriority);
-  const builtins = BUILTIN_RULES.map((r) => ({ ...r, enabled: overrides[r.id] ?? r.enabled }));
-  for (const rule of [...tenantRules, ...builtins]) {
+  const builtinDefault = config.builtinDefaultEnabled ?? true;
+  const builtins = BUILTIN_RULES.map((r) => ({
+    ...r,
+    enabled: overrides[r.id] ?? (builtinDefault && r.enabled),
+  }));
+  const inferred = (config.inferredRules ?? []).map((r) => ({ ...r, builtIn: true }));
+  for (const rule of [...tenantRules, ...builtins, ...inferred]) {
     if (!rule.enabled) {
-      inactive.push({ ruleId: rule.id, reason: "disabled" });
+      const offByDefault = rule.builtIn && !builtinDefault && overrides[rule.id] === undefined;
+      inactive.push({
+        ruleId: rule.id,
+        reason: offByDefault ? "off by default: environments are inferred" : "disabled",
+      });
       continue;
     }
     const targets = rule.kind === "service" ? serviceIds : environmentIds;

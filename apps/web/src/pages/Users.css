@@ -25,7 +25,7 @@
   margin-bottom: var(--space-5);
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  box-shadow: inset 2px 0 0 var(--select);
+  box-shadow: inset 2px 0 0 var(--ink);
 }
 .users-edit-context p {
   margin: 0;
@@ -80,9 +80,14 @@
 .users-row:hover:not(:disabled) {
   background: var(--surface-2);
 }
+/* The person being edited: selection is Afe's spectrum (ADR 0021 decision 6). */
 .users-row[aria-pressed="true"] {
-  background: var(--select-soft);
-  box-shadow: inset 2px 0 0 var(--select);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sp-2) var(--tint), var(--surface)),
+    color-mix(in srgb, var(--sp-4) var(--tint), var(--surface))
+  );
+  box-shadow: inset 3px 0 0 var(--sp-2);
 }
 .users-row:disabled {
   cursor: wait;

@@ -6,7 +6,7 @@ import { EnvKeyProvider } from "@afe/core/security";
 import { createLocalUser, ingestEvent, insertDriftFinding, type DriftFindingWrite } from "@afe/db";
 import * as toolAccess from "../src/auth/tool-accounts.ts";
 import type { ToolAccount } from "../src/auth/tool-accounts.ts";
-import { createTestPool, seedLegacyToolPolicy } from "@afe/db/testing";
+import { createTestPool, seedLegacyToolPolicy, seedPreInferenceMapping } from "@afe/db/testing";
 import { buildAfe, loadConfig, type AfeApp } from "../src/index.ts";
 import { createMappingModule } from "../src/mapping/index.ts";
 import { createCorrelationModule } from "../src/correlation/index.ts";
@@ -69,6 +69,8 @@ const sourceRules = new Map<string, EventAccessRule[]>();
 beforeEach(async () => {
   sourceRules.clear();
   pool = await createTestPool();
+  // A tenant set up before inferred environments (this test is not about setup).
+  await seedPreInferenceMapping(pool, "default");
   events = [];
   for (const { id: _id, ...input } of syntheticInputs) {
     const r = await ingestEvent(pool, "default", input);
@@ -341,4 +343,55 @@ it("identical resource grants in another tenant never expose default-tenant deri
   const own = events.find((e) => e.source === "vercel")!;
   expect((await get(`/api/events/${own.id}/links`, outsider.token)).statusCode).toBe(404);
   expect((await get("/api/drift/summary", outsider.token)).json().open).toBe(0);
+});
+it("setup for managed users lists only environments their events reach, without counts or authors", async () => {
+  // An environment only shop-api (Argo CD) events reach.
+  expect(
+    (await post("/api/mapping/environments", { id: "shop-only", name: "Shop Only", kind: "other" }))
+      .statusCode,
+  ).toBe(201);
+  expect(
+    (
+      await post("/api/mapping/rules", {
+        kind: "environment",
+        field: "argocd.application",
+        match: "glob",
+        pattern: "shop-api-*",
+        targetId: "shop-only",
+      })
+    ).statusCode,
+  ).toBe(201);
+  const admin = await get("/api/setup", ADMIN);
+  expect(admin.statusCode).toBe(200);
+  expect(admin.json().environments.map((e: { id: string }) => e.id)).toContain("shop-only");
+
+  // No grants: no environments.
+  const none = await get("/api/setup");
+  expect(none.statusCode, none.body).toBe(200);
+  expect(none.json()).toMatchObject({ readOnly: true, environments: [], noticed: [] });
+
+  await grant("vercel", ["project:web"]);
+  await grant("argocd", ["application:shop-api-production"], bob);
+  const own = await get("/api/setup");
+  expect(own.statusCode, own.body).toBe(200);
+  const ids = own.json().environments.map((e: { id: string }) => e.id);
+  expect(ids.length).toBeGreaterThan(0);
+  expect(ids).not.toContain("shop-only");
+  expect(own.body).not.toContain("Shop Only");
+  expect(own.body).not.toContain("Secret Environment");
+  for (const leaked of ["evidence", "reason", "cadence", "setBy", "sources"])
+    expect(own.body).not.toContain(leaked);
+  const other = await get("/api/setup", bob.token);
+  expect(other.json().environments.map((e: { id: string }) => e.id)).toContain("shop-only");
+
+  // Read only: managed users still cannot change the setup.
+  const patch = await afe.app.inject({
+    method: "PATCH",
+    url: "/api/setup",
+    headers: { ...headers(alice.token), "content-type": "application/json" },
+    payload: JSON.stringify({
+      changes: [{ environment: ids[0], field: "gating", value: "automatic" }],
+    }),
+  });
+  expect(patch.statusCode).toBe(403);
 });

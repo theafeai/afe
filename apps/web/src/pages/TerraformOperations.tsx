@@ -22,6 +22,7 @@ import { useAccess } from "../access.tsx";
 import { icons } from "../icons.tsx";
 import { Link } from "../router.tsx";
 import { useToast } from "../toast.tsx";
+import { ToolPageError } from "./tool-link.tsx";
 
 const label = (action: string) => TERRAFORM_OPERATIONS.find(([a]) => a === action)?.[1] ?? action;
 const asError = (e: unknown) => (e instanceof Error ? e : new Error("Request failed."));
@@ -508,10 +509,11 @@ export function TerraformOperationsPage() {
       </p>
       {admin && <RemoteSetup />}
       {resources.error && (
-        <ErrorBox
+        <ToolPageError
           error={resources.error}
           onRetry={resources.reload}
           title="Could not discover remote workspaces"
+          shows="the remote workspaces you can operate"
         />
       )}
       {resources.loading && <Loading />}

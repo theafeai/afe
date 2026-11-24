@@ -19,23 +19,23 @@ observation installation to enable them.
 All permissions are repository permissions with `read` access. Afe never asks
 for write access (docs/security/rules.md R1).
 
-| Permission     | Access | Why Afe needs it                                                                                                                                                                                                                   |
-| -------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `metadata`     | read   | Mandatory for every GitHub App. Repository ids, names and the list of repositories in the installation.                                                                                                                            |
-| `actions`      | read   | Workflow runs and jobs: REST `GET /repos/{o}/{r}/actions/runs` and the `workflow_run` / `workflow_job` webhooks. This is how Afe sees who triggered a run and how (push, PR, dispatch, schedule, API, re-run, reusable workflows). |
-| `deployments`  | read   | Deployments and deployment statuses: REST `GET /repos/{o}/{r}/deployments[/{id}/statuses]` and the `deployment`, `deployment_status` and `deployment_review` webhooks (environment approvals and rejections).                      |
-| `environments` | read   | Environments and their protection rules (required reviewers, branch policies), so Afe can tell what gated a deployment. Part of the R1 baseline; used by AFE-7/AFE-8.                                                              |
-| `packages`     | read   | **Optional** (requested by the manifest, not required). `registry_package` webhooks: container images pushed to ghcr.io, for `artifact.published` (AFE-21, [Artifacts](#artifacts)). Afe never pulls images.                       |
-| `attestations` | read   | **Optional** (requested by the manifest, not required). `GET /repos/{o}/{r}/attestations/{digest}`: build provenance (commit, run) of a published image.                                                                           |
+| Permission      | Access | Why Afe needs it                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metadata`      | read   | Mandatory for every GitHub App. Repository ids, names and the list of repositories in the installation.                                                                                                                                                                                                                                                                                             |
+| `actions`       | read   | Workflow runs and jobs: REST `GET /repos/{o}/{r}/actions/runs` and the `workflow_run` / `workflow_job` webhooks. This is how Afe sees who triggered a run and how (push, PR, dispatch, schedule, API, re-run, reusable workflows).                                                                                                                                                                  |
+| `deployments`   | read   | Deployments and deployment statuses: REST `GET /repos/{o}/{r}/deployments[/{id}/statuses]` and the `deployment`, `deployment_status` and `deployment_review` webhooks (environment approvals and rejections).                                                                                                                                                                                       |
+| `environments`  | read   | Environments and their protection rules (required reviewers, branch policies), so Afe can tell what gated a deployment. Part of the R1 baseline; used by AFE-7/AFE-8.                                                                                                                                                                                                                               |
+| `packages`      | read   | **Optional** (requested by the manifest, not required). `registry_package` webhooks: container images pushed to ghcr.io, for `artifact.published` (AFE-21, [Artifacts](#artifacts)). Afe never pulls images.                                                                                                                                                                                        |
+| `attestations`  | read   | **Optional** (requested by the manifest, not required). `GET /repos/{o}/{r}/attestations/{digest}`: build provenance (commit, run) of a published image.                                                                                                                                                                                                                                            |
+| `pull_requests` | read   | **Optional** (requested by the default manifest; not required). `pull_request` webhooks (opened, reopened, synchronize, closed, merged) and `PullRequestEvent` entries of the repository events feed, so a developer's pull requests appear in My changes. Afe never requests pull request files, diffs or patches (a test enforces it) and strips `pull_request.body` before storing raw payloads. |
 
 Not requested, by design:
 
-| Permission      | Why not                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contents`      | Would allow reading source code. Commit SHA, ref, actor and trigger of every run and deployment are already on the `workflow_run` and `deployment` payloads, so `push` webhooks are not needed. An operator **may** grant `contents: read` to also get `push`/`create`/`delete`/`release` events and [commit containment](../containment.md) (compare API); Afe still never downloads file contents. |
-| `pull_requests` | Pull requests that triggered runs are listed on `workflow_run.pull_requests`. Optional, for `pull_request` events (`pull_request.merged`).                                                                                                                                                                                                                                                           |
-| `checks`        | `workflow_run`/`workflow_job` cover GitHub Actions; third-party CI via checks is out of scope for now.                                                                                                                                                                                                                                                                                               |
-| anything write  | The observation App never changes anything in GitHub; opt-in personal action routes are separate (ADR 0011). It is not a deployment protection rule (that would need `deployments: write`).                                                                                                                                                                                                          |
+| Permission     | Why not                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contents`     | Would allow reading source code. Commit SHA, ref, actor and trigger of every run and deployment are already on the `workflow_run` and `deployment` payloads, so `push` webhooks are not needed. An operator **may** grant `contents: read` to also get `push`/`create`/`delete`/`release` events and [commit containment](../containment.md) (compare API); Afe still never downloads file contents. |
+| `checks`       | `workflow_run`/`workflow_job` cover GitHub Actions; third-party CI via checks is out of scope for now.                                                                                                                                                                                                                                                                                               |
+| anything write | The observation App never changes anything in GitHub; opt-in personal action routes are separate (ADR 0011). It is not a deployment protection rule (that would need `deployments: write`).                                                                                                                                                                                                          |
 
 ### Permission check
 
@@ -50,6 +50,8 @@ Every time Afe learns an installation's permissions (install, setup callback,
 - **optionalMissing**: optional read permissions (`attestations`, `contents`, `packages`,
   `pull_requests`) that are not granted, i.e. the optional features that are off. Not a
   problem: the connection stays `active` without a status reason (AFE-21).
+- **optionalNotices**: for optional permissions the default manifest requests but the
+  installation has not granted (today `pull_requests`), the upgrade notice text below.
 
 The result is stored in the connection's `config.permissionCheck`, a problem is
 written to the connection's `status_reason` (e.g.
@@ -62,8 +64,33 @@ over-privileged installation only ever yields read-only tokens.
 ## Webhook events
 
 Subscribed (manifest `default_events`): `workflow_run`, `workflow_job`,
-`deployment`, `deployment_status`, `deployment_review`, and `registry_package`
-(needs the optional `packages` permission; AFE-21).
+`deployment`, `deployment_status`, `deployment_review`, `registry_package`
+(needs the optional `packages` permission; AFE-21) and `pull_request` (needs the
+optional `pull_requests` permission). `pull_request_review` and comment events
+are not subscribed; they need their own reviewed change (and would have
+`review.body` and comment bodies stripped).
+
+### Upgrade notice for existing installations
+
+Installations created before the default manifest requested `pull_requests: read`
+have not granted it. After the
+App owner adds the permission and event to an existing App (or registers a new App
+from the updated manifest), GitHub asks an organization owner to review the
+request. Until it is accepted the connection stays `active` and
+`config.permissionCheck.optionalNotices` carries this text
+(`OPTIONAL_PERMISSION_NOTICES.pull_requests`):
+
+> Afe now asks for Pull requests: read. On GitHub it grants read-only access to
+> pull requests and their related comments, assignees, labels, milestones and
+> merges. Afe uses it only to receive pull request events (opened, reopened,
+> updated, closed, merged) and to read pull request metadata such as number,
+> title, author, branches and commit SHAs, so your pull requests appear in My
+> changes. Afe never reads pull request files, diffs or patches, does not store
+> pull request bodies, and gains no write access. An organization owner accepts
+> the update in GitHub (Settings, GitHub Apps, Afe, Review request). Until then
+> Afe keeps working without pull request events.
+
+Installs that decline keep working, with the "connect more" hint.
 
 Always delivered to Apps (not subscribable): `installation`,
 `installation_repositories`, `github_app_authorization`.

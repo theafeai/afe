@@ -158,7 +158,7 @@
 .gh-row-meta > * + *::before {
   content: "·";
   margin-right: var(--space-2);
-  color: var(--faint);
+  color: var(--muted);
 }
 .gh-row-meta code {
   overflow-wrap: anywhere;
@@ -284,7 +284,7 @@ details.gh-section[open] > summary {
   width: 4.5rem;
 }
 .gh-danger h3 {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 
 /* Operation buttons: a disabled action states why, under the button. */

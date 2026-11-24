@@ -32,6 +32,7 @@ import {
   toolLabel,
   useAsync,
   useDocumentTitle,
+  ToolLegend,
 } from "../components.tsx";
 import { formatDateTime, formatRelative, humanize, qualifiedAction } from "../format.ts";
 import { Link, useSearchParams } from "../router.tsx";
@@ -354,6 +355,7 @@ export function JourneyContent({
           </Link>
         </div>
       </header>
+      <ToolLegend />
 
       {(j.truncated || data.window.truncated || data.window.stale) && (
         <div className="callout" role="note">

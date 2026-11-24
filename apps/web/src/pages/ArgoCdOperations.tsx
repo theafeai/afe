@@ -21,6 +21,7 @@ import {
 import { OperationDialog } from "../OperationDialog.tsx";
 import { Link } from "../router.tsx";
 import { useToast } from "../toast.tsx";
+import { ToolPageError } from "./tool-link.tsx";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -68,7 +69,13 @@ export function ArgoCdOperationsPage() {
         Operate applications with your linked ArgoCD account. Source RBAC applies to every request.
       </p>
       {list.loading && !list.data && <Loading label="Loading ArgoCD applications…" />}
-      {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
+      {list.error && (
+        <ToolPageError
+          error={list.error}
+          onRetry={list.reload}
+          shows="the applications you can operate"
+        />
+      )}
       {list.data && choices.length === 0 && (
         <Empty title="No applications available">
           <p>

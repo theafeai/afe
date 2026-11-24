@@ -1,93 +1,122 @@
 /*
- * Afe design tokens. Direction "Ink" (ADR 0015, AFE-86): black and white, with
- * colour reserved for signal. Buttons, links and navigation are ink; status,
- * tools and confidence carry the only colours; one blue (--select) marks focus
- * and selection. Every stylesheet reads these; never hard-code a colour or size
- * in a page.
+ * Afe design tokens. Direction "Spectrum" (ADR 0021), on the Ink base (ADR 0015).
+ * A calm neutral base where colour has jobs, and only these:
  *
- * --accent is the readable accent (links, accent text): ink.
- * --accent-solid / --on-accent fill primary buttons: ink, inverted in dark.
- * --select / --select-soft: focus rings, selected cells, highlights, active filters.
+ * - Tools: each tool's own brand colour, from its logo. Three tokens per tool and
+ *   theme: --<tool> (stroke: marks, lines, rails; >= 3:1 on every surface),
+ *   --<tool>-text (words; >= 4.5:1) and --<tool>-tile (logo tile fill). Read them
+ *   through a .t-<tool> class, which sets --t / --t-text / --t-tile. A legend
+ *   (ToolLegend) is shown wherever colour codes tools. Never on status, buttons,
+ *   navigation, page backgrounds or text other than a tool's own name.
+ * - Status: --ok, --warn, --bad (strokes, >= 3:1) and their -text values (>= 4.5:1),
+ *   always a solid shape plus a word (StatusMark). --warn-fill is the bright yellow
+ *   for warn tints, hatches and glows only.
+ * - Afe's spectrum (--sp-1..4, --spectrum): five jobs only. Afe itself (brand dot,
+ *   page aurora, title accent, active nav), focus and selection, live, Afe's
+ *   inferences, and all-tools summaries. design-system.test.ts holds the exact
+ *   selectors allowed to read it. Anything multi-hue is Afe's; anything single-hue
+ *   is a tool or a status.
+ * - Buttons, links and navigation stay ink (--accent*, --ink).
+ *
+ * Alpha knobs: --tint (tints), --glow-a (glows), --aurora (page wash).
  *
  * Themes: light values on :root; dark values in two identical blocks, one for the
  * OS setting and one for the in-app choice (data-theme on <html>, see theme.ts).
- * design-system.test.ts checks that the two dark blocks match.
+ * design-system.test.ts checks that the two dark blocks match. Tokens built from
+ * other tokens (tints, the spectrum gradient) are defined once, here, and follow
+ * the theme automatically.
  */
 :root {
   color-scheme: light;
   scrollbar-gutter: stable;
 
-  /* Neutrals */
-  --bg: #ffffff;
-  --sidebar: #fafafa;
+  /* Neutrals: cool greys */
+  --bg: #f6f7f9;
+  --sidebar: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f5f5f5;
-  --surface-3: #ebebeb;
-  --border: #ebebeb;
-  --border-strong: #d4d4d4;
-  --text: #0a0a0a;
-  --text-2: #3d3d3d;
-  --muted: #666666;
-  --faint: #a3a3a3;
+  --surface-2: #f1f3f6;
+  --surface-3: #e7eaef;
+  --border: #e4e7ec;
+  --border-strong: #cdd2da;
+  --text: #0d1117;
+  --text-2: #4a5262;
+  --muted: #626b7a;
 
-  /* Accent: ink */
-  --accent: #0a0a0a;
-  --accent-solid: #0a0a0a;
-  --accent-solid-hover: #2e2e2e;
-  --on-accent: #ffffff;
-  --accent-text: #ffffff;
-  --accent-soft: #f0f0f0;
+  /* Ink: buttons, links, navigation, the focus outline */
+  --ink: #0d1117;
+  --on-ink: #ffffff;
+  --accent: var(--ink);
+  --accent-solid: var(--ink);
+  --accent-solid-hover: #2a313d;
+  --on-accent: var(--on-ink);
+  --accent-text: var(--on-ink);
+  --accent-soft: #eceff3;
 
-  /* Selection and focus: the one blue */
-  --select: #2160e0;
-  --select-soft: #ebf1fd;
-  --accent-ring: rgba(33, 96, 224, 0.28);
-  --focus: #2160e0;
+  /* Status: stroke (shapes, rules) and text (words) */
+  --ok: #15803d;
+  --ok-text: #127a3a;
+  --warn: #a87900;
+  --warn-text: #8a6400;
+  --warn-fill: #facc15;
+  --bad: #e11d48;
+  --bad-text: #be123c;
+  /* Status tints, built from the strokes; they follow the theme */
+  --ok-bg: color-mix(in srgb, var(--ok) var(--tint), var(--surface));
+  --bad-bg: color-mix(in srgb, var(--bad) var(--tint), var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn-fill) 12%, var(--surface));
+  --warn-border: color-mix(in srgb, var(--warn) 55%, transparent);
 
-  /* Signal */
-  --ok: #167a3b;
-  --ok-bg: #ecf8f0;
-  --bad: #c0281b;
-  --bad-bg: #fdf0ee;
-  --warn: #8f5500;
-  --warn-bg: #fff6e6;
-  --warn-border: #efd09a;
-  --recon: #a3215f;
-  --recon-bg: #fcedf4;
-  --backfill: #0a6e80;
-  --backfill-bg: #e9f5f7;
-
-  /* Confidence: green (certain) → lime (strong) → amber (probable) → red (weak) */
+  /* Confidence: the status ramp, shown as a four-bar meter plus a word */
   --conf-certain: var(--ok);
-  --conf-strong: #4a7012;
   --conf-probable: var(--warn);
   --conf-weak: var(--bad);
-  --conf-ambiguous: var(--recon);
   --conf-conflict: var(--bad);
   --conf-unknown: var(--muted);
-  --env-selected: var(--select-soft);
-  --highlight: var(--select);
-  --highlight-bg: var(--select-soft);
 
-  /* Tool colours (ADR 0013): tool logos only; never status */
-  --github: #6e7781;
-  --argocd: #e2582a;
+  /* Tools (ADR 0021 decision 1): brand colours, stroke / text / tile */
+  --github: #24292f;
+  --github-text: #24292f;
+  --github-tile: #edeff2;
+  --ghactions: #2088ff;
+  --ghactions-text: #1767cc;
+  --ghactions-tile: #e7f1ff;
+  --argocd: #e84a2a;
+  --argocd-text: #c63a1e;
+  --argocd-tile: #ffede8;
   --vercel: #000000;
-  --terraform: #7b42bc;
-  --afe: var(--text);
+  --vercel-text: #000000;
+  --vercel-tile: #edeff2;
+  --terraform: #844fba;
+  --terraform-text: #844fba;
+  --terraform-tile: #f1eaf9;
+
+  /* Afe's spectrum (ADR 0021 decision 5): the same in both themes */
+  --sp-1: #e14bd2;
+  --sp-2: #7b61ff;
+  --sp-3: #3a8dff;
+  --sp-4: #1fc8e3;
+  --spectrum: linear-gradient(100deg, var(--sp-1), var(--sp-2) 35%, var(--sp-3) 66%, var(--sp-4));
+
+  --on-spectrum: #ffffff; /* the "a" on the Afe tile */
+
+  /* Alpha knobs: the only alphas for tints, glows and the page aurora */
+  --tint: 7%;
+  --glow-a: 26%;
+  --aurora: 9%;
 
   /* Type */
   --font:
-    "Instrument Sans Variable", "Instrument Sans", ui-sans-serif, system-ui, -apple-system,
+    "Geist Variable", "Geist", "Instrument Sans", ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", sans-serif;
   --mono:
-    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    "Geist Mono Variable", "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+    monospace;
   --fs-xs: 0.75rem; /* 12px: overlines, table heads */
   --fs-sm: 0.8125rem; /* 13px: badges, labels, meta */
   --fs-md: 0.875rem; /* 14px: controls, dense rows */
   --fs-base: 0.9375rem; /* 15px: body */
   --fs-lg: 1.125rem; /* 18px: section and card titles */
-  --fs-xl: 1.75rem; /* 28px: page titles */
+  --fs-xl: 1.875rem; /* 30px: page titles */
   --lh: 1.55; /* body and running text */
   --lh-dense: 1.45; /* rows, cells, callouts */
   --lh-tight: 1.2; /* headings */
@@ -106,15 +135,15 @@
   --radius-pill: 999px;
   --control-h: 2.25rem;
   --shadow-xs: 0 0 0 0 transparent;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 2px rgba(13, 17, 23, 0.05), 0 4px 12px rgba(13, 17, 23, 0.06);
+  --shadow-md: 0 12px 32px -12px rgba(13, 17, 23, 0.18), 0 2px 6px rgba(13, 17, 23, 0.06);
   --sheen: transparent;
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --dur: 120ms;
 
   /* Layout */
   --dialog-w: 560px;
-  --sidebar-w: 236px;
+  --sidebar-w: 248px;
   --topbar-h: 0px;
   --sticky-top: 0px;
 
@@ -130,100 +159,147 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0a0a0a;
-    --sidebar: #0a0a0a;
-    --surface: #0f0f0f;
-    --surface-2: #181818;
-    --surface-3: #232323;
-    --border: #262626;
-    --border-strong: #3a3a3a;
-    --text: #f5f5f5;
-    --text-2: #c9c9c9;
-    --muted: #9c9c9c;
-    --faint: #5c5c5c;
+    --bg: #0a0c10;
+    --sidebar: #12151b;
+    --surface: #12151b;
+    --surface-2: #181c24;
+    --surface-3: #20252f;
+    --border: #232833;
+    --border-strong: #353c4a;
+    --text: #edf0f5;
+    --text-2: #a9b1bf;
+    --muted: #8d96a6;
 
-    --accent: #f5f5f5;
-    --accent-solid: #f5f5f5;
-    --accent-solid-hover: #d6d6d6;
-    --on-accent: #0a0a0a;
-    --accent-text: #0a0a0a;
-    --accent-soft: #1f1f1f;
+    --ink: #edf0f5;
+    --on-ink: #0a0c10;
+    --accent-solid-hover: #cdd3dd;
+    --accent-soft: #1d222b;
 
-    --select: #7ea8ff;
-    --select-soft: rgba(80, 130, 255, 0.16);
-    --accent-ring: rgba(126, 168, 255, 0.4);
-    --focus: #7ea8ff;
+    --ok: #3dd68c;
+    --ok-text: #5ee0a0;
+    --warn: #facc15;
+    --warn-text: #facc15;
+    --bad: #fb7185;
+    --bad-text: #fb7185;
 
-    --ok: #5fd38a;
-    --ok-bg: rgba(52, 199, 105, 0.12);
-    --bad: #ff8b80;
-    --bad-bg: rgba(240, 70, 60, 0.13);
-    --warn: #f2b84f;
-    --warn-bg: rgba(242, 166, 30, 0.11);
-    --warn-border: rgba(242, 166, 30, 0.35);
-    --recon: #f490c0;
-    --recon-bg: rgba(236, 90, 160, 0.14);
-    --backfill: #67d0dc;
-    --backfill-bg: rgba(40, 180, 200, 0.12);
-
-    --conf-strong: #a8d65e;
-
-    --github: #9198a1;
-    --argocd: #ff9466;
+    --github: #f0f6fc;
+    --github-text: #f0f6fc;
+    --github-tile: #1f242d;
+    --ghactions: #2088ff;
+    --ghactions-text: #2088ff;
+    --ghactions-tile: #132339;
+    --argocd: #fe6446;
+    --argocd-text: #fe6446;
+    --argocd-tile: #2c1915;
     --vercel: #ffffff;
-    --terraform: #a983ff;
+    --vercel-text: #ffffff;
+    --vercel-tile: #1f242d;
+    --terraform: #844fba;
+    --terraform-text: #b892ea;
+    --terraform-tile: #231b30;
+
+    --tint: 10%;
+    --glow-a: 40%;
+    --aurora: 17%;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    --shadow-md: 0 16px 40px -12px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0a0a0a;
-  --sidebar: #0a0a0a;
-  --surface: #0f0f0f;
-  --surface-2: #181818;
-  --surface-3: #232323;
-  --border: #262626;
-  --border-strong: #3a3a3a;
-  --text: #f5f5f5;
-  --text-2: #c9c9c9;
-  --muted: #9c9c9c;
-  --faint: #5c5c5c;
+  --bg: #0a0c10;
+  --sidebar: #12151b;
+  --surface: #12151b;
+  --surface-2: #181c24;
+  --surface-3: #20252f;
+  --border: #232833;
+  --border-strong: #353c4a;
+  --text: #edf0f5;
+  --text-2: #a9b1bf;
+  --muted: #8d96a6;
 
-  --accent: #f5f5f5;
-  --accent-solid: #f5f5f5;
-  --accent-solid-hover: #d6d6d6;
-  --on-accent: #0a0a0a;
-  --accent-text: #0a0a0a;
-  --accent-soft: #1f1f1f;
+  --ink: #edf0f5;
+  --on-ink: #0a0c10;
+  --accent-solid-hover: #cdd3dd;
+  --accent-soft: #1d222b;
 
-  --select: #7ea8ff;
-  --select-soft: rgba(80, 130, 255, 0.16);
-  --accent-ring: rgba(126, 168, 255, 0.4);
-  --focus: #7ea8ff;
+  --ok: #3dd68c;
+  --ok-text: #5ee0a0;
+  --warn: #facc15;
+  --warn-text: #facc15;
+  --bad: #fb7185;
+  --bad-text: #fb7185;
 
-  --ok: #5fd38a;
-  --ok-bg: rgba(52, 199, 105, 0.12);
-  --bad: #ff8b80;
-  --bad-bg: rgba(240, 70, 60, 0.13);
-  --warn: #f2b84f;
-  --warn-bg: rgba(242, 166, 30, 0.11);
-  --warn-border: rgba(242, 166, 30, 0.35);
-  --recon: #f490c0;
-  --recon-bg: rgba(236, 90, 160, 0.14);
-  --backfill: #67d0dc;
-  --backfill-bg: rgba(40, 180, 200, 0.12);
-
-  --conf-strong: #a8d65e;
-
-  --github: #9198a1;
-  --argocd: #ff9466;
+  --github: #f0f6fc;
+  --github-text: #f0f6fc;
+  --github-tile: #1f242d;
+  --ghactions: #2088ff;
+  --ghactions-text: #2088ff;
+  --ghactions-tile: #132339;
+  --argocd: #fe6446;
+  --argocd-text: #fe6446;
+  --argocd-tile: #2c1915;
   --vercel: #ffffff;
-  --terraform: #a983ff;
+  --vercel-text: #ffffff;
+  --vercel-tile: #1f242d;
+  --terraform: #844fba;
+  --terraform-text: #b892ea;
+  --terraform-tile: #231b30;
+
+  --tint: 10%;
+  --glow-a: 40%;
+  --aurora: 17%;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-md: 0 16px 40px -12px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Tools: each .t-<tool> sets --t (stroke), --t-text and --t-tile, so tool marks,
+   badges, legend entries and strokes colour themselves. A new connector adds its
+   three tokens per theme, its logo in icons.tsx and its class here. */
+.t-github {
+  --t: var(--github);
+  --t-text: var(--github-text);
+  --t-tile: var(--github-tile);
+}
+.t-ghactions {
+  --t: var(--ghactions);
+  --t-text: var(--ghactions-text);
+  --t-tile: var(--ghactions-tile);
+}
+.t-argocd {
+  --t: var(--argocd);
+  --t-text: var(--argocd-text);
+  --t-tile: var(--argocd-tile);
+}
+.t-vercel {
+  --t: var(--vercel);
+  --t-text: var(--vercel-text);
+  --t-tile: var(--vercel-tile);
+}
+.t-terraform {
+  --t: var(--terraform);
+  --t-text: var(--terraform-text);
+  --t-tile: var(--terraform-tile);
+}
+.t-afe {
+  --t: var(--muted);
+  --t-text: var(--text);
+  --t-tile: var(--surface-2);
+}
+/* Status: each .s-<tone> sets --s (shape) and --s-text (word). */
+.s-ok {
+  --s: var(--ok);
+  --s-text: var(--ok-text);
+}
+.s-warn {
+  --s: var(--warn);
+  --s-text: var(--warn-text);
+}
+.s-bad {
+  --s: var(--bad);
+  --s-text: var(--bad-text);
 }
 
 /* Base ------------------------------------------------------------------------ */
@@ -236,7 +312,7 @@ body {
   color: var(--text);
 }
 ::selection {
-  background: var(--accent-ring);
+  background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 /* Ink links: the accent is the text colour, so links carry a quiet underline
    that darkens on hover. Buttons, nav and row links opt out with their classes. */
@@ -259,10 +335,15 @@ p a,
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
 }
+/* Focus belongs to Afe (ADR 0021 decision 6): a solid ink outline at a 2px offset
+   (always >= 3:1) plus a two-hue spectrum halo. Tools never draw offset rings. */
 :focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
   border-radius: 4px;
+  box-shadow:
+    -6px 0 18px -4px color-mix(in srgb, var(--sp-2) var(--glow-a), transparent),
+    6px 0 18px -4px color-mix(in srgb, var(--sp-4) var(--glow-a), transparent);
 }
 code,
 pre,
@@ -284,8 +365,8 @@ h3 {
 }
 h1 {
   font-size: var(--fs-xl);
-  font-weight: 600;
-  letter-spacing: -0.025em;
+  font-weight: 650;
+  letter-spacing: -0.035em;
   margin: 0 0 var(--space-2);
 }
 h2 {
@@ -401,12 +482,26 @@ details > summary:hover {
 .brand:hover {
   text-decoration: none;
 }
-/* The Afe wordmark (icons.tsx BrandMark): drawn in currentColor, sized by height. */
+/* The Afe wordmark (icons.tsx BrandMark): "afe" in currentColor plus the
+   spectrum dot (ADR 0021 decision 12), sized by height. */
 .brand-mark {
   height: 1.375rem;
   width: auto;
   flex: none;
   fill: currentColor;
+  overflow: visible;
+}
+.brand-dot stop:nth-child(1) {
+  stop-color: var(--sp-1);
+}
+.brand-dot stop:nth-child(2) {
+  stop-color: var(--sp-2);
+}
+.brand-dot stop:nth-child(3) {
+  stop-color: var(--sp-3);
+}
+.brand-dot stop:nth-child(4) {
+  stop-color: var(--sp-4);
 }
 .sidebar .nav-toggle {
   display: none;
@@ -414,6 +509,9 @@ details > summary:hover {
 .sidebar nav {
   flex: 1;
   overflow-y: auto;
+  /* Reach the sidebar edge so the active rail is not clipped by the scroll box. */
+  margin: 0 calc(-1 * var(--space-3));
+  padding: 0 var(--space-3);
   display: grid;
   align-content: start;
   gap: var(--space-5);
@@ -433,6 +531,7 @@ details > summary:hover {
   color: var(--muted);
 }
 .sidebar nav a {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.625rem;
@@ -450,14 +549,45 @@ details > summary:hover {
 .sidebar nav a .icon {
   color: var(--muted);
 }
+/* Per-tool pages carry the tool's logo tile on the right. */
+.sidebar nav a > .tm {
+  margin-left: auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 5px;
+}
+.sidebar nav a > .tm > .tool-mark {
+  width: 0.6875rem;
+  height: 0.6875rem;
+}
 .sidebar nav a:hover {
   background: var(--surface-2);
   color: var(--text);
 }
+/* Active navigation is Afe's (ADR 0021 decision 5.1): a violet-to-cyan wash and
+   a drifting spectrum rail at the sidebar edge. */
 .sidebar nav a[aria-current="page"] {
-  background: var(--accent-soft);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sp-2) 13%, var(--sidebar)),
+    color-mix(in srgb, var(--sp-4) 7%, var(--sidebar)) 70%,
+    var(--sidebar)
+  );
   color: var(--text);
   font-weight: 600;
+}
+.sidebar nav a[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-3));
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, var(--sp-1), var(--sp-2), var(--sp-3), var(--sp-4));
+  background-size: 100% 300%;
+  animation: drift-y 7s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--sp-3) var(--glow-a), transparent);
 }
 .sidebar nav a[aria-current="page"] .icon {
   color: var(--text);
@@ -516,17 +646,34 @@ details > summary:hover {
   font-weight: 550;
   box-shadow: var(--shadow-sm);
 }
+/* The signed-in person: initials inside a spectrum ring (Afe's selection colour). */
 .avatar {
+  position: relative;
+  isolation: isolate;
   display: grid;
   place-items: center;
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: var(--surface-3);
   color: var(--text);
   font-size: var(--fs-sm);
   font-weight: 600;
   flex: none;
+}
+.avatar::before,
+.avatar::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  z-index: -1;
+}
+.avatar::before {
+  inset: -2px;
+  background: var(--spectrum);
+}
+.avatar::after {
+  inset: 0;
+  background: var(--surface-2);
 }
 .session-who {
   display: grid;
@@ -548,6 +695,54 @@ details > summary:hover {
 main {
   outline: none;
   min-width: 0;
+  position: relative;
+  isolation: isolate;
+}
+/* The page aurora (ADR 0021 decision 5.1): a faint four-hue wash at the top of
+   every page, at most --aurora alpha, fading out within 260px. It sits behind the
+   page header, never behind data rows, and --muted text keeps >= 4.5:1 on it. */
+main::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 260px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      42% 100% at 6% 0%,
+      color-mix(in srgb, var(--sp-1) var(--aurora), transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 95% at 34% 0%,
+      color-mix(in srgb, var(--sp-2) var(--aurora), transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 90% at 64% 0%,
+      color-mix(in srgb, var(--sp-3) var(--aurora), transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 90% at 96% 0%,
+      color-mix(in srgb, var(--sp-4) var(--aurora), transparent),
+      transparent 70%
+    );
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    black 0%,
+    color-mix(in srgb, black 55%, transparent) 45%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    black 0%,
+    color-mix(in srgb, black 55%, transparent) 45%,
+    transparent 100%
+  );
 }
 .shell-state {
   padding: var(--space-6);
@@ -633,6 +828,20 @@ main {
 }
 .page-header h1 {
   margin-bottom: var(--space-1);
+}
+/* The page-title accent (ADR 0021 decision 5.1): a short drifting spectrum bar. */
+.page-header h1::after,
+.h-acc::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 3px;
+  border-radius: 3px;
+  margin-top: var(--space-2);
+  background: var(--spectrum);
+  background-size: 300% 100%;
+  animation: drift 9s ease-in-out infinite alternate;
+  box-shadow: 0 2px 12px -2px color-mix(in srgb, var(--sp-2) var(--glow-a), transparent);
 }
 .lede {
   margin: var(--space-1) 0 0;
@@ -862,7 +1071,7 @@ main {
   background: var(--accent-solid);
 }
 .btn-danger {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 .btn-danger:hover {
   background: var(--bad-bg);
@@ -895,7 +1104,7 @@ main {
   color: var(--muted);
 }
 .btn-ghost.btn-danger:hover {
-  color: var(--bad);
+  color: var(--bad-text);
   background: var(--bad-bg);
 }
 .btn-wide {
@@ -943,9 +1152,9 @@ textarea:hover {
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: none;
-  border-color: var(--focus);
-  box-shadow: 0 0 0 3px var(--accent-ring);
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+  border-color: var(--border-strong);
   border-radius: var(--radius-sm);
 }
 input[type="checkbox"],
@@ -960,9 +1169,7 @@ input[type="radio"] {
 }
 input[type="checkbox"]:focus-visible,
 input[type="radio"]:focus-visible {
-  outline: 2px solid var(--focus);
   outline-offset: 2px;
-  box-shadow: none;
 }
 select {
   appearance: none;
@@ -1094,9 +1301,9 @@ legend {
   align-items: center;
   gap: 0.2rem;
   height: 1.75rem;
-  background: var(--select-soft);
+  background: var(--surface);
   color: var(--text);
-  border: 1px solid color-mix(in srgb, var(--select) 30%, transparent);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-pill);
   padding: 0 0.2rem 0 0.7rem;
   font-size: var(--fs-sm);
@@ -1114,7 +1321,33 @@ legend {
   border-radius: 50%;
 }
 .chip button:hover {
-  background: color-mix(in srgb, var(--select) 18%, transparent);
+  background: var(--surface-2);
+}
+
+/* Environment chips (ADR 0021 rule 9): one outline look for every environment;
+   only production-like (.pl) differs, as the solid ink chip with a shield. */
+.env-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 0.05rem 0.55rem;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.env-chip.pl {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.env-chip .icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: none;
 }
 
 /* Callouts and states -------------------------------------------------------- */
@@ -1140,22 +1373,34 @@ legend {
   background: var(--bad-bg);
 }
 .callout-error strong {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 .callout-ok {
   border-color: color-mix(in srgb, var(--ok) 30%, transparent);
   background: var(--ok-bg);
 }
+/* The observation-gap panel is the one attention item on a page: a warn edge and
+   a soft yellow glow (ADR 0021 decision 7). */
 .callout-gap {
+  position: relative;
   border-color: var(--warn-border);
-  background: var(--warn-bg);
+  background: var(--surface);
+  box-shadow:
+    inset 3px 0 0 var(--warn),
+    0 0 0 4px color-mix(in srgb, var(--warn-fill) 12%, transparent),
+    0 8px 28px -12px color-mix(in srgb, var(--warn-fill) var(--glow-a), transparent);
 }
+.callout-gap svg.tri {
+  vertical-align: -2px;
+  margin-right: var(--space-2);
+}
+/* Reconciled: a neutral note; the method badge (icon and word) carries the meaning. */
 .callout-reconciled {
-  border-color: color-mix(in srgb, var(--recon) 30%, transparent);
-  background: var(--recon-bg);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
 }
 .alert-tag {
-  color: var(--bad);
+  color: var(--bad-text);
   font-weight: 600;
 }
 .state {
@@ -1223,10 +1468,10 @@ legend {
   color: var(--accent);
 }
 .toast-ok .toast-icon {
-  color: var(--ok);
+  color: var(--ok-text);
 }
 .toast-error .toast-icon {
-  color: var(--bad);
+  color: var(--bad-text);
 }
 .toast-body {
   flex: 1;
@@ -1252,14 +1497,38 @@ legend {
     bottom: var(--space-4);
   }
 }
+@keyframes drift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+@keyframes drift-y {
+  from {
+    background-position: 50% 0%;
+  }
+  to {
+    background-position: 50% 100%;
+  }
+}
+@keyframes ping {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+/* Reduced motion: no drift, pulse, spin or breathing; static shapes stay. */
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
-  }
-  .toast {
-    animation: none;
-  }
-  * {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
     transition: none !important;
   }
 }
@@ -1324,138 +1593,429 @@ legend {
   vertical-align: middle;
   letter-spacing: 0;
 }
-/* Tools (ADR 0013, ADR 0015): neutral chip with the tool's logo in its colour.
-   Rows stay neutral; the logo alone identifies the tool. */
-.tool {
-  background: var(--surface);
-  color: var(--text-2);
-  padding-left: 0.375rem;
-}
+/* Tools (ADR 0021 decisions 1–4). ToolMark is the tool's real logo in its text
+   colour; .tm is the logo on its brand tile; ToolBadge is a tile plus the name.
+   The tool colour only ever identifies a tool, never a status. */
 .tool-mark {
   width: 0.875rem;
   height: 0.875rem;
   flex: none;
-  fill: var(--tool, var(--muted));
+  fill: var(--t-text, var(--muted));
 }
 .tool-mark-square {
   width: 0.5rem;
   height: 0.5rem;
   margin: 0 0.1875rem;
   border-radius: 2px;
-  background: var(--tool, var(--muted));
+  background: var(--t, var(--muted));
 }
-.tool-github {
-  --tool: var(--github);
+.afe-mark-a {
+  fill: var(--on-spectrum);
 }
-.tool-argocd {
-  --tool: var(--argocd);
+.tm {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  border-radius: 6px;
+  background: var(--t-tile, var(--surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t, var(--border-strong)) 30%, transparent);
 }
-.tool-vercel {
-  --tool: var(--vercel);
+.tm > .tool-mark {
+  width: 0.75rem;
+  height: 0.75rem;
 }
-.tool-terraform {
-  --tool: var(--terraform);
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.375rem;
+  padding: 0 0.55rem 0 2px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--t, var(--border)) 28%, var(--border));
+  background: var(--surface);
+  color: var(--t-text, var(--text-2));
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
 }
-.tool-afe {
-  --tool: var(--afe);
-}
-.method-reconciliation {
-  color: var(--recon);
-  background: var(--recon-bg);
-  border-color: transparent;
-}
-.method-backfill {
-  color: var(--backfill);
-  background: var(--backfill-bg);
-  border-color: transparent;
-}
-.outcome-succeeded,
-.outcome-failed,
-.outcome-in_progress,
-.outcome-pending {
-  border-color: transparent;
-  background: transparent;
-  padding-left: 0.1rem;
-}
-.outcome-succeeded::before,
-.outcome-failed::before,
-.outcome-in_progress::before,
-.outcome-pending::before {
-  content: "";
-  width: 0.4rem;
-  height: 0.4rem;
+.tool-badge > .tm {
+  width: 1.125rem;
+  height: 1.125rem;
   border-radius: 50%;
-  background: currentColor;
+  box-shadow: none;
 }
-.outcome-succeeded {
-  color: var(--ok);
+.tool-badge > .tm > .tool-mark {
+  width: 0.6875rem;
+  height: 0.6875rem;
 }
-.outcome-failed {
-  color: var(--bad);
+/* Fades everything from the other tools while a legend entry is hovered or focused. */
+.dim {
+  opacity: 0.22;
+  filter: saturate(0.4);
+  transition: opacity 0.2s;
 }
-.outcome-in_progress,
-.outcome-pending {
-  color: var(--warn);
+
+/* The tool legend (ToolLegend, ADR 0021 decision 3): sticky under the page title on
+   every screen that colour-codes tools. Lists only the connected tools, each with
+   its logo, name and stroke swatch, then the screen's other keys and Afe's. */
+.legend {
+  position: sticky;
+  top: var(--sticky-top);
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) 0.875rem;
+  margin: 0 0 var(--space-5);
+  padding: 7px var(--space-2) 7px 0.875rem;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background:
+    linear-gradient(
+        color-mix(in srgb, var(--surface) 90%, transparent),
+        color-mix(in srgb, var(--surface) 90%, transparent)
+      )
+      padding-box,
+    linear-gradient(100deg, var(--border-strong), var(--border) 40%, var(--border)) border-box;
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  backdrop-filter: blur(12px) saturate(1.3);
+  box-shadow: 0 8px 24px -18px color-mix(in srgb, var(--text) 35%, transparent);
+  font-size: var(--fs-xs);
 }
-.outcome-in_progress::before,
-.outcome-pending::before {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px currentColor;
+.legend-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
 }
-.health {
-  background: transparent;
-  border-color: transparent;
-  padding-left: 0;
+.legend-title .icon {
+  width: 0.875rem;
+  height: 0.875rem;
 }
-.health .dot {
-  width: 0.45rem;
-  height: 0.45rem;
+.legend-title strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.legend-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px 0.625rem 3px 3px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  cursor: default;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.lg > .tm {
+  width: 1.375rem;
+  height: 1.375rem;
   border-radius: 50%;
-  background: var(--faint);
 }
-.health-healthy .dot {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-bg);
+.lg-sw {
+  width: 1.375rem;
+  height: 6px;
+  flex: none;
+  border-radius: 3px;
+  background-color: var(--t);
 }
-.health-degraded .dot,
-.health-rate_limited .dot {
-  background: var(--warn);
-  box-shadow: 0 0 0 3px var(--warn-bg);
-}
-.health-unreachable .dot,
-.health-unauthorized .dot,
-.health-revoked .dot {
-  background: var(--bad);
-  box-shadow: 0 0 0 3px var(--bad-bg);
-}
-.status-revoked,
-.status-suspended {
-  color: var(--bad);
-  background: var(--bad-bg);
-  border-color: transparent;
-}
-.status-disconnected {
+.lg-n {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  font-weight: 450;
   color: var(--muted);
 }
-/* Gap flags are frequent (any gap after a placement went live), so they
-   stay quiet: warn-coloured text with a hollow marker, no fill. The gap panel
-   at the top of the page carries the loud version. */
-.gap-badge {
-  color: var(--warn);
+.lg:hover,
+.lg:focus-visible {
+  border-color: color-mix(in srgb, var(--t) 55%, var(--border));
+}
+.lg:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--t) 12%, transparent);
+}
+/* A tool on screen that Afe cannot observe now (suspended, revoked, pending,
+   disconnected; AFE-119): secondary, dashed, its mark and swatch muted, with the
+   reason as a word. It never counts as connected. */
+.lg-off {
+  border-style: dashed;
   background: transparent;
+  color: var(--text-2);
+  font-weight: 450;
+}
+.lg-off > .tm {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.lg-off .lg-sw {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t) 60%, var(--border));
+}
+.lg-state {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.legend-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+.legend-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.875rem;
+  margin-left: auto;
+  padding-right: 0.375rem;
+  color: var(--text-2);
+}
+.legend-keys > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+.key-sp {
+  width: 1.375rem;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--spectrum);
+  box-shadow: 0 0 8px -1px color-mix(in srgb, var(--sp-2) var(--glow-a), transparent);
+}
+.key-gap {
+  width: 1rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--warn-fill) 75%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+  outline: 1px solid var(--warn);
+}
+
+@media (max-width: 640px) {
+  .legend {
+    gap: 0.375rem 0.625rem;
+    padding: 6px var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+  .legend-title > span,
+  .legend-sep {
+    display: none;
+  }
+  .lg {
+    gap: 0.375rem;
+    padding-right: var(--space-2);
+  }
+  .lg-sw {
+    width: 0.875rem;
+  }
+  .legend-keys {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .legend-keys > span {
+    flex: none;
+  }
+}
+
+/* Live (LiveIndicator): Afe is watching it happen now. Spectrum, never ok-green. */
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.pulse {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--sp-1), var(--sp-2), var(--sp-3), var(--sp-4), var(--sp-1));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--sp-3) var(--glow-a), transparent);
+}
+.pulse::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--sp-3);
+  opacity: 0;
+  animation: ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Provenance (ProvenancePill, ADR 0021 decision 9): what Afe inferred (spectrum dot,
+   "inferred", confidence meter) or what a person set (person icon, "set by"). */
+.prov {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: var(--fs-xs);
+  font-weight: 450;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.prov .icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--text-2);
+}
+.prov-set {
+  padding: 0 0.5rem 0 0.375rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.prov .badge.conf {
+  font-size: var(--fs-xs);
+}
+.inf-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(var(--sp-1), var(--sp-2), var(--sp-3), var(--sp-4), var(--sp-1));
+}
+
+/* Observation method: neutral, with an icon and the word. Reconciled and backfilled
+   rows are explained by the badge and the row note, not by a colour. */
+.method .icon {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.method-reconciliation,
+.method-backfill {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+/* Status (StatusMark, ADR 0021 decision 8): always a solid shape plus a word. A
+   filled disc for ok and bad (and neutral states), a filled triangle for warn, a
+   spectrum ring for in progress. Tools never draw solid shapes. */
+.si {
+  display: inline-grid;
+  place-items: center;
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--s, var(--muted));
+  color: var(--surface);
+}
+.si > svg {
+  width: 0.5625rem;
+  height: 0.5625rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+svg.tri {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+.tri .tri-b {
+  fill: var(--warn);
+}
+.tri .tri-m {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.s-wait {
+  --s: var(--warn);
+  --s-text: var(--warn-text);
+}
+.s-idle {
+  --s: var(--muted);
+  --s-text: var(--text-2);
+}
+/* In progress is a live state: a spectrum ring, whichever tool is running. */
+.spin {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 90deg,
+    transparent 10%,
+    var(--sp-1),
+    var(--sp-2),
+    var(--sp-3),
+    var(--sp-4)
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2.5px),
+    black calc(100% - 2px)
+  );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), black calc(100% - 2px));
+  animation: spin 1s linear infinite;
+}
+.outcome,
+.health,
+.status,
+.severity,
+.drift-status,
+.gap-badge {
+  gap: 0.375rem;
   border-color: transparent;
-  padding-left: 0.1rem;
+  background: transparent;
+  padding-left: 0;
+  color: var(--s-text, var(--text-2));
+  font-weight: 550;
+}
+.s-live {
+  color: var(--text);
+}
+/* Gap flags are frequent, so they are a quiet flag: a solid triangle and the word on
+   a faint yellow tint. The gap panel at the top of the page carries the loud version. */
+.gap-badge {
+  --s-text: var(--warn-text);
+  padding: 0 0.5rem 0 0.3125rem;
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn-fill) 12%, var(--surface));
 }
 .gap-badge::before {
   content: "";
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 1px;
-  transform: rotate(45deg);
-  box-shadow: inset 0 0 0 1.25px currentColor;
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+  background: var(--warn);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M10.3 3.4 1.6 18a2.3 2.3 0 0 0 2 3.5h16.8a2.3 2.3 0 0 0 2-3.5L13.7 3.4a2 2 0 0 0-3.4 0zM10.7 9a1.3 1.3 0 0 1 2.6 0v4.5a1.3 1.3 0 0 1-2.6 0zM12 15.9a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M10.3 3.4 1.6 18a2.3 2.3 0 0 0 2 3.5h16.8a2.3 2.3 0 0 0 2-3.5L13.7 3.4a2 2 0 0 0-3.4 0zM10.7 9a1.3 1.3 0 0 1 2.6 0v4.5a1.3 1.3 0 0 1-2.6 0zM12 15.9a1.3 1.3 0 1 1 0 2.6 1.3 1.3 0 0 1 0-2.6z'/%3E%3C/svg%3E")
+    center / contain no-repeat;
 }
 .alert-badge {
-  color: var(--bad);
+  color: var(--bad-text);
   background: var(--bad-bg);
   border-color: transparent;
   text-decoration: none;
@@ -1464,62 +2024,56 @@ a.alert-badge:hover {
   text-decoration: underline;
 }
 
-/* Confidence (AFE-46): a graded glyph (full → empty) plus the word. Confident
-   states stay neutral; weak, ambiguous and conflicting ones are tinted. */
+/* Confidence: a four-bar meter on the status ramp plus the word. Strong is three
+   green bars, probable two warn bars, weak one bad bar; ambiguous is a dashed
+   meter. The bars are drawn by one pseudo-element from --b1..--b4. */
 .badge.conf {
-  --c: var(--conf-unknown);
-  --p: 0%;
+  --b1: var(--border-strong);
+  --b2: var(--border-strong);
+  --b3: var(--border-strong);
+  --b4: var(--border-strong);
+  gap: 0.375rem;
   text-transform: lowercase;
-  background: var(--surface);
-  border-color: var(--border);
+  background: transparent;
+  border-color: transparent;
   color: var(--text-2);
-  padding-left: 0.35rem;
+  padding-left: 0;
 }
 .badge.conf::before {
   content: "";
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 50%;
+  width: 1rem;
+  height: 0.6875rem;
   flex: none;
-  background: conic-gradient(var(--c) var(--p), transparent 0);
-  box-shadow: inset 0 0 0 1.25px var(--c);
+  background:
+    linear-gradient(var(--b1), var(--b1)) 0 100% / 3px 4px no-repeat,
+    linear-gradient(var(--b2), var(--b2)) 4.5px 100% / 3px 6px no-repeat,
+    linear-gradient(var(--b3), var(--b3)) 9px 100% / 3px 8.5px no-repeat,
+    linear-gradient(var(--b4), var(--b4)) 13px 100% / 3px 11px no-repeat;
 }
 .badge.conf-certain {
-  --c: var(--conf-certain);
-  --p: 100%;
+  --b1: var(--conf-certain);
+  --b2: var(--conf-certain);
+  --b3: var(--conf-certain);
+  --b4: var(--conf-certain);
 }
 .badge.conf-strong {
-  --c: var(--conf-strong);
-  --p: 75%;
+  --b1: var(--conf-certain);
+  --b2: var(--conf-certain);
+  --b3: var(--conf-certain);
 }
 .badge.conf-probable {
-  --c: var(--conf-probable);
-  --p: 50%;
-}
-.badge.conf-weak {
-  --c: var(--conf-weak);
-  --p: 25%;
-}
-.badge.conf-ambiguous {
-  --c: var(--conf-ambiguous);
-}
-.badge.conf-conflict {
-  --c: var(--conf-conflict);
+  --b1: var(--conf-probable);
+  --b2: var(--conf-probable);
 }
 .badge.conf-weak,
-.badge.conf-ambiguous,
 .badge.conf-conflict {
-  color: var(--c);
-  background: color-mix(in srgb, var(--c) 9%, var(--surface));
-  border-color: color-mix(in srgb, var(--c) 30%, transparent);
+  --b1: var(--conf-weak);
+  color: var(--bad-text);
 }
 .badge.conf-ambiguous::before {
   background: none;
-  box-shadow: none;
-  border: 1.25px dashed var(--c);
-}
-.badge.conf-conflict::before {
-  background: linear-gradient(45deg, transparent 44%, var(--c) 44%, var(--c) 56%, transparent 56%);
+  border: 1px dashed var(--muted);
+  border-radius: 2px;
 }
 .badge.conf-none {
   color: var(--muted);
@@ -1655,25 +2209,23 @@ a.alert-badge:hover {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.event-row.row-reconciliation {
-  background: var(--recon-bg);
-}
-.row-reconciliation .row-note {
-  color: var(--recon);
-}
+/* Reconciled and backfilled rows: a neutral tint; the method badge and the note
+   say what happened. */
+.event-row.row-reconciliation,
 .event-row.row-backfill {
-  background: var(--backfill-bg);
+  background: var(--surface-2);
 }
+.row-reconciliation .row-note,
 .row-backfill .row-note {
-  color: var(--backfill);
+  color: var(--text-2);
 }
 .row-gap {
   background: var(--warn-bg);
-  box-shadow: inset 2px 0 0 var(--warn);
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 .row-gap .row-title {
   font-weight: 600;
-  color: var(--warn);
+  color: var(--warn-text);
 }
 .row-gap-closed {
   background: color-mix(in srgb, var(--warn-bg) 50%, transparent);
@@ -1720,11 +2272,9 @@ a.alert-badge:hover {
 .table tbody tr:hover td {
   background: color-mix(in srgb, var(--surface-2) 60%, transparent);
 }
-.table tr.row-reconciliation td {
-  background: var(--recon-bg);
-}
+.table tr.row-reconciliation td,
 .table tr.row-backfill td {
-  background: var(--backfill-bg);
+  background: var(--surface-2);
 }
 .kv {
   margin: 0;
@@ -1801,7 +2351,8 @@ a.alert-badge:hover {
     box-shadow var(--dur) var(--ease);
 }
 .empty .connect-card,
-.empty .connect-card:hover {
+.empty .connect-card:hover,
+.empty a.btn {
   text-decoration: none;
 }
 .check > .tool-mark {
@@ -1836,25 +2387,6 @@ a.alert-badge:hover {
 }
 
 /* Drift findings (AFE-26) ----------------------------------------------------- */
-.severity-critical,
-.severity-high {
-  color: var(--bad);
-  background: var(--bad-bg);
-  border-color: transparent;
-}
-.severity-medium {
-  color: var(--warn);
-  background: var(--warn-bg);
-  border-color: transparent;
-}
-.drift-status-open {
-  color: var(--warn);
-}
-.drift-status-resolved {
-  color: var(--ok);
-  background: var(--ok-bg);
-  border-color: transparent;
-}
 .drift-evidence li {
   margin-bottom: 0.6rem;
 }
@@ -1892,7 +2424,7 @@ a.alert-badge:hover {
   }
   .sidebar.open nav {
     display: grid;
-    padding: var(--space-2) 0 var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-3);
     max-height: calc(100vh - var(--topbar-h) - 4rem);
   }
   .sidebar.open .session {
