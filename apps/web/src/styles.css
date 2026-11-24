@@ -2325,7 +2325,8 @@ a.alert-badge:hover {
     box-shadow var(--dur) var(--ease);
 }
 .empty .connect-card,
-.empty .connect-card:hover {
+.empty .connect-card:hover,
+.empty a.btn {
   text-decoration: none;
 }
 .check > .tool-mark {
