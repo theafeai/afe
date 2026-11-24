@@ -559,5 +559,5 @@ it("records the administrator actor when selecting a remote connection", async (
   ).rows;
   expect(events).toHaveLength(1);
   expect(events[0].action).toBe("connection.created");
-  expect(events[0].actor.id).toMatch(/^admin-token:/);
+  expect(events[0].actor).toMatchObject({ id: "static:admin", name: "Administrator" });
 });

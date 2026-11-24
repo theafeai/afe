@@ -8,6 +8,7 @@ import {
   buildStoredEvent,
   isOutsideRetention,
   parseEventInput,
+  principalIdentity,
   rawPayloadBytes,
   sha256Hex,
   type CanonicalEvent,
@@ -52,6 +53,22 @@ export interface EventRow {
   raw_payload_sha256: string | null;
 }
 
+/**
+ * Read-time display mapping (AFE-120). Afe's own events recorded before
+ * AFE-120 name a static-token principal by its token fingerprint
+ * (`admin-token:<hex>`); return the stable identity ("Administrator")
+ * instead. The stored row is never changed (events are immutable). Actors
+ * of other sources are returned as recorded.
+ */
+export function displayActor(
+  source: string,
+  actor: CanonicalEvent["actor"],
+): CanonicalEvent["actor"] {
+  if (source !== "afe" || !actor.id) return actor;
+  const who = principalIdentity(actor.id, actor.name);
+  return who.id === actor.id ? actor : { ...actor, ...who };
+}
+
 export function rowToEvent(r: EventRow): CanonicalEvent {
   return {
     schemaVersion: r.schema_version as CanonicalEvent["schemaVersion"],
@@ -62,7 +79,7 @@ export function rowToEvent(r: EventRow): CanonicalEvent {
     sourceEventId: r.source_event_id,
     connectionId: r.connection_id,
     action: r.action,
-    actor: r.actor,
+    actor: displayActor(r.source, r.actor),
     target: r.target,
     trigger: r.trigger,
     outcome: r.outcome,
