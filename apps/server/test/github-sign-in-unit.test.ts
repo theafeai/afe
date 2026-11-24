@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Secret } from "@afe/core/security";
-import { AddressRateLimit, safeNextPath } from "../src/auth/github-sign-in.ts";
+import { safeNextPath } from "../src/auth/github-sign-in.ts";
 import { githubOrgMembership, normalizeOrgLogin } from "../src/auth/github-membership.ts";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -25,17 +25,6 @@ describe("next parameter", () => {
     [42, "/"],
   ])("%j becomes %j", (input, expected) => {
     expect(safeNextPath(input)).toBe(expected);
-  });
-});
-
-describe("rate limit", () => {
-  it("limits per address within the window", () => {
-    let now = 0;
-    const limit = new AddressRateLimit(2, 1000, () => now);
-    expect([limit.allow("a"), limit.allow("a"), limit.allow("a")]).toEqual([true, true, false]);
-    expect(limit.allow("b")).toBe(true);
-    now = 1000;
-    expect(limit.allow("a")).toBe(true);
   });
 });
 

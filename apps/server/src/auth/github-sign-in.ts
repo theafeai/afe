@@ -17,7 +17,9 @@
  *   a random pre-login cookie set when the flow starts. The redirect URI is fixed,
  *   `next` is limited to same-origin relative paths, responses carry
  *   `referrer-policy: no-referrer`, and start and callback are rate limited per
- *   client address. `code`, `state` and tokens are never logged.
+ *   client address (`@fastify/rate-limit`, see rate-limit.ts). The administrator
+ *   settings routes are rate limited per principal. `code`, `state` and tokens
+ *   are never logged.
  * - Offboarding: sessions from this flow stay valid only while the user is
  *   enabled and still linked (`isActive`); membership is re-checked at every
  *   sign-in and on each access-cache refresh (permissions.ts).
@@ -52,6 +54,7 @@ import {
 } from "./github-membership.ts";
 import { parseCookies, serializeCookie, type SessionCodec } from "./session.ts";
 import { IdentityConflictError, saveAccount } from "./tool-accounts.ts";
+import { onRateLimited, perAddress, perPrincipal, rateLimitedJson } from "../rate-limit.ts";
 
 export const GITHUB_SIGN_IN_ROUTES = {
   available: "/api/login/github/available",
@@ -93,24 +96,6 @@ export function safeNextPath(value: unknown): string {
   }
 }
 
-/** Fixed-window limiter per client address, bounded in memory. */
-export class AddressRateLimit {
-  readonly #buckets = new Map<string, { count: number; until: number }>();
-  constructor(
-    readonly limit: number,
-    readonly windowMs: number,
-    readonly now: () => number = Date.now,
-  ) {}
-  allow(address: string): boolean {
-    const now = this.now();
-    for (const [k, v] of this.#buckets) if (v.until <= now) this.#buckets.delete(k);
-    if (this.#buckets.size >= 10_000 && !this.#buckets.has(address)) return false;
-    const b = this.#buckets.get(address) ?? { count: 0, until: now + this.windowMs };
-    this.#buckets.set(address, b);
-    return ++b.count <= this.limit;
-  }
-}
-
 function oauthConfig() {
   const clientId = process.env.AFE_USER_GITHUB_CLIENT_ID;
   const secret = readSecretEnv(process.env, "AFE_USER_GITHUB_CLIENT_SECRET");
@@ -142,8 +127,12 @@ export function registerGitHubSignIn(
   const { sessions } = options;
   const publicUrl = ctx.config.publicUrl;
   const tenantId = DEFAULT_TENANT_ID;
-  const startLimit = new AddressRateLimit(20, 15 * 60_000);
-  const callbackLimit = new AddressRateLimit(20, 15 * 60_000);
+  // Sign-in attempts: 20 per client address per 15 minutes for each of start and
+  // callback. Settings: generous for an administrator, bounded for a script.
+  const startLimit = perAddress(tenantId, 20, 15 * 60_000);
+  const callbackLimit = perAddress(tenantId, 20, 15 * 60_000);
+  const settingsReadLimit = perPrincipal(60, 60_000);
+  const settingsWriteLimit = perPrincipal(20, 60_000);
 
   const available = async () => {
     if (!options.localAuth || !publicUrl || !oauthConfig()) return false;
@@ -174,10 +163,15 @@ export function registerGitHubSignIn(
 
   app.post<{ Body: { next?: unknown } }>(
     GITHUB_SIGN_IN_ROUTES.start,
-    { config: { access: "public" }, bodyLimit: 4096 },
+    {
+      config: { access: "public", rateLimit: startLimit },
+      bodyLimit: 4096,
+      errorHandler: onRateLimited((_req, reply) =>
+        hardened(reply).code(429).send({ error: "rate_limited" }),
+      ),
+    },
     async (req, reply) => {
       hardened(reply);
-      if (!startLimit.allow(req.ip)) return reply.code(429).send({ error: "rate_limited" });
       const config = oauthConfig();
       if (!config || !(await available()))
         return reply.code(409).send({
@@ -204,16 +198,20 @@ export function registerGitHubSignIn(
     },
   );
 
+  const failRedirect = (req: FastifyRequest, reply: FastifyReply, code: FailCode) =>
+    hardened(reply)
+      .header("set-cookie", loginCookie(req, null))
+      .redirect(`/login?github_error=${code}`, 303);
+
   app.get<{ Querystring: { state?: unknown; code?: unknown } }>(
     GITHUB_SIGN_IN_ROUTES.callback,
-    { config: { access: "public" } },
+    {
+      config: { access: "public", rateLimit: callbackLimit },
+      errorHandler: onRateLimited((req, reply) => failRedirect(req, reply, "rate_limited")),
+    },
     async (req, reply) => {
       hardened(reply);
-      const fail = (code: FailCode) =>
-        reply
-          .header("set-cookie", loginCookie(req, null))
-          .redirect(`/login?github_error=${code}`, 303);
-      if (!callbackLimit.allow(req.ip)) return fail("rate_limited");
+      const fail = (code: FailCode) => failRedirect(req, reply, code);
       const config = oauthConfig();
       if (!config || !(await available())) return fail("unavailable");
       const { state, code } = req.query;
@@ -322,16 +320,20 @@ export function registerGitHubSignIn(
     },
   );
 
-  app.get(GITHUB_SIGN_IN_ROUTES.settings, { config: { access: "admin" } }, async (req, reply) => {
-    reply.header("cache-control", "no-store");
-    const tid = requestTenant(req);
-    return {
-      ...(await getGitHubSignInSettings(ctx.pool, tid)),
-      configured: Boolean(options.localAuth && publicUrl && oauthConfig()),
-      installedOrgs: [...(await activeInstallationOrgs(ctx.pool, tid))].sort(),
-      callbackUrl: publicUrl ? `${publicUrl}${GITHUB_SIGN_IN_ROUTES.callback}` : null,
-    };
-  });
+  app.get(
+    GITHUB_SIGN_IN_ROUTES.settings,
+    { config: { access: "admin", rateLimit: settingsReadLimit }, errorHandler: rateLimitedJson },
+    async (req, reply) => {
+      reply.header("cache-control", "no-store");
+      const tid = requestTenant(req);
+      return {
+        ...(await getGitHubSignInSettings(ctx.pool, tid)),
+        configured: Boolean(options.localAuth && publicUrl && oauthConfig()),
+        installedOrgs: [...(await activeInstallationOrgs(ctx.pool, tid))].sort(),
+        callbackUrl: publicUrl ? `${publicUrl}${GITHUB_SIGN_IN_ROUTES.callback}` : null,
+      };
+    },
+  );
 
   app.put<{
     Body: {
@@ -342,7 +344,11 @@ export function registerGitHubSignIn(
     };
   }>(
     GITHUB_SIGN_IN_ROUTES.settings,
-    { config: { access: "admin" }, bodyLimit: 16384 },
+    {
+      config: { access: "admin", rateLimit: settingsWriteLimit },
+      bodyLimit: 16384,
+      errorHandler: rateLimitedJson,
+    },
     async (req, reply) => {
       reply.header("cache-control", "no-store");
       const tid = requestTenant(req);

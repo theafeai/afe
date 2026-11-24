@@ -392,6 +392,51 @@ describe("Sign in with GitHub", () => {
     let last;
     for (let i = 0; i < 21; i++) last = await callback("x", `${LOGIN_COOKIE}=y`);
     expect(last!.headers.location).toBe("/login?github_error=rate_limited");
+    expect(last!.statusCode).toBe(303);
+    expect(last!.headers["referrer-policy"]).toBe("no-referrer");
+    expect(last!.headers["retry-after"]).toBeDefined();
+  });
+
+  it("rate limits the start per client address; another address is unaffected", async () => {
+    await enable();
+    for (let i = 0; i < 20; i++) await start();
+    const limited = await afe.app.inject({ method: "POST", url: "/api/login/github", payload: {} });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({ error: "rate_limited" });
+    expect(limited.headers["cache-control"]).toBe("no-store");
+    // X-Forwarded-For is not trusted: it cannot move a client into a fresh bucket.
+    const spoofed = await afe.app.inject({
+      method: "POST",
+      url: "/api/login/github",
+      headers: { "x-forwarded-for": "203.0.113.9" },
+      payload: {},
+    });
+    expect(spoofed.statusCode).toBe(429);
+    const other = await afe.app.inject({
+      method: "POST",
+      url: "/api/login/github",
+      remoteAddress: "198.51.100.7",
+      payload: {},
+    });
+    expect(other.statusCode, other.body).toBe(200);
+  });
+
+  it("rate limits the administrator settings routes per principal", async () => {
+    for (let i = 0; i < 20; i++)
+      expect(
+        (await settings({ enabled: false, autoProvision: false, allowedOrgs: [] })).statusCode,
+      ).toBe(200);
+    const put = await settings({ enabled: false, autoProvision: false, allowedOrgs: [] });
+    expect(put.statusCode).toBe(429);
+    expect(put.json().error).toBe("rate_limited");
+    for (let i = 0; i < 60; i++)
+      expect(
+        (await afe.app.inject({ url: "/api/admin/github-sign-in", headers: admin })).statusCode,
+      ).toBe(200);
+    const get = await afe.app.inject({ url: "/api/admin/github-sign-in", headers: admin });
+    expect(get.statusCode).toBe(429);
+    // Unauthenticated requests are rejected before the limiter and use no bucket.
+    expect((await afe.app.inject({ url: "/api/admin/github-sign-in" })).statusCode).toBe(401);
   });
 });
 
