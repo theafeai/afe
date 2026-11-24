@@ -4,6 +4,7 @@
 - Date: 2026-11-01
 - Amends: ADR 0011, personal-identity setup only
 - Permission inheritance amended by [ADR 0014](0014-github-source-permissions.md)
+- Identity binding on administrator rotation amended by [ADR 0020](0020-access-through-own-tool-login.md)
 
 > Permission edition boundary superseded by [ADR 0015](0015-open-source-inherited-permissions.md):
 > open source allows Source or None only. Legacy Custom and Source + custom are

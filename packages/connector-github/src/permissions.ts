@@ -23,7 +23,7 @@ export const REQUIRED_PERMISSIONS = {
  *   and commit containment (`GET /repos/{o}/{r}/compare/{base}...{head}`,
  *   AFE-22). Afe still never downloads file contents. Not requested by default.
  * - pull_requests: `pull_request` webhooks (opened, reopened, synchronize,
- *   closed, merged) for "My changes". Requested by the manifest since M1 (P2).
+ *   closed, merged) for "My changes". Requested by the default manifest.
  *   Afe never requests pull request files, diffs or patches, and never stores
  *   pull request bodies.
  * - packages: `registry_package` webhooks (artifact.published, AFE-21).
@@ -48,7 +48,7 @@ export const REQUESTED_OPTIONAL_PERMISSIONS = {
   packages: "read",
   /** Build provenance attestations of published images. */
   attestations: "read",
-  /** Pull request metadata (`pull_request` webhook) for "My changes" (M1, P2). */
+  /** Pull request metadata (`pull_request` webhook) for "My changes". */
   pull_requests: "read",
 } as const satisfies PermissionMap;
 

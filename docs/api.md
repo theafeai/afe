@@ -49,7 +49,7 @@ navigation is redirected to `/login?next=...` instead), `403
 resources answer `404`.
 
 Tool actions (`/api/actions/{vercel,terraform,github,argocd}/*`) run with the
-person's own linked tool account (D-0022). When none is linked yet they answer
+person's own linked tool account ([ADR 0020](decisions/0020-access-through-own-tool-login.md)). When none is linked yet they answer
 `403 {"error":"forbidden","reason":"tool_not_linked","tool":"vercel","message":...}`;
 a shared credential (the administrator password or viewer token), which cannot
 hold a personal account, gets `"reason":"named_user_required"`. The UI shows
@@ -736,7 +736,8 @@ apply at the next evaluation (the next read).
 ## Setup: inferred environments and overrides
 
 Model and rules: [environment-mapping.md](environment-mapping.md#inferred-setup)
-(D-0012: Afe infers, the admin adjusts; inference never overwrites the admin).
+([ADR 0019](decisions/0019-inferred-environments-and-process.md): Afe infers, the
+admin adjusts; inference never overwrites the admin).
 
 ### `GET /api/setup` (viewer)
 

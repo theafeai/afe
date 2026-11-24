@@ -1,4 +1,4 @@
--- Immutable upstream identity of an Afe user (M1, D-0024/D-0025).
+-- Immutable upstream identity of an Afe user (ADR 0020).
 -- `subject` is the provider's numeric account id (GitHub user id). Logins can be
 -- renamed and then taken by someone else, so identities are matched by subject only;
 -- `login` is display data. One upstream account maps to at most one user per tenant,

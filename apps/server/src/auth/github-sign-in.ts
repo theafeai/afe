@@ -1,5 +1,5 @@
 /**
- * Sign in with GitHub (M1, P7; security review P7 conditions 1-6).
+ * Sign in with GitHub (ADR 0020).
  *
  * Uses the existing personal-linking OAuth app (AFE_USER_GITHUB_CLIENT_ID/SECRET).
  *
@@ -67,7 +67,7 @@ const STATE_TTL_SECONDS = 600;
  * `repo` and `read:user` as for personal linking (the account is linked in Source
  * mode in the same step); `read:org` so the membership endpoint can prove active
  * membership. Replacing the stored `repo` token with a write-capable GitHub App
- * (security review S2) is required before a public or hosted launch.
+ * is required before a public or hosted launch (ADR 0020, launch blocker).
  */
 export const GITHUB_SIGN_IN_SCOPE = "repo read:user read:org";
 

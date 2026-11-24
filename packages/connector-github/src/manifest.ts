@@ -26,7 +26,7 @@ export const SUBSCRIBED_EVENTS = [
  * REQUESTED_OPTIONAL_PERMISSIONS (`packages`, `pull_requests`). An installation
  * that declines the permission simply does not receive them.
  *
- * `pull_request` only (M1, P2): `pull_request_review` and comment events come
+ * `pull_request` only: `pull_request_review` and comment events come
  * later, behind their own reviewed change.
  *
  * `registry_package` rather than the newer `package` event: its payload

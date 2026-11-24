@@ -1,5 +1,5 @@
 /**
- * QA M1: the setup view for locally managed users. Pure: builds the merged setup
+ * The setup view for locally managed users. Pure: builds the merged setup
  * in memory, so it runs without Postgres (the route is covered in scoped-views.test.ts).
  */
 import { describe, expect, it } from "vitest";

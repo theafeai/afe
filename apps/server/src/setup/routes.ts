@@ -1,5 +1,5 @@
 /**
- * Setup API (D-0012, D-0024): the merged setup with provenance per field,
+ * Setup API (ADR 0019): the merged setup with provenance per field,
  * admin overrides, and "Afe noticed". Reference: docs/api.md "Setup".
  *
  * - `GET /api/setup` (viewer): environments in effective order, each field
@@ -48,7 +48,7 @@ function view(loaded: LoadedMapping) {
 }
 
 /**
- * What a locally managed user sees (QA M1). Environment facts are computed from
+ * What a locally managed user sees. Environment facts are computed from
  * every repository in the tenant, so a managed user gets only:
  * - environments their own events are placed in (the `GET /api/mapping`
  *   reduction), included ones only;

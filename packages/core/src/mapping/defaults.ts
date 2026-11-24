@@ -1,6 +1,6 @@
 /**
  * Built-in rules (AFE-19): environment rules for the names tools commonly
- * use. No environment is seeded any more (D-0009, D-0024): environments come
+ * use. No environment is seeded any more (ADR 0019): environments come
  * from the inferred setup (`@afe/core/setup`) plus the admin's own. The
  * built-in rules target the ids `production`, `staging`, `preview` and
  * `development`, so they only apply where such an environment exists; they

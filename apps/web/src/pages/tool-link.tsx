@@ -6,7 +6,7 @@ import { Link } from "../router.tsx";
 
 /**
  * The first-run state of a tool page (AFE-118). Afe acts in each tool with the
- * person's own login (D-0022), so "not linked yet" is expected: it is shown as a
+ * person's own login (ADR 0020), so "not linked yet" is expected: it is shown as a
  * calm empty state with the way to Profile, not as an error. Every other error,
  * including real permission denials, still renders `ErrorBox`.
  */

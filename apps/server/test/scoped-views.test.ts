@@ -344,7 +344,7 @@ it("identical resource grants in another tenant never expose default-tenant deri
   expect((await get(`/api/events/${own.id}/links`, outsider.token)).statusCode).toBe(404);
   expect((await get("/api/drift/summary", outsider.token)).json().open).toBe(0);
 });
-it("setup for managed users lists only environments their events reach, without counts or authors (QA M1)", async () => {
+it("setup for managed users lists only environments their events reach, without counts or authors", async () => {
   // An environment only shop-api (Argo CD) events reach.
   expect(
     (await post("/api/mapping/environments", { id: "shop-only", name: "Shop Only", kind: "other" }))

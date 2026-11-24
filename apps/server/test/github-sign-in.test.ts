@@ -1,5 +1,5 @@
 /**
- * M1, P7: Sign in with GitHub end to end against a fake GitHub (no real API
+ * Sign in with GitHub end to end against a fake GitHub (no real API
  * calls). Needs Postgres at TEST_DATABASE_URL.
  */
 import { randomBytes } from "node:crypto";

@@ -1,6 +1,6 @@
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-/** Tools whose actions run with each person's own linked account (D-0022). */
+/** Tools whose actions run with each person's own linked account (ADR 0020). */
 export type LinkedTool = "github" | "vercel" | "terraform" | "argocd";
 
 /**

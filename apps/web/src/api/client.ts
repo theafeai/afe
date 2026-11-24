@@ -88,7 +88,7 @@ export function toApiError(status: number, body: unknown): ApiError {
 
 /**
  * Why a tool page cannot act yet when that is expected, not a denial (AFE-118,
- * D-0022): the person has not linked their own account for the tool, or is signed
+ * ADR 0020): the person has not linked their own account for the tool, or is signed
  * in with a shared credential that cannot hold one. Real permission errors return
  * `null` and stay errors.
  */

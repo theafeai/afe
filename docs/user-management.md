@@ -223,7 +223,7 @@ default**. An administrator turns it on with `PUT /api/admin/github-sign-in`
 - Known limit: like Profile linking, Afe stores a `repo`-scope user token
   (encrypted). Replacing it with a write-capable GitHub App with expiring,
   fine-grained user tokens is required before a public or hosted launch
-  (security review S2).
+  ([ADR 0020](decisions/0020-access-through-own-tool-login.md), launch blocker).
 
 ### Administrator GitHub linking
 

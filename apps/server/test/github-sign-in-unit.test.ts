@@ -1,5 +1,5 @@
 /**
- * M1, P7: pieces of Sign in with GitHub that need no database (the full flow is
+ * Pieces of Sign in with GitHub that need no database (the full flow is
  * in github-sign-in.test.ts). No real GitHub API is called.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";

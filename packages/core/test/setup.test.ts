@@ -116,7 +116,7 @@ const factOf = (facts: InferredFact[], env: string, field: string) =>
 const records = (facts: InferredFact[], when = at(500)): InferredFactRecord[] =>
   facts.map((f) => ({ ...f, firstInferredAt: when, computedAt: when }));
 
-describe("inferSetup (D-0012 rules)", () => {
+describe("inferSetup (ADR 0019 rules)", () => {
   const facts = inferSetup(acme(), { mapping: emptyMapping(), adminEnvironmentIds: [] });
 
   it("names environments after what the tools report, PR previews as one family", () => {

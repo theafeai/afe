@@ -102,7 +102,7 @@ export async function getMappingRevision(db: Db, tenantId: string): Promise<numb
 
 /**
  * The tenant's own mapping configuration: its services, the environments the
- * admin created (no defaults are seeded: D-0009), its rules and built-in
+ * admin created (no defaults are seeded: ADR 0019), its rules and built-in
  * rule switches. The inferred setup is merged on top by the caller
  * (`mergeSetup` in `@afe/core/setup`).
  */
@@ -161,7 +161,7 @@ export interface MappingChangeResult<T> {
  * Applies one mapping change atomically. `apply` receives the transaction
  * client and the revision the change will have; it returns the result and the
  * audit event. Throwing rolls everything back. No environments are seeded
- * (D-0009): a tenant's first change only creates its settings row.
+ * (ADR 0019): a tenant's first change only creates its settings row.
  */
 export async function changeMapping<T>(
   pool: pg.Pool,

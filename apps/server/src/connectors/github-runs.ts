@@ -47,7 +47,7 @@ export function registerGitHubRunRoutes(app: FastifyInstance, rt: GitHubRuntime)
   let activeDownloads = 0;
   let activeProgress = 0;
 
-  /** `live`: log reads re-check upstream access now, never from the read cache (P4). */
+  /** `live`: log reads re-check upstream access now, never from the read cache (ADR 0020). */
   async function authorize(req: FastifyRequest, id: string, live = false) {
     const tenant = requestTenant(req);
     if (!UUID.test(id)) throw new RunError(404, "not_found", "Event not found.");

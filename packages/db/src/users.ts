@@ -164,7 +164,7 @@ export async function setLocalUserDisabled(
      WHERE tenant_id=$1 AND id=$2 RETURNING id`,
     [tenantId, id, disabled],
   );
-  // Cached source access never outlives a disable (P4): the next read re-checks upstream.
+  // Cached source access never outlives a disable (ADR 0020): the next read re-checks upstream.
   await pool.query("DELETE FROM user_source_access WHERE tenant_id=$1 AND user_id=$2", [
     tenantId,
     id,

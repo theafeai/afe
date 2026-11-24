@@ -1,6 +1,5 @@
 /**
- * GitHub organization membership for Sign in with GitHub (M1, P7; security review
- * P7 conditions 2 and 3).
+ * GitHub organization membership for Sign in with GitHub (ADR 0020).
  *
  * - Membership is proven with `GET /user/memberships/orgs/{org}` using the user's
  *   own token: only `state: "active"` with role `admin` or `member` qualifies.

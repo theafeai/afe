@@ -40,7 +40,7 @@ export function githubStartError(err: unknown): string {
   return GITHUB_ERRORS.failed!;
 }
 
-/** "Sign in with GitHub", shown only when the server has it enabled (M1). */
+/** "Sign in with GitHub", shown only when the server has it enabled. */
 function GitHubSignIn({
   next,
   onError,

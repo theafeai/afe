@@ -1,4 +1,4 @@
--- Inferred setup and admin overrides (D-0012, D-0024; design section 8).
+-- Inferred setup and admin overrides (ADR 0019).
 -- docs/environment-mapping.md "Inferred setup".
 --
 -- Two stores, never mixed: `inferred_setup` is written only by the inference
@@ -66,7 +66,7 @@ CREATE TRIGGER setup_overrides_writer
   BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON setup_overrides
   FOR EACH STATEMENT EXECUTE FUNCTION setup_store_writer_guard('admin');
 
--- No more seeded default environments (D-0009, P-0007). Tenants whose mapping
+-- No more seeded default environments (ADR 0019). Tenants whose mapping
 -- already exists keep their rows (they become admin environments) and keep
 -- the built-in name rules switched on, so nothing they see changes. Tenants
 -- set up from now on start with the built-in rules off: their environments

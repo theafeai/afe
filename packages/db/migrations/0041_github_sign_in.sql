@@ -1,4 +1,4 @@
--- Sign in with GitHub (M1, P7). Off by default; auto-provisioning is a separate
+-- Sign in with GitHub (ADR 0020). Off by default; auto-provisioning is a separate
 -- opt-in and needs at least one allowed organization. Auto-provisioned users are
 -- managed (viewer) users: `default_role` can never be admin.
 CREATE TABLE github_sign_in (

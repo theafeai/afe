@@ -131,7 +131,7 @@ describe("mapping API (AFE-19)", () => {
     await pool.end();
   });
 
-  it("starts with no environments (none seeded, D-0009), built-in rules off, no audit events", async () => {
+  it("starts with no environments (none seeded, ADR 0019), built-in rules off, no audit events", async () => {
     const res = await call("GET", "/api/mapping", V);
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -528,7 +528,7 @@ describe("mapping audit outbox", () => {
   });
 });
 
-describe("setup API: inferred setup and admin overrides (D-0012)", () => {
+describe("setup API: inferred setup and admin overrides (ADR 0019)", () => {
   let pool: pg.Pool;
   let afe: AfeApp;
   const jobs = new InlineJobQueue();

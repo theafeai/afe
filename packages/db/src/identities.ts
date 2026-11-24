@@ -1,6 +1,6 @@
 /**
  * User identities at upstream providers, the per-user source access cache and
- * Sign in with GitHub settings (M1: migrations 0039-0041). Every function takes
+ * Sign in with GitHub settings (ADR 0020; migrations 0039-0041). Every function takes
  * the tenant id and puts it in every statement (docs/security/rules.md R5).
  */
 import type pg from "pg";
@@ -164,7 +164,7 @@ export async function deleteExternalIdentity(
   );
 }
 
-// --- Per-user source access cache (P4) -------------------------------------
+// --- Per-user source access cache (ADR 0020) --------------------------------
 
 export interface CachedSourceAccess {
   rules: EventAccessRule[];
@@ -252,7 +252,7 @@ export async function purgeUserSourceAccessBefore(
   return r.rowCount ?? 0;
 }
 
-// --- Sign in with GitHub (P7) ----------------------------------------------
+// --- Sign in with GitHub (ADR 0020) -------------------------------------------
 
 export interface GitHubSignInSettings {
   enabled: boolean;

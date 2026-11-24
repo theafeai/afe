@@ -341,7 +341,7 @@ export function howText(p: { how: string; actor: string | null }): string {
 }
 
 /**
- * An environment's name as a chip (ADR 0017 rule 9, D-0010, AFE-117). Every
+ * An environment's name as a chip (ADR 0017 rule 9, ADR 0019, AFE-117). Every
  * environment has the same outline look; a production-like one gets the solid
  * ink chip with a shield. No built-in kind word (staging, development…) is
  * ever shown beside the org's own name.

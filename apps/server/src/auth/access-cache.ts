@@ -1,5 +1,5 @@
 /**
- * Per-user source access cache (M1, P4; security review P4 conditions 1-9).
+ * Per-user source access cache (ADR 0020).
  *
  * Each managed user's GitHub repository access, as their own linked account
  * reported it, is stored in `user_source_access` for at most five minutes and

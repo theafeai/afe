@@ -19,7 +19,7 @@ matrix (research doc [0001](research/0001-cross-tool-flow.md), gap
 
 - `Service {id, name, description?}`: id is a slug (`^[a-z0-9][a-z0-9_-]{0,63}$`).
 - `Environment {id, name, order, kind, productionLike}`: `order` is the matrix
-  column position; `productionLike` (D-0010) gives the heavy chip;
+  column position; `productionLike` (ADR 0019) gives the heavy chip;
   `kind` (`production | staging | preview | development | other`) is legacy,
   kept for compatibility. For an inferred environment it is never derived from
   the name (AFE-117): `production` when production-like, `preview` for a
@@ -102,7 +102,7 @@ the supported syntax and that classic ReDoS patterns run in linear time.
 
 ## Built-in rules
 
-No environment is seeded (D-0009, D-0024): a tenant's environments come from
+No environment is seeded ([ADR 0019](decisions/0019-inferred-environments-and-process.md)): a tenant's environments come from
 the [inferred setup](#inferred-setup) plus the ones its admin creates. The
 built-in environment rules (`BUILTIN_RULES`, ids `builtin:*`) remain, and are
 evaluated after the tenant's rules, but they target the ids `production`,
@@ -150,8 +150,9 @@ Nothing stored is changed or deleted:
 
 Code: `@afe/core/setup` (signals, rules, merge), `@afe/db` `setup.ts`
 (migration `0042_inferred_setup.sql`), `apps/server/src/setup/` (job and
-API). Decisions: D-0012 (Afe infers, the admin adjusts; inference never
-overwrites the admin), D-0013 (rules first, no LLM), D-0009, D-0024.
+API). Decision: [ADR 0019](decisions/0019-inferred-environments-and-process.md)
+(Afe infers, the admin adjusts; inference never overwrites the admin; rules
+first, no LLM).
 
 ### Two stores
 
@@ -292,7 +293,7 @@ deployments classify now. The Deployments page shows the resolved
 service · environment under "Where". The page lists the effective
 environments (inferred ones included); its hint "Built-in defaults; your first
 change makes them your own" is out of date until the web UI is updated (the
-Adjust screen for the setup API comes after M0).
+Adjust screen for the setup API comes later).
 
 ## Integration and follow-ups
 

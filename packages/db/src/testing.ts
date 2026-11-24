@@ -49,7 +49,7 @@ export async function seedLegacyToolPolicy(
  * the four environments that used to be seeded (`production`, `staging`,
  * `preview`, `development`) as admin rows, with the built-in name rules on.
  * For tests that are about something other than the setup. Never used by
- * production: new tenants get no default environments (D-0009).
+ * production: new tenants get no default environments (ADR 0019).
  */
 export async function seedPreInferenceMapping(pool: pg.Pool, tenantId: string): Promise<void> {
   await pool.query(

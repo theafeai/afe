@@ -344,7 +344,7 @@ it("OAuth state is session-bound and single use; upstream revocation removes acc
   expect(profile.body).not.toContain("upstream-secret");
   expect(profile.json().tools[0].accountName).toBe("alice");
   revoked = true;
-  // Read views may serve the cached access for at most the 5-minute TTL (P4)...
+  // Read views may serve the cached access for at most the 5-minute TTL (ADR 0020)...
   expect((await read("/api/events")).json().items).toHaveLength(1);
   // ...after which the failed refresh denies.
   now += ACCESS_CACHE_TTL_MS;

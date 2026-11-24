@@ -1,6 +1,5 @@
 /**
- * M1, P2: `pull_requests: read` in the default App manifest (security review P2
- * conditions 1-5).
+ * `pull_requests: read` in the default App manifest.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -28,7 +27,7 @@ import { NOW, REPO, orgActivity, pullRequestRepoEvent } from "./reconcile-scenar
 const FORBIDDEN_PATH = /\/pulls\/\d+\/files|\/pulls\/\d+\.(diff|patch)$|\.(diff|patch)$/;
 const FORBIDDEN_ACCEPT = /vnd\.github(\.v3)?\.(diff|patch)/;
 
-describe("default manifest (P2)", () => {
+describe("default manifest", () => {
   it("requests pull_requests: read, keeps contents optional and stays read-only", () => {
     const m = buildAppManifest({ publicUrl: "https://afe.example.com" });
     expect(m.default_permissions).toMatchObject({ pull_requests: "read" });
@@ -71,7 +70,7 @@ describe("default manifest (P2)", () => {
   });
 });
 
-describe("pull_request events (P2)", () => {
+describe("pull_request events", () => {
   it("are mapped with the body stripped from the raw payload and from data", () => {
     const f = loadWebhook("pull_request.opened");
     const rawBody = JSON.stringify(f.payload);
@@ -96,7 +95,7 @@ describe("pull_request events (P2)", () => {
   });
 });
 
-describe("Afe never requests pull request files, diffs or patches (P2, R1.4 style)", () => {
+describe("Afe never requests pull request files, diffs or patches (R1.4 style)", () => {
   it("reconciliation with pull_requests granted issues no such request", async () => {
     const api = new FakeGitHubApi();
     const { privatePem } = testKeyPair();

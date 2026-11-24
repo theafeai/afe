@@ -464,7 +464,7 @@ function ServicesCard({ state, act }: { state: MappingState; act: Act }) {
 function EnvironmentsCard({ state, act }: { state: MappingState; act: Act }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  // The org's own environments (D-0009, D-0010): no built-in kinds to pick,
+  // The org's own environments (ADR 0019): no built-in kinds to pick,
   // only whether one is production-like. `kind` stays in the API for compatibility.
   const [productionLike, setProductionLike] = useState(false);
   const envs = state.environments;

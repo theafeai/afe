@@ -1,5 +1,5 @@
 /**
- * Inference rules for the setup (D-0012, D-0013; design section 8).
+ * Inference rules for the setup (ADR 0019).
  * Deterministic: the same events always give the same facts, no LLM, no
  * data leaves the deployment. Every fact has a confidence and evidence.
  *
@@ -429,7 +429,7 @@ function inferProductionLike(
       "productionLike",
       kind === "production",
       "probable",
-      // Never name a built-in kind beside the org's own name (AFE-117, D-0010).
+      // Never name a built-in kind beside the org's own name (AFE-117, ADR 0019).
       kind === "production"
         ? `The name ${name} reads as production`
         : `The name ${name} does not read as production`,

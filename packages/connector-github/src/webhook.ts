@@ -88,7 +88,7 @@ export interface GitHubConnectionConfig {
     extra: string[];
     /** Optional features that are off (AFE-21); absent on configs stored earlier. */
     optionalMissing?: string[];
-    /** Upgrade notices for optional permissions the default manifest requests (M1). */
+    /** Upgrade notices for optional permissions the default manifest requests. */
     optionalNotices?: { permission: string; message: string }[];
   };
   suspendedAt: string | null;

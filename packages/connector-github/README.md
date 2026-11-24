@@ -5,7 +5,7 @@ in-memory installation token cache, a small typed REST client, permission
 checks, the App manifest and the signed redirect state.
 
 Requested permissions (all `read`): `metadata`, `actions`, `deployments`,
-`environments`, plus the optional `packages`, `attestations` and (since M1)
+`environments`, plus the optional `packages`, `attestations` and
 `pull_requests`. `pull_requests: read` is justified by "My changes": Afe receives
 `pull_request` webhooks (the only PR event it subscribes to) and reads PR metadata
 from the repository events feed. It never requests pull request files, diffs or

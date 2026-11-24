@@ -1,4 +1,4 @@
--- Per-user source access cache (M1, P4). Holds the repository list a user's own
+-- Per-user source access cache (ADR 0020). Holds the repository list a user's own
 -- linked GitHub account could read when it was last checked. Served for read views
 -- only, and only while younger than the 5-minute TTL (enforced by the server).
 -- Bound to the linked credential: a relinked account never reuses an old row.

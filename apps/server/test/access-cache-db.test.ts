@@ -1,5 +1,5 @@
 /**
- * M1: identity, access cache and sign-in data functions against Postgres
+ * Identity, access cache and sign-in data functions against Postgres
  * (wrong-tenant cases, R5.10), and cache invalidation and revocation through the
  * API. Needs Postgres at TEST_DATABASE_URL. No real GitHub API is called.
  */
@@ -213,7 +213,7 @@ describe("data functions are tenant scoped (R5.10)", () => {
   });
 });
 
-describe("access cache through the API (P4)", () => {
+describe("access cache through the API", () => {
   it("revocation: visible within the TTL for reads, denied after it; failed refresh deletes the row", async () => {
     await link();
     expect(await visible()).toEqual(["acme/allowed"]);

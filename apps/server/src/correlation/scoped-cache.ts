@@ -1,6 +1,5 @@
 /**
- * Cache of access-scoped correlation snapshots (M1, P4; security review P4
- * conditions 5-7).
+ * Cache of access-scoped correlation snapshots (ADR 0020).
  *
  * A scoped snapshot is built only from the events one access rule set can see
  * (filter before linking, as before), so users with the same rules can share it.

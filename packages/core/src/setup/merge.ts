@@ -48,7 +48,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stri
 /**
  * The legacy `kind` of an inferred environment, kept in the API for
  * compatibility only (AFE-117). It is never derived from the name: an org's
- * `uat` is not Afe's "staging" (D-0009, D-0010). Production-like environments
+ * `uat` is not Afe's "staging" (ADR 0019). Production-like environments
  * are `production`, a short-lived family is `preview` (it is one by
  * construction), every other environment is `other`. The UI shows no kind;
  * it shows the production-like flag.
@@ -142,7 +142,7 @@ export function mergeSetup(inputs: SetupInputs): MergedSetup {
     const order =
       fromOverride<number>("order") ??
       (admin ? fromMapping("order", admin.order) : fromInferred<number>("order", UNORDERED));
-    // An admin row's kind is the admin's statement about production (D-0012):
+    // An admin row's kind is the admin's statement about production (ADR 0019):
     // `production` means production-like; another kind means not.
     const productionLike =
       fromOverride<boolean>("productionLike") ??

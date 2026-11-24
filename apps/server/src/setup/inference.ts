@@ -1,5 +1,5 @@
 /**
- * The inference job (D-0012, D-0013): reads a tenant's retained deployment
+ * The inference job (ADR 0019): reads a tenant's retained deployment
  * and approval events, runs the deterministic rules of `@afe/core/setup`
  * and replaces the tenant's inferred facts.
  *

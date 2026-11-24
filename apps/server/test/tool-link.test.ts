@@ -13,7 +13,7 @@ import { terraformActionsModule } from "../src/actions/terraform.ts";
 import { vercelActionsModule } from "../src/actions/vercel.ts";
 import { namedUserRequired, serveToolLinkErrors, toolNotLinked } from "../src/actions/tool-link.ts";
 
-// AFE-118: "link your account first" is an expected state (D-0022), so its 403 says why.
+// AFE-118: "link your account first" is an expected state (ADR 0020), so its 403 says why.
 describe("serveToolLinkErrors", () => {
   async function app() {
     const a = Fastify({ logger: false });

@@ -1,6 +1,6 @@
 /**
  * Environment and service mapping (AFE-19) as a server module: the mapping
- * API, the setup API (inferred setup and admin overrides, D-0012),
+ * API, the setup API (inferred setup and admin overrides, ADR 0019),
  * `ctx.mapping` (read-time placement used by `GET /api/deployments`), the
  * job that appends pending mapping audit events, and the setup inference job.
  * Reference: docs/environment-mapping.md, docs/api.md.

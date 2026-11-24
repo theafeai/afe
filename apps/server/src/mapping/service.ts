@@ -1,7 +1,7 @@
 /**
  * Mapping service (AFE-19): loads and compiles a tenant's mapping
  * configuration merged with its setup (inferred environments plus admin
- * overrides, D-0012; cached per mapping revision and setup version),
+ * overrides, ADR 0019; cached per mapping revision and setup version),
  * resolves events at read time, and appends the audit events of mapping
  * changes from the outbox.
  */

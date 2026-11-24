@@ -1,6 +1,5 @@
 /**
- * Access checks for long-lived read streams (M1, P4; security review P4
- * condition 8). A stream (SSE, or a long poll with `?since=seq`) holds one
+ * Access checks for long-lived read streams (ADR 0020). A stream (SSE, or a long poll with `?since=seq`) holds one
  * request open, so the per-request check is not enough. Call `check()` before
  * each push: it closes the stream (returns null) when the session expired or the
  * user was disabled, deleted or had their credential reset, and re-reads the

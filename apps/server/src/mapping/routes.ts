@@ -447,7 +447,7 @@ export function registerMappingRoutes(
   /**
    * Makes an inferred environment an admin environment (a row), with its
    * effective name, order and kind: an admin edit or rule targets it, and
-   * an admin creating an environment is an override (D-0012).
+   * an admin creating an environment is an override (ADR 0019).
    */
   async function materialise(
     tx: pg.PoolClient,
@@ -523,7 +523,7 @@ export function registerMappingRoutes(
         const subject = environmentSubject(req.params.id);
         const before = await getMappingEnvironment(tx, tenantId, req.params.id);
         if (!before) {
-          // Inferred only: the admin says it is not an environment (D-0012).
+          // Inferred only: the admin says it is not an environment (ADR 0019).
           const inferred = await inferredOnly(tenantId, req.params.id);
           if (!inferred) throw notFound();
           await setSetupOverride(tx, tenantId, { subject, field: "included", value: false }, actor);

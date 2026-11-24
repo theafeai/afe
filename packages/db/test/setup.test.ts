@@ -153,7 +153,7 @@ describe("setup overrides store", () => {
   });
 });
 
-describe("no seeded environments (D-0009)", () => {
+describe("no seeded environments (ADR 0019)", () => {
   it("a tenant's first mapping change seeds nothing and leaves built-in rules off", async () => {
     await pool.query("INSERT INTO tenants (id, name) VALUES ('fresh', 'Fresh')");
     await changeMapping(pool, "fresh", async () => ({

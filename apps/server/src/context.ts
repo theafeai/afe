@@ -53,7 +53,7 @@ export interface ServerContext {
    */
   mapping?: Pick<MappingService, "placements">;
   /**
-   * Per-user source access cache for read views (M1, P4), set by buildAfe.
+   * Per-user source access cache for read views (ADR 0020), set by buildAfe.
    * Actions never use it (see auth/access-cache.ts).
    */
   access?: AccessCache;

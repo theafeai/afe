@@ -1,5 +1,5 @@
 /**
- * Inferred setup and admin overrides (D-0012, D-0024). Import from
+ * Inferred setup and admin overrides (ADR 0019). Import from
  * "@afe/core/setup". Reference: docs/environment-mapping.md "Inferred setup".
  *
  *   const facts = inferSetup(events, { mapping, adminEnvironmentIds }); // the job

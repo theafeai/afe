@@ -1,5 +1,5 @@
 /**
- * Inferred setup and admin overrides (D-0012, D-0024; design section 8).
+ * Inferred setup and admin overrides (ADR 0019).
  * Pure types, safe to import from browser code through `@afe/core/types`.
  * Reference: docs/environment-mapping.md "Inferred setup".
  *

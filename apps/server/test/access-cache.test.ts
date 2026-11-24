@@ -1,5 +1,5 @@
 /**
- * M1, P4: per-user access cache and access-scoped snapshot keying. These tests
+ * Per-user access cache (ADR 0020) and access-scoped snapshot keying. These tests
  * use an in-memory stand-in for the two SQL statements of the cache, so they run
  * without Postgres; the database behaviour is covered in access-cache-db.test.ts.
  */
@@ -220,7 +220,7 @@ describe("AccessCache", () => {
   });
 });
 
-describe("requestEventAccess (P4 fail closed)", () => {
+describe("requestEventAccess (fail closed)", () => {
   const account = {
     tool: "github",
     account_name: "alice",
@@ -353,7 +353,7 @@ describe("ScopedSnapshotCache keying and limits", () => {
   });
 });
 
-describe("streamAccessGuard (P4 condition 8)", () => {
+describe("streamAccessGuard", () => {
   async function guardFor(opts: { disabled?: boolean; expiresAt?: number; now: () => number }) {
     const { streamAccessGuard } = await import("../src/auth/access-stream.ts");
     const pool = {
