@@ -1751,6 +1751,27 @@ legend {
 .lg:hover {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--t) 12%, transparent);
 }
+/* A tool on screen that Afe cannot observe now (suspended, revoked, pending,
+   disconnected; AFE-119): secondary, dashed, its mark and swatch muted, with the
+   reason as a word. It never counts as connected. */
+.lg-off {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 450;
+}
+.lg-off > .tm {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+.lg-off .lg-sw {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t) 60%, var(--border));
+}
+.lg-state {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
 .legend-sep {
   width: 1px;
   align-self: stretch;
@@ -2330,7 +2351,8 @@ a.alert-badge:hover {
     box-shadow var(--dur) var(--ease);
 }
 .empty .connect-card,
-.empty .connect-card:hover {
+.empty .connect-card:hover,
+.empty a.btn {
   text-decoration: none;
 }
 .check > .tool-mark {

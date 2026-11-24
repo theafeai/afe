@@ -8,7 +8,7 @@ import {
   type VercelProjectResource,
   type VercelWorkspace,
 } from "@afe/core/vercel-operations";
-import { request } from "../api/client.ts";
+import { request, toolLinkState } from "../api/client.ts";
 import {
   Empty,
   ErrorBox,
@@ -21,6 +21,7 @@ import {
 import { OperationDialog } from "../OperationDialog.tsx";
 import { Link, useSearchParams } from "../router.tsx";
 import { useToast } from "../toast.tsx";
+import { ToolPageError } from "./tool-link.tsx";
 
 export function VercelOperationsPage() {
   useDocumentTitle("Vercel deployments");
@@ -53,10 +54,16 @@ export function VercelOperationsPage() {
       {resources.loading && <Loading label="Loading Vercel projects…" />}
       {resources.error && (
         <>
-          <ErrorBox error={resources.error} onRetry={resources.reload} />
-          <p>
-            <Link to="/profile">Link your Vercel account in Profile</Link>
-          </p>
+          <ToolPageError
+            error={resources.error}
+            onRetry={resources.reload}
+            shows="the Vercel projects you can operate"
+          />
+          {!toolLinkState(resources.error) && (
+            <p>
+              <Link to="/profile">Link your Vercel account in Profile</Link>
+            </p>
+          )}
         </>
       )}
       {resources.data && !resources.data.items.length && (

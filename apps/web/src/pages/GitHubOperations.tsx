@@ -27,6 +27,7 @@ import { formatBytes, humanize } from "../format.ts";
 import { Link, useLocation } from "../router.tsx";
 import { TimeAgo } from "./environments-ui.tsx";
 import { ProgressState } from "./GitHubRunPanel.tsx";
+import { ToolPageError } from "./tool-link.tsx";
 import "./GitHubOperations.css";
 type Item = {
   id: number;
@@ -509,7 +510,13 @@ export function GitHubOperationsPage() {
         </div>
       </header>
       {resources.loading && <Loading label="Loading GitHub repositories…" />}
-      {resources.error && <ErrorBox error={resources.error} onRetry={resources.reload} />}
+      {resources.error && (
+        <ToolPageError
+          error={resources.error}
+          onRetry={resources.reload}
+          shows="your repositories and workflow runs"
+        />
+      )}
       {!resources.loading && resources.data && (
         <section className="card gh-picker" aria-label="Repositories">
           {choices.length ? (

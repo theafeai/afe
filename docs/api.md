@@ -48,6 +48,14 @@ navigation is redirected to `/login?next=...` instead), `403
 {"error":"csrf_failed"}` for a missing/wrong CSRF token. Another tenant's
 resources answer `404`.
 
+Tool actions (`/api/actions/{vercel,terraform,github,argocd}/*`) run with the
+person's own linked tool account (D-0022). When none is linked yet they answer
+`403 {"error":"forbidden","reason":"tool_not_linked","tool":"vercel","message":...}`;
+a shared credential (the administrator password or viewer token), which cannot
+hold a personal account, gets `"reason":"named_user_required"`. The UI shows
+both as a "link your account" state. Every other `403` (Source access disabled,
+source RBAC, token scopes) has no `reason` and is a real permission error.
+
 ## Endpoints
 
 | Method and path                                       | Purpose                                                                                      |

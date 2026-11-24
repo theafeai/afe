@@ -30,6 +30,7 @@ import {
 import type { ConnectorModule, ServerContext } from "../context.ts";
 import { requestTenant } from "../auth/index.ts";
 import { saveAccount } from "../auth/tool-accounts.ts";
+import { namedUserRequired, serveToolLinkErrors } from "./tool-link.ts";
 import { terraformFail as fail, terraformPolicy, terraformScope } from "./terraform-identity.ts";
 
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -75,9 +76,13 @@ const number = (x: unknown) =>
 export const terraformActionsModule: ConnectorModule = {
   source: "terraform-actions",
   routes(app, ctx) {
+    serveToolLinkErrors(app, "/api/actions/terraform");
     const uid = (req: FastifyRequest) => {
       if (!req.principal?.localUserId)
-        throw fail(403, "A named Afe user with a linked personal Terraform account is required.");
+        throw namedUserRequired(
+          "terraform",
+          "Sign in as a named Afe user, then link your personal Terraform token in Profile.",
+        );
       return req.principal.localUserId;
     };
     async function scope(req: FastifyRequest<{ Params: { connectionId: string } }>) {

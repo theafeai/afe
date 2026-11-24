@@ -8,6 +8,7 @@ import {
 import type { EventAccessRule } from "@afe/core";
 import { TerraformClient, remoteConnectionInput, relatedId } from "@afe/connector-terraform";
 import type { ServerContext } from "../context.ts";
+import { toolNotLinked } from "./tool-link.ts";
 
 export interface TerraformAccount {
   credential_id: string;
@@ -36,9 +37,9 @@ export async function terraformAccount(ctx: ServerContext, tid: string, uid: str
     )
   ).rows[0];
   if (!account?.context.serverUrl || !account.context.accountId)
-    throw terraformFail(403, "Link a personal Terraform user token in Profile.");
+    throw toolNotLinked("terraform", "Link a personal Terraform user token in Profile.");
   const credential = await getCredential(ctx.pool, ctx.keys, tid, account.credential_id);
-  if (!credential) throw terraformFail(403, "Relink your Terraform account in Profile.");
+  if (!credential) throw toolNotLinked("terraform", "Relink your Terraform account in Profile.");
   const api = new TerraformClient(
     account.context.serverUrl,
     credential.secret,
@@ -66,7 +67,7 @@ export async function terraformScope(
     throw terraformFail(409, "The Terraform connection is inactive.");
   const { account, api } = await terraformAccount(ctx, tid, uid);
   if (config.data.serverUrl !== account.context.serverUrl)
-    throw terraformFail(403, "Link your personal account for this Terraform server.");
+    throw toolNotLinked("terraform", "Link your personal account for this Terraform server.");
   const workspace = await api.resource(
     `/api/v2/workspaces/${config.data.workspaceId}`,
     config.data.workspaceId,
