@@ -10,6 +10,7 @@
  * Afe inferred.
  */
 import type pg from "pg";
+import { principalIdentity } from "@afe/core";
 import type {
   InferredFact,
   InferredFactRecord,
@@ -147,7 +148,8 @@ const toOverride = (r: OverrideRow): SetupOverrideRecord => ({
   subject: r.subject,
   field: r.field,
   value: r.value,
-  setBy: { id: r.set_by, name: r.set_by_name },
+  // Rows set before AFE-120 name the administrator by token fingerprint.
+  setBy: { name: null, ...principalIdentity(r.set_by, r.set_by_name) },
   setAt: r.set_at.toISOString(),
   keptInferred: r.kept_inferred ?? null,
 });

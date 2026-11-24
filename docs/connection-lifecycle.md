@@ -31,8 +31,11 @@ loss. Health monitoring must be enabled and running to detect failures.
 
 The **Afe actor** is the authenticated principal performing setup or disconnect.
 It comes from server authentication, never request body fields. Local-user
-sessions preserve the user's name/id. Bootstrap admin tokens have only a stable
-principal fingerprint, not an independently known personal username.
+sessions preserve the user's name/id. The bootstrap administrator
+(`AFE_ADMIN_TOKEN`) is recorded as `{id: "static:admin", name: "Administrator"}`
+and the static viewer as `static:viewer` / "Viewer" (AFE-120): stable across
+token rotation and never derived from the token. Events recorded before AFE-120
+hold `admin-token:<hex>`; they are shown as "Administrator" when read.
 
 The **credential owner** is an upstream identity, displayed separately in the
 Events list and event detail. Its public identity fields are in

@@ -44,7 +44,7 @@ secret masking. See [GitHub connector](../connectors/github.md#workflow-progress
 | Drift findings (AFE-26)                  | finding type, severity, target, mapped service/environment, explanation and evidence summaries (may name actors and images), alert delivery state; per-tenant drift settings                                                         | `drift_findings`, `drift_settings`                    | Confidential; may hold personal data |
 | Environment and service mapping (AFE-19) | admin-defined services, environments, rules and built-in switches; audit outbox                                                                                                                                                      | `mapping_*`                                           | Confidential                         |
 | Inferred setup (M2, D-0012)              | per environment and field: inferred value (name, order, production-like, gating, batching, cadence, environment names/patterns), confidence, reason, evidence (tool and environment names, counts, rule names only)                  | `inferred_setup`                                      | Confidential (business)              |
-| Setup overrides (M2, D-0012)             | per environment and field: the admin's value, `set_by` (principal id), `set_by_name` (display name), `set_at`, the inferred value kept against                                                                                       | `setup_overrides`                                     | Confidential; names a person         |
+| Setup overrides (M2, D-0012)             | per environment and field: the admin's value, `set_by` (recorded actor id, see below), `set_by_name` (display name), `set_at`, the inferred value kept against                                                                       | `setup_overrides`                                     | Confidential; names a person         |
 | Logs (stdout, not the DB)                | request method/path/status, delivery ids, error kinds                                                                                                                                                                                | –                                                     | Low (redacted)                       |
 
 Locally managed users see inferred setup and overrides only for environments
@@ -193,9 +193,29 @@ attachment headers; signed storage URLs and GitHub credentials stay server-side.
 Personal fine-grained tokens use the existing encrypted user GitHub credential
 kind. OAuth requests `repo read:user` without the `workflow` scope.
 
+## Afe actor identities in records (AFE-120)
+
+Events with source `afe` (connection lifecycle, `config.mapping.changed`
+including setup changes) and `setup_overrides.set_by` record who acted as a
+non-secret identity: a local user's `local:<uuid>` and name, a hosted
+provider's principal id, or for the static tokens `static:admin`
+("Administrator") and `static:viewer` ("Viewer"). The static-token principal
+id (`admin-token:<hex>`, the first 64 bits of an unkeyed, labelled SHA-256 of
+the token) is a value that lets anyone who reads it test guessed tokens
+offline, so it is never recorded there.
+
+Before AFE-120 that principal id was recorded in these events' `actor.id` and in
+`setup_overrides.set_by`. Those stored values are not rewritten (events are
+immutable). Reads map them to "Administrator"/"Viewer" for source `afe`, so the
+API and UI do not show them, but they remain in the database until the event
+retention window (default 30 days) purges the events; override rows keep them
+until the override is changed or cleared. The principal id is still used
+internally, and so stored, in `github_admin_identities`, action receipts
+(`*_action_requests.actor_id`) and the `session started` log line.
+
 ## Connection lifecycle identities (AFE-64)
 
-Lifecycle events retain the authenticated Afe principal id and optional display
+Lifecycle events retain the recorded Afe actor identity (above) and optional display
 name, separate from `data.credentialOwner` (upstream public user id/username or
 GitHub App id). GitHub installation accounts remain installation scope, not
 human credential ownership. Vercel connection configuration also stores the
@@ -208,7 +228,8 @@ event window. See [connection lifecycle](../connection-lifecycle.md).
 ## Administrator GitHub identity bindings (AFE-62)
 
 `github_admin_identities` stores the tenant ID, authenticated Afe principal ID
-(a non-secret token fingerprint for static administrators), and associated
+(a token fingerprint for static administrators; not shown in the UI or
+recorded in events, see AFE-120 above), and associated
 user UUID. The binding connects the administrator login to existing personal
 GitHub account storage and explicit tool policies. It is retained with the
 account; event retention does not purge it. Token rotation creates a new

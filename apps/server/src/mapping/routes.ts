@@ -10,6 +10,7 @@ import type pg from "pg";
 import { z } from "zod";
 import {
   ACTIONS,
+  principalIdentity,
   sourceEventId,
   type CanonicalEvent,
   type CanonicalEventInputLike,
@@ -105,12 +106,14 @@ export function send(reply: FastifyReply, err: unknown) {
 export function actorOf(p: Principal | undefined) {
   if (!p) return { type: "unknown" as const };
   const type = p.kind === "token" || p.kind === "session" ? ("token" as const) : ("user" as const);
-  return { type, id: p.id, ...(p.name ? { name: p.name } : {}) };
+  return { type, ...principalIdentity(p.id, p.name) };
 }
 
 /** Who set a setup override, from the authenticated principal. */
 export function setupActorOf(p: Principal | undefined): SetupActor {
-  return { id: p?.id ?? "unknown", name: p?.name ?? null };
+  if (!p) return { id: "unknown", name: null };
+  const who = principalIdentity(p.id, p.name);
+  return { id: who.id, name: who.name ?? null };
 }
 
 type Summary = JsonObject | null;

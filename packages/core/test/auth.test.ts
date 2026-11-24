@@ -5,8 +5,11 @@ import {
   constantTimeEqual,
   denyAllAuthProvider,
   hasRole,
+  principalIdentity,
   principalTenantResolver,
+  STATIC_ADMIN_ACTOR,
   StaticTokenAuthProvider,
+  tokenFingerprint,
 } from "../src/index.ts";
 
 const ADMIN = "a".repeat(32);
@@ -74,5 +77,36 @@ describe("helpers", () => {
       }),
     ).toBe("t1");
     expect(() => principalTenantResolver.resolveTenant({ headers: {} })).toThrow();
+  });
+});
+
+describe("principalIdentity (AFE-120)", () => {
+  const auth = new StaticTokenAuthProvider({ adminToken: ADMIN, viewerToken: VIEWER });
+
+  it("never records a static token's fingerprint", () => {
+    const admin = auth.principalForToken(ADMIN)!;
+    const viewer = auth.principalForToken(VIEWER)!;
+    expect(principalIdentity(admin.id, admin.name)).toEqual(STATIC_ADMIN_ACTOR);
+    expect(principalIdentity(viewer.id)).toEqual({ id: "static:viewer", name: "Viewer" });
+    for (const p of [admin, viewer]) {
+      const recorded = JSON.stringify(principalIdentity(p.id));
+      expect(recorded).not.toContain(tokenFingerprint(ADMIN));
+      expect(recorded).not.toContain(tokenFingerprint(VIEWER));
+    }
+  });
+
+  it("is the same identity before and after the token is rotated", () => {
+    const rotated = new StaticTokenAuthProvider({ adminToken: "b".repeat(32) });
+    expect(principalIdentity(rotated.principalForToken("b".repeat(32))!.id)).toEqual(
+      principalIdentity(auth.principalForToken(ADMIN)!.id),
+    );
+  });
+
+  it("keeps every other principal as it is", () => {
+    expect(principalIdentity("local:42", "Alice")).toEqual({ id: "local:42", name: "Alice" });
+    expect(principalIdentity("sso:alice", null)).toEqual({ id: "sso:alice" });
+    expect(principalIdentity("admin-token:not-a-fingerprint")).toEqual({
+      id: "admin-token:not-a-fingerprint",
+    });
   });
 });

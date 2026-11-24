@@ -271,7 +271,8 @@ event (source `afe`, `sourceEventId` `config_mapping:<revision>`) to the
 outbox. After commit the server appends it via `ctx.sink` and deletes the
 outbox row; if that fails, the `mapping.audit-outbox` job (every minute)
 retries. Ingestion is idempotent, so a retry never duplicates. The event
-records who (the authenticated principal: token fingerprint or user), and in
+records who (the authenticated principal: a user, or `static:admin`
+"Administrator" for the bootstrap admin token, never a token fingerprint), and in
 `data`: `revision`, `entity` (`service | environment | rule | builtin_rule |
 rule_order | setup`), `operation`, `id`, `before` and `after` summaries. That
 is how the audit log shows who changed how deployments are classified. Setup

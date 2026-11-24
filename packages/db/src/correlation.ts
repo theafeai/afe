@@ -12,7 +12,7 @@
 import type { CanonicalEvent, EventAccessRule, JsonObject } from "@afe/core";
 import type { CorrelationEvent } from "@afe/core/correlation";
 import { eventAccessSql } from "./event-query.ts";
-import type { Queryable } from "./event-store.ts";
+import { displayActor, type Queryable } from "./event-store.ts";
 
 export interface CorrelationEventRecord extends CorrelationEvent {
   seq: number;
@@ -103,7 +103,7 @@ export async function listCorrelationEvents(
     seq: Number(r.seq),
     source: r.source,
     action: r.action,
-    actor: r.actor,
+    actor: displayActor(r.source, r.actor),
     target: r.target,
     trigger: r.trigger,
     outcome: r.outcome,
