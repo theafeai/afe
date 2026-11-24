@@ -26,6 +26,7 @@ import { deriveSessionKey, SessionCodec } from "./auth/session.ts";
 import { DEFAULT_SESSION_TTL_MS, loadConfig, type AfeConfig } from "./config.ts";
 import type { ConnectorModule, ServerContext } from "./context.ts";
 import { InlineJobQueue, type JobDefinition, type JobQueue } from "./jobs.ts";
+import { registerRateLimit } from "./rate-limit.ts";
 import { registerWebUi } from "./web.ts";
 
 declare module "fastify" {
@@ -136,6 +137,9 @@ export async function buildAfe(options: CreateAfeOptions): Promise<AfeApp> {
       done(err, undefined);
     }
   });
+
+  // Before any route, so routes that set `config.rateLimit` are limited.
+  await registerRateLimit(app);
 
   const config = options.config ?? loadConfig({ DATABASE_URL: "unused" });
   const authConfig = config.auth;

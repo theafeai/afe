@@ -30,7 +30,7 @@
 import type { CompiledMapping } from "../mapping/resolve.ts";
 import { observationsOf } from "../mapping/fields.ts";
 import { NAME_PATTERNS, SUFFIX_PATTERNS } from "../mapping/defaults.ts";
-import { MAPPING_LIMITS, slugify } from "../mapping/validate.ts";
+import { MAPPING_LIMITS, slugify, trimDashes } from "../mapping/validate.ts";
 import {
   DEFAULT_SIGNAL_EXTRACTORS,
   type EnvironmentSignal,
@@ -93,7 +93,7 @@ function esc(s: string): string {
 function family(stem: string, pattern: string): Family | null {
   if (pattern.length > 256 || stem.length === 0) return null;
   const preview = PREVIEW_STEMS.has(stem.toLowerCase());
-  const base = slugify(stem).slice(0, 54).replace(/-+$/, "");
+  const base = trimDashes(slugify(stem).slice(0, 54), false);
   return {
     id: preview ? "previews" : `${base}-previews`,
     name: preview ? "Previews" : `${stem} previews`,
@@ -101,12 +101,38 @@ function family(stem: string, pattern: string): Family | null {
   };
 }
 
+const isDigit = (c: number) => c >= 0x30 && c <= 0x39;
+const isNumberSeparator = (c: number) =>
+  c === 0x2d || c === 0x5f || c === 0x20 || c === 0x23 || c === 0x2f; // - _ space # /
+const isLineTerminator = (c: number) => c === 0x0a || c === 0x0d || c === 0x2028 || c === 0x2029;
+
+/**
+ * The stem of a numbered name ("pr-42" → "pr", "env12" → "env"), else null. The
+ * same result as the first group of `/^(.*?[^-_ #/])[-_ #/]*(\d+)$/`, computed in
+ * one pass: that regex backtracks polynomially on inputs such as "!" followed by
+ * many "00".
+ */
+export function numberedStem(v: string): string | null {
+  let digits = v.length; // start of the trailing digit run
+  while (digits > 0 && isDigit(v.charCodeAt(digits - 1))) digits--;
+  if (digits === v.length) return null;
+  let seps = digits; // start of the separator run just before it
+  while (seps > 0 && isNumberSeparator(v.charCodeAt(seps - 1))) seps--;
+  // The shortest stem ends just before the separators; when nothing precedes
+  // them it must take the first trailing digit, leaving at least one.
+  const end = seps > 0 ? seps : digits + 1;
+  if (end >= v.length) return null;
+  // `.` stops at line terminators; the stem's last character is `[^-_ #/]`, which does not.
+  for (let i = 0; i < end - 1; i++) if (isLineTerminator(v.charCodeAt(i))) return null;
+  return v.slice(0, end);
+}
+
 /** The family of a short-lived environment name, if it is one. */
 export function familyOf(value: string, transient: boolean): Family | null {
   const v = value.trim();
-  const numbered = /^(.*?[^-_ #/])[-_ #/]*(\d+)$/.exec(v);
-  if (numbered && (transient || PREVIEW_STEMS.has(numbered[1]!.toLowerCase()))) {
-    return family(numbered[1]!, `^${esc(numbered[1]!)}[\\-_ #\\/]*\\d+$`);
+  const stem = numberedStem(v);
+  if (stem && (transient || PREVIEW_STEMS.has(stem.toLowerCase()))) {
+    return family(stem, `^${esc(stem)}[\\-_ #\\/]*\\d+$`);
   }
   const branch = /^([^/]+)\/.+$/.exec(v);
   if (branch && (transient || BRANCH_STEMS.has(branch[1]!.toLowerCase()))) {
