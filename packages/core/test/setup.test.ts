@@ -246,6 +246,130 @@ describe("inferSetup (D-0012 rules)", () => {
   });
 });
 
+/** A runner-reported Terraform CLI event, shaped like `terraformEvent` in @afe/connector-terraform. */
+function tf(o: {
+  operation: "plan" | "apply" | "destroy";
+  phase?: "started" | "completed";
+  min: number;
+  run: string;
+  workspace: string;
+  environment?: string;
+  sha?: string;
+  outcome?: string;
+  trigger?: string;
+}): InferenceEvent {
+  n++;
+  const phase = o.phase ?? "completed";
+  return {
+    id: `e${n}`,
+    source: "terraform",
+    action: `terraform.${o.operation}.${phase}`,
+    outcome: o.outcome ?? (phase === "started" ? "in_progress" : "succeeded"),
+    occurredAt: at(o.min),
+    trigger: { type: o.trigger ?? "push", sourceValue: "runner_report" },
+    target: {
+      type: "workflow_run",
+      id: `tf-conn/${o.run}`,
+      name: `${o.workspace}: ${o.operation}`,
+      project: o.workspace,
+      environment: o.environment,
+    },
+    actor: { type: "user", login: "octocat" },
+    correlation: {
+      commitShas: o.sha ? [o.sha] : undefined,
+      runIds: [`terraform:tf-conn:${o.run}`],
+      environments: o.environment ? [o.environment] : undefined,
+    },
+    data: { workspace: o.workspace, operation: o.operation, phase },
+  } as InferenceEvent;
+}
+
+describe("inferSetup from Terraform runs (AFE-116)", () => {
+  const opts = { mapping: emptyMapping(), adminEnvironmentIds: [] };
+
+  it("names environments the way Terraform reports them: environment, else workspace", () => {
+    const facts = inferSetup(
+      [
+        tf({ operation: "apply", min: 0, run: "r1", workspace: "infra", environment: "eu-live" }),
+        tf({ operation: "apply", min: 5, run: "r2", workspace: "uat" }),
+      ],
+      opts,
+    );
+    expect(factOf(facts, "eu-live", "name")).toMatchObject({
+      value: "eu-live",
+      confidence: "certain",
+      reason: "Terraform reports this name",
+    });
+    expect(factOf(facts, "eu-live", "sources")!.value).toEqual([
+      { field: "terraform.environment", match: "exact", pattern: "eu-live" },
+    ]);
+    // No environment configured: the workspace is Terraform's own name for it.
+    expect(factOf(facts, "uat", "sources")!.value).toEqual([
+      { field: "terraform.workspace", match: "exact", pattern: "uat" },
+    ]);
+    // A workspace with a configured environment does not become an environment itself.
+    expect(facts.some((f) => f.subject === "environment:infra")).toBe(false);
+  });
+
+  it("Terraform's `default` workspace is not an environment name", () => {
+    const facts = inferSetup(
+      [tf({ operation: "apply", min: 0, run: "r1", workspace: "default" })],
+      opts,
+    );
+    expect(facts).toEqual([]);
+  });
+
+  it("applies are deployments: started and completed count once, with cadence and start", () => {
+    const events: InferenceEvent[] = [];
+    for (let i = 0; i < 4; i++) {
+      const run = `a${i}`;
+      events.push(tf({ operation: "apply", phase: "started", min: i * 60, run, workspace: "ops" }));
+      events.push(tf({ operation: "apply", min: i * 60 + 2, run, workspace: "ops" }));
+    }
+    const facts = inferSetup(events, opts);
+    expect(factOf(facts, "ops", "cadence")!.value).toMatchObject({
+      deployments: 4,
+      medianSeconds: 3600,
+    });
+    expect(factOf(facts, "ops", "gating")).toMatchObject({
+      value: "automatic",
+      confidence: "probable",
+      evidence: [expect.objectContaining({ detail: "4 of 4 deployments started by push" })],
+    });
+  });
+
+  it("plans and destroys show the environment but are not deployments", () => {
+    const facts = inferSetup(
+      [
+        tf({ operation: "plan", min: 0, run: "p1", workspace: "sbx", trigger: "pull_request" }),
+        tf({ operation: "plan", min: 10, run: "p2", workspace: "sbx", trigger: "pull_request" }),
+        tf({ operation: "plan", min: 20, run: "p3", workspace: "sbx", trigger: "pull_request" }),
+        tf({ operation: "destroy", min: 30, run: "d1", workspace: "sbx", trigger: "cli" }),
+      ],
+      opts,
+    );
+    expect(factOf(facts, "sbx", "name")).toMatchObject({ value: "sbx" });
+    expect(factOf(facts, "sbx", "gating")).toBeUndefined();
+    expect(factOf(facts, "sbx", "cadence")).toBeUndefined();
+  });
+
+  it("orders Terraform applies with other tools by the commits they reach", () => {
+    const events: InferenceEvent[] = [];
+    for (let i = 0; i < 5; i++) {
+      const sha = `t${i}`;
+      events.push(gh({ env: "qa-sandbox", min: i * 100, sha }));
+      events.push(
+        tf({ operation: "apply", min: i * 100 + 30, run: `o${i}`, workspace: "edge", sha }),
+      );
+    }
+    const facts = inferSetup(events, opts);
+    expect(factOf(facts, "edge", "order")).toMatchObject({ confidence: "strong" });
+    expect(factOf(facts, "edge", "order")!.value).toBeGreaterThan(
+      factOf(facts, "qa-sandbox", "order")!.value as number,
+    );
+  });
+});
+
 describe("mergeSetup (overrides win, inference never overwrites)", () => {
   const facts = inferSetup(acme(), { mapping: emptyMapping(), adminEnvironmentIds: [] });
   const inferred = records(facts);

@@ -26,8 +26,14 @@ export const SETUP_INFER_JOB = "setup.infer";
 export const INFERENCE_EVENT_LIMIT = 10_000;
 const PAGE = 1000;
 
-/** Deployments, syncs, approval waits and protection rules. */
-const INFERENCE_ACTIONS = ["deployment.*", "argocd.sync.*"];
+/** Deployments, syncs, approval waits, protection rules and Terraform runs (AFE-116). */
+export const INFERENCE_ACTIONS = [
+  "deployment.*",
+  "argocd.sync.*",
+  "terraform.plan.*",
+  "terraform.apply.*",
+  "terraform.destroy.*",
+];
 
 export interface InferenceResult {
   tenantId: string;

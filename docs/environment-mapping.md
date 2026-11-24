@@ -173,13 +173,24 @@ inferred value is never applied over an admin value: it is shown beside it
 
 ### Environments from what tools report
 
-The job reads up to 10 000 of the tenant's newest `deployment.*` and
-`argocd.sync.*` events. A per-connector **signal extractor**
+The job reads up to 10 000 of the tenant's newest `deployment.*`,
+`argocd.sync.*` and Terraform `terraform.plan.*`, `terraform.apply.*`,
+`terraform.destroy.*` events. A per-connector **signal extractor**
 (`DEFAULT_SIGNAL_EXTRACTORS`; GitHub, Vercel, Argo CD, Terraform) turns each
 into source-neutral signals: environment name as reported, deployment
 reached or not, commit, ref, tool-declared production, transient, how it
 started, approval waits and protection rules. Adding a connector means adding
 an extractor.
+
+Terraform (AFE-116) names the environment the way the reporter connection
+does: its configured environment (`terraform.environment`), else its
+workspace (`terraform.workspace`); Terraform's `default` workspace names no
+environment. An apply is a deployment (reached when it completes
+successfully; started and completed reports of one run are one deployment;
+how it started comes from the reported trigger: `push`/`schedule` automatic,
+`cli`/`manual` on demand, `pull_request` per change). Plans and destroys show
+that the environment exists but are not deployments, so they never count
+toward order, cadence or process.
 
 Each reported name is first resolved with the admin's own mapping (tenant
 rules, enabled built-in rules): if it lands in an admin environment, it is

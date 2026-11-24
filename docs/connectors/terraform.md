@@ -126,6 +126,10 @@ environment. Optional commit/repository and GitHub run keys link events to
 journeys, where Terraform appears in the **config** stage. Without identifiers,
 Git attribution is explicitly unavailable. Service/environment mapping can
 use `terraform.workspace`, `terraform.repository` and `terraform.environment`.
+Setup inference (`setup.infer`) reads these reports too: the configured
+environment, else the workspace (never `default`), becomes an inferred
+environment; applies count as deployments to it, plans and destroys do not
+(see [environment mapping](../environment-mapping.md#environments-from-what-tools-report)).
 These reports do not create an application placement in the live environment
 matrix: an infrastructure command's success does not prove an app is live.
 
