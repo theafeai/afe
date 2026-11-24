@@ -26,6 +26,7 @@ import { requestTenant } from "../auth/index.ts";
 import { toolAccounts } from "../auth/tool-accounts.ts";
 import { argocdOidcConfig } from "../auth/argocd-oidc.ts";
 import type { ConnectorModule, ServerContext } from "../context.ts";
+import { namedUserRequired, serveToolLinkErrors, toolNotLinked } from "./tool-link.ts";
 import { argocdOutboundPolicy } from "../connectors/argocd.ts";
 
 const fail = (statusCode: number, message: string) =>
@@ -99,9 +100,9 @@ export class ArgoCdOperations {
     const tid = requestTenant(req),
       uid = req.principal?.localUserId;
     if (!uid)
-      throw fail(
-        403,
-        "Link a personal ArgoCD account in Profile. Administrator observation tokens do not grant actions.",
+      throw namedUserRequired(
+        "argocd",
+        "Sign in as a named Afe user, then link your personal ArgoCD account in Profile. Administrator observation tokens do not grant actions.",
       );
     const user = await getLocalUser(this.ctx.pool, tid, uid);
     const policy = await getUserToolPolicy(this.ctx.pool, tid, uid, "argocd");
@@ -109,7 +110,7 @@ export class ArgoCdOperations {
       throw fail(403, "ArgoCD access is disabled for this account.");
     const account = (await toolAccounts(this.ctx, tid, uid)).find((a) => a.tool === "argocd");
     if (!account?.context.connectionId)
-      throw fail(403, "Link your personal ArgoCD account in Profile.");
+      throw toolNotLinked("argocd", "Link your personal ArgoCD account in Profile.");
     return { tid, uid, account };
   }
   async scope(req: ScopedRequest) {
@@ -354,6 +355,7 @@ export function registerArgoCdOperations(
   ctx: ServerContext,
   clientFactory?: (options: Parameters<typeof createArgoCdActionClient>[0]) => ArgoCdActionClient,
 ) {
+  serveToolLinkErrors(app, "/api/actions/argocd");
   const ops = new ArgoCdOperations(ctx, clientFactory);
   async function guarded<T>(fn: () => Promise<T>) {
     try {

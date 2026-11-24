@@ -321,6 +321,11 @@ Escape and cancellation are blocked during submission.
 - **Empty states** say what the view will show and the next step, with a link
   or button to it. First-run screens (no connections yet) pass an `icon`.
   Filtered-to-nothing states suggest widening the filters.
+- **Tool account not linked yet** (AFE-118) is an expected state, not an error:
+  tool pages render a failed first load with `ToolPageError`
+  (`pages/tool-link.tsx`), which shows an `Empty` with a link to Profile for a
+  `403` whose `reason` is `tool_not_linked` or `named_user_required`, and
+  `ErrorBox` for anything else, including real permission errors.
 - **Tables** go in `.table-wrap`. Headers are short nouns. Row actions are
   `.btn-ghost` buttons or links at the end of the row; destructive actions ask
   for confirmation.
