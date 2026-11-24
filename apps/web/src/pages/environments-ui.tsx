@@ -13,6 +13,7 @@ import type {
 import { journeyHref } from "../api/environments.ts";
 import { gapReason, toolLabel } from "../components.tsx";
 import { formatDateTime, formatRelative } from "../format.ts";
+import { icons } from "../icons.tsx";
 import { Link } from "../router.tsx";
 
 /** A repository key such as `github.com/acme/shop` shown as `acme/shop`. */
@@ -337,4 +338,26 @@ export function ViaText({ text }: { text: string }) {
 export function howText(p: { how: string; actor: string | null }): string {
   const how = HOW_LABEL[p.how] ?? p.how.replace(/_/g, " ");
   return p.actor && !AUTOMATED.has(p.actor.toLowerCase()) ? `${how} by ${p.actor}` : how;
+}
+
+/**
+ * An environment's name as a chip (ADR 0017 rule 9, D-0010, AFE-117). Every
+ * environment has the same outline look; a production-like one gets the solid
+ * ink chip with a shield. No built-in kind word (staging, development…) is
+ * ever shown beside the org's own name.
+ */
+export function EnvironmentChip({
+  name,
+  productionLike,
+}: {
+  name: string;
+  productionLike: boolean;
+}) {
+  return (
+    <span className={`env-chip${productionLike ? " pl" : ""}`}>
+      {productionLike && icons.shield}
+      {name}
+      {productionLike && <span className="sr-only"> (production-like)</span>}
+    </span>
+  );
 }

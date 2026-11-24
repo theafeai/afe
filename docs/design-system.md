@@ -69,8 +69,11 @@ Contents: [Rules](#rules) · [Principles](#principles) · [Tokens](#tokens) ·
     a filled disc, a filled triangle (warn) or the spectrum ring (in progress),
     never an outline icon and never without the word. **[enforced]**
 14. **No built-in environment styling.** No selector keys on environment names or
-    kinds (`env-prod`, `[data-kind="staging"]`, …). Only `.pl` (production-like)
-    may be styled. **[enforced]**
+    kinds (`env-prod`, `[data-kind="staging"]`, …), and no built-in kind word as a
+    label beside an environment's name (`{env.kind}`, a kind picker). Only `.pl`
+    (production-like) may be styled or labelled: `EnvironmentChip` renders the
+    outline chip, or the solid ink chip with a shield for production-like.
+    **[enforced]**
 15. **Legend wherever colour codes tools.** Every page file that renders tool
     marks (`ToolBadge`, `ToolMark`, `.t-*`) also renders `<ToolLegend>`, unless it
     is listed with a reason in `LEGEND_EXEMPT` in the test. **[enforced]**
@@ -300,7 +303,8 @@ encodings, the same way on every page.
   selected cell (`[aria-selected="true"]`, `[aria-pressed="true"]`). A journey
   highlight in the timeline is a filter, shown with an ink rule.
 - **Environments** are the org's: one look for all, no hue per environment, no
-  built-in dev/staging/prod styling. Only production-like (`.pl`) may differ.
+  built-in dev/staging/prod styling or labels. Only production-like (`.pl`) may
+  differ (`EnvironmentChip`).
 
 Accents for emphasis on a row or card are a **2px** inset rule
 (`box-shadow: inset 2px 0 0 var(--…)`), never thicker borders.

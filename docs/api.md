@@ -302,6 +302,7 @@ cell, 1–100, default 20).
       "name": "Production",
       "kind": "production",
       "order": 10,
+      "productionLike": true,
       "unmapped": false
     }
   ],

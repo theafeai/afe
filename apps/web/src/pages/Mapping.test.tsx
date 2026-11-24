@@ -149,6 +149,10 @@ beforeEach(() => {
       state.services = state.services.filter((s) => !url.endsWith(s.id));
       return json(200, { ok: true });
     }
+    if (url === "/api/mapping/environments" && method === "POST") {
+      state.environments.push({ id: "uat", name: body.name, order: 30, kind: body.kind });
+      return json(201, { environment: state.environments.at(-1) });
+    }
     if (url.startsWith("/api/mapping/environments/") && method === "PUT") {
       const environment = state.environments.find((e) => url.endsWith(e.id))!;
       Object.assign(environment, body);
@@ -270,6 +274,32 @@ describe("Mapping settings page", () => {
       description: null,
     });
     expect(await screen.findByText("Shop")).toBeTruthy();
+  });
+
+  it("shows environments by the org's names, production-like as the shield chip (AFE-117)", async () => {
+    render(<App />);
+    const list = await screen.findByRole("list", { name: "Existing environments" });
+    const chips = [...list.querySelectorAll(".env-chip")];
+    expect(chips.map((c) => [c.textContent, c.classList.contains("pl")])).toEqual([
+      ["Production (production-like)", true],
+      ["Staging", false],
+    ]);
+    // No built-in kind word beside the names, and none to pick.
+    expect(list.querySelectorAll(".badge")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Add environment" }));
+    const form = screen.getByRole("form", { name: "New environment" });
+    expect(within(form).queryByLabelText("Kind")).toBeNull();
+    fireEvent.change(within(form).getByLabelText("Environment name"), { target: { value: "uat" } });
+    fireEvent.click(within(form).getByLabelText("Production-like"));
+    fireEvent.click(within(form).getByRole("button", { name: "Save environment" }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "POST" && c.url === "/api/mapping/environments"),
+      ).toBeTruthy(),
+    );
+    expect(
+      calls.find((c) => c.method === "POST" && c.url === "/api/mapping/environments")!.body,
+    ).toEqual({ name: "uat", kind: "production" });
   });
 
   it("opens the add-environment form inline and cancels it without saving", async () => {

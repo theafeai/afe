@@ -19,6 +19,7 @@ export interface InferenceEvent extends MappableEvent {
     repositories?: string[] | null;
     commitShas?: string[] | null;
     deploymentIds?: string[] | null;
+    runIds?: string[] | null;
   } | null;
   data?: Record<string, unknown> | null;
 }
@@ -29,8 +30,13 @@ export interface EnvironmentSignal {
   field: string;
   /** The environment name exactly as the tool reports it. */
   value: string;
-  /** A deployment (or sync) to the environment, an approval wait, or a protection rule. */
-  kind: "deployment" | "approval" | "protection";
+  /**
+   * A deployment (or sync) to the environment, an approval wait, a protection
+   * rule, or a run that names the environment without changing it (a
+   * Terraform plan or destroy): evidence the environment exists, never a
+   * deployment for order, cadence or process.
+   */
+  kind: "deployment" | "approval" | "protection" | "run";
   at: string;
   /** The deployment reached the environment (succeeded). */
   reached?: boolean;
@@ -188,8 +194,51 @@ export const vercelSignals: SignalExtractor = (e) =>
 
 export const argocdSignals: SignalExtractor = (e) => genericDeployments(e, ["argocd.environment"]);
 
-export const terraformSignals: SignalExtractor = (e) =>
-  genericDeployments(e, ["terraform.environment"]);
+/** Terraform's own workspace when none is selected; it names no environment. */
+const TERRAFORM_DEFAULT_WORKSPACE = "default";
+const TERRAFORM_ACTION = /^terraform\.(plan|apply|destroy)\.(started|completed)$/;
+
+/**
+ * Terraform (AFE-116): runner-reported `terraform.<plan|apply|destroy>.<phase>`
+ * events. The environment is named the way the connection reports it: its
+ * configured environment, else the workspace (Terraform's unit of separate
+ * state), never the `default` workspace. An apply is a deployment (reached
+ * when it completes successfully); plans and destroys only show that the
+ * environment exists. Started and completed reports of one operation are one
+ * deployment.
+ */
+export const terraformSignals: SignalExtractor = (e) => {
+  const m = TERRAFORM_ACTION.exec(e.action);
+  if (!m) return [];
+  const [, operation, phase] = m;
+  const o = observationsOf(e);
+  const environment = o["terraform.environment"]?.[0];
+  const workspace = o["terraform.workspace"]?.[0];
+  const named: [string, string] | null = environment
+    ? ["terraform.environment", environment]
+    : workspace && workspace !== TERRAFORM_DEFAULT_WORKSPACE
+      ? ["terraform.workspace", workspace]
+      : null;
+  if (!named) return [];
+  const apply = operation === "apply";
+  const run = e.correlation?.runIds?.find((r) => r.startsWith("terraform:")) ?? e.target.id;
+  return [
+    {
+      source: "terraform",
+      field: named[0],
+      value: named[1],
+      kind: apply ? "deployment" : "run",
+      at: e.occurredAt,
+      reached: apply && phase === "completed" && e.outcome === "succeeded",
+      commit: e.correlation?.commitShas?.[0] ?? null,
+      ref: null,
+      start: startOf(e.trigger.type),
+      // The trigger type is the runner's word (`push`, `cli`...); `sourceValue` is always `runner_report`.
+      startDetail: e.trigger.type,
+      deploymentKey: run ? `${run}:${operation}` : null,
+    },
+  ];
+};
 
 /** Built-in extractors per source. Add one per connector. */
 export const DEFAULT_SIGNAL_EXTRACTORS: Readonly<Record<string, SignalExtractor>> = {
